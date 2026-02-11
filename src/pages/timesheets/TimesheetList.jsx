@@ -4,8 +4,7 @@ import {
   makeStyles,
   tokens,
   Text,
-  Select,
-  Button,
+  ToggleButton,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
 import EntityGrid from '../../components/EntityGrid.jsx';
@@ -149,11 +148,9 @@ export default function TimesheetList() {
       />
       <div className={styles.filters}>
         <Text size={200} weight="semibold">Period:</Text>
-        <Select value={range} onChange={(e, data) => setRange(data.value)} size="small">
-          <option value="week">This Week</option>
-          <option value="month">This Month</option>
-          <option value="all">All Time</option>
-        </Select>
+        <ToggleButton size="small" checked={range === 'week'} onClick={() => setRange('week')}>This Week</ToggleButton>
+        <ToggleButton size="small" checked={range === 'month'} onClick={() => setRange('month')}>This Month</ToggleButton>
+        <ToggleButton size="small" checked={range === 'all'} onClick={() => setRange('all')}>All Time</ToggleButton>
       </div>
       <EntityGrid
         columns={columns}
