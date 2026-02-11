@@ -159,10 +159,10 @@ export default function ReportForm() {
   const [projects, setProjects] = useState([]);
   const [timesheetDates, setTimesheetDates] = useState([]);
 
-  // Selections
-  const [selectedClientId, setSelectedClientId] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [granularity, setGranularity] = useState('monthly');
+  // Selections (restore from localStorage)
+  const [selectedClientId, setSelectedClientId] = useState(() => localStorage.getItem('report.clientId') || '');
+  const [selectedProjectId, setSelectedProjectId] = useState(() => localStorage.getItem('report.projectId') || '');
+  const [granularity, setGranularity] = useState(() => localStorage.getItem('report.granularity') || 'monthly');
   const [selectedPeriod, setSelectedPeriod] = useState('');
 
   // Preview
@@ -177,10 +177,18 @@ export default function ReportForm() {
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingDates, setLoadingDates] = useState(false);
 
+  // Persist selections to localStorage
+  useEffect(() => { localStorage.setItem('report.clientId', selectedClientId); }, [selectedClientId]);
+  useEffect(() => { localStorage.setItem('report.projectId', selectedProjectId); }, [selectedProjectId]);
+  useEffect(() => { localStorage.setItem('report.granularity', granularity); }, [granularity]);
+
   // Load clients on mount
   useEffect(() => {
     clientsApi.getAll().then(setClients).catch((err) => setError(err.message));
   }, []);
+
+  // Track whether this is initial mount to avoid resetting cached selections
+  const isInitialMount = useMemo(() => ({ client: true, project: true, granularity: true }), []);
 
   // Load projects when client changes
   useEffect(() => {
@@ -189,10 +197,13 @@ export default function ReportForm() {
       return;
     }
     setLoadingProjects(true);
-    setSelectedProjectId('');
-    setTimesheetDates([]);
-    setSelectedPeriod('');
-    clearPreview();
+    if (!isInitialMount.client) {
+      setSelectedProjectId('');
+      setTimesheetDates([]);
+      setSelectedPeriod('');
+      clearPreview();
+    }
+    isInitialMount.client = false;
 
     projectsApi.getAll()
       .then((all) => setProjects(all.filter((p) => p.clientId === selectedClientId && p.status === 'active')))
@@ -207,8 +218,11 @@ export default function ReportForm() {
       return;
     }
     setLoadingDates(true);
-    setSelectedPeriod('');
-    clearPreview();
+    if (!isInitialMount.project) {
+      setSelectedPeriod('');
+      clearPreview();
+    }
+    isInitialMount.project = false;
 
     timesheetsApi.getAll({ projectId: selectedProjectId })
       .then((entries) => setTimesheetDates(entries.map((e) => e.date).filter(Boolean).sort()))
@@ -218,8 +232,11 @@ export default function ReportForm() {
 
   // Reset period when granularity changes
   useEffect(() => {
-    setSelectedPeriod('');
-    clearPreview();
+    if (!isInitialMount.granularity) {
+      setSelectedPeriod('');
+      clearPreview();
+    }
+    isInitialMount.granularity = false;
   }, [granularity]);
 
   // Cleanup blob URL on unmount
