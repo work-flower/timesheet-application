@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   makeStyles,
@@ -8,7 +8,6 @@ import {
   Button,
   Field,
   Spinner,
-  SpinButton,
   Select,
   Tab,
   TabList,
@@ -24,6 +23,8 @@ import { projectsApi, clientsApi, documentsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import EntityGrid from '../../components/EntityGrid.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
+import { useFormTracker } from '../../hooks/useFormTracker.js';
+import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -72,8 +73,9 @@ export default function ProjectForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const isNew = !id;
+  const { registerGuard, guardedNavigate } = useUnsavedChanges();
 
-  const [form, setForm] = useState({
+  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', clientId: '', endClientId: '', ir35Status: 'OUTSIDE_IR35',
     rate: '', workingHoursPerDay: '', status: 'active', notes: '',
   });
@@ -99,7 +101,7 @@ export default function ProjectForm() {
           ]);
           setDocuments(docs);
           setProjectData(data);
-          setForm({
+          setBase({
             name: data.name || '',
             clientId: data.clientId || '',
             endClientId: data.endClientId || '',
@@ -111,12 +113,12 @@ export default function ProjectForm() {
           });
         } else if (clients.length > 0) {
           const firstClient = clients[0];
-          setForm((prev) => ({
-            ...prev,
-            clientId: firstClient._id,
+          setBase({
+            name: '', clientId: firstClient._id, endClientId: '', ir35Status: 'OUTSIDE_IR35',
             rate: firstClient.defaultRate != null ? String(firstClient.defaultRate) : '',
             workingHoursPerDay: firstClient.workingHoursPerDay != null ? String(firstClient.workingHoursPerDay) : '',
-          }));
+            status: 'active', notes: '',
+          });
         }
       } catch (err) {
         setError(err.message);
@@ -125,7 +127,7 @@ export default function ProjectForm() {
       }
     };
     init();
-  }, [id, isNew]);
+  }, [id, isNew, setBase]);
 
   const handleChange = (field) => (e, data) => {
     const value = data?.value ?? e.target.value;
@@ -143,7 +145,7 @@ export default function ProjectForm() {
     });
   };
 
-  const handleSave = async () => {
+  const saveForm = useCallback(async () => {
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -156,18 +158,41 @@ export default function ProjectForm() {
       if (isNew) {
         const created = await projectsApi.create(payload);
         navigate(`/projects/${created._id}`, { replace: true });
+        return true;
       } else {
         const updated = await projectsApi.update(id, payload);
         setProjectData(updated);
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
+        setBase({
+          name: updated.name || '',
+          clientId: updated.clientId || '',
+          endClientId: updated.endClientId || '',
+          ir35Status: updated.ir35Status || 'OUTSIDE_IR35',
+          rate: updated.rate != null ? String(updated.rate) : '',
+          workingHoursPerDay: updated.workingHoursPerDay != null ? String(updated.workingHoursPerDay) : '',
+          status: updated.status || 'active',
+          notes: updated.notes || '',
+        });
+        return true;
       }
     } catch (err) {
       setError(err.message);
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [form, isNew, id, navigate, setBase]);
+
+  const handleSave = async () => {
+    const ok = await saveForm();
+    if (ok && !isNew) {
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    }
   };
+
+  useEffect(() => {
+    return registerGuard({ isDirty, onSave: saveForm });
+  }, [isDirty, saveForm, registerGuard]);
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
@@ -181,7 +206,7 @@ export default function ProjectForm() {
       <div className={styles.header}>
         <Breadcrumb>
           <BreadcrumbItem>
-            <BreadcrumbButton onClick={() => navigate('/projects')}>Projects</BreadcrumbButton>
+            <BreadcrumbButton onClick={() => guardedNavigate('/projects')}>Projects</BreadcrumbButton>
           </BreadcrumbItem>
           <BreadcrumbDivider />
           <BreadcrumbItem>
@@ -206,12 +231,12 @@ export default function ProjectForm() {
         {(isNew || tab === 'general') && (
           <>
             <FormSection title="Project Details">
-              <FormField>
+              <FormField changed={changedFields.has('name')}>
                 <Field label="Project Name" required>
                   <Input value={form.name} onChange={handleChange('name')} />
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('clientId')}>
                 <Field label="Client" required hint={!isNew && projectData?.isDefault ? 'Client cannot be changed for default projects' : undefined}>
                   <Select value={form.clientId} onChange={handleChange('clientId')} disabled={!isNew && projectData?.isDefault}>
                     <option value="">Select client...</option>
@@ -221,7 +246,7 @@ export default function ProjectForm() {
                   </Select>
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('endClientId')}>
                 <Field label="End Client">
                   <Select value={form.endClientId} onChange={handleChange('endClientId')}>
                     <option value="">None</option>
@@ -231,7 +256,7 @@ export default function ProjectForm() {
                   </Select>
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('ir35Status')}>
                 <Field label="IR35 Status" required>
                   <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
                     <option value="OUTSIDE_IR35">Outside IR35</option>
@@ -240,7 +265,7 @@ export default function ProjectForm() {
                   </Select>
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('rate')}>
                 <Field label="Rate (per day)" hint={form.rate === '' ? ratePlaceholder : undefined}>
                   <Input
                     type="number"
@@ -250,7 +275,7 @@ export default function ProjectForm() {
                   />
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('workingHoursPerDay')}>
                 <Field label="Working Hours Per Day" hint={form.workingHoursPerDay === '' ? hoursPlaceholder : undefined}>
                   <Input
                     type="number"
@@ -260,7 +285,7 @@ export default function ProjectForm() {
                   />
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('status')}>
                 <Field label="Status">
                   <Select value={form.status} onChange={handleChange('status')}>
                     <option value="active">Active</option>
@@ -270,18 +295,20 @@ export default function ProjectForm() {
               </FormField>
             </FormSection>
 
-            <div style={{ marginTop: '16px' }}>
-              <MarkdownEditor
-                label="Notes"
-                value={form.notes}
-                onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
-                placeholder="Additional notes..."
-                height={180}
-              />
-            </div>
+            <FormField fullWidth changed={changedFields.has('notes')}>
+              <div style={{ marginTop: '16px' }}>
+                <MarkdownEditor
+                  label="Notes"
+                  value={form.notes}
+                  onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+                  placeholder="Additional notes..."
+                  height={180}
+                />
+              </div>
+            </FormField>
 
             <div className={styles.actions}>
-              <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => navigate('/projects')}>Back</Button>
+              <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => guardedNavigate('/projects')}>Back</Button>
               <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving || !form.name || !form.clientId}>
                 {saving ? 'Saving...' : 'Save'}
               </Button>
@@ -294,7 +321,7 @@ export default function ProjectForm() {
             columns={timesheetColumns}
             items={projectData.timesheets || []}
             emptyMessage="No timesheet entries for this project."
-            onRowClick={(item) => navigate(`/timesheets/${item._id}`)}
+            onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
           />
         )}
 

@@ -1,6 +1,7 @@
 import { FluentProvider } from '@fluentui/react-components';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { theme } from './theme.js';
+import { UnsavedChangesProvider } from './contexts/UnsavedChangesContext.jsx';
 import AppLayout from './layouts/AppLayout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import ClientList from './pages/clients/ClientList.jsx';
@@ -16,22 +17,24 @@ export default function App() {
   return (
     <FluentProvider theme={theme}>
       <BrowserRouter>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/clients" element={<ClientList />} />
-            <Route path="/clients/new" element={<ClientForm />} />
-            <Route path="/clients/:id" element={<ClientForm />} />
-            <Route path="/projects" element={<ProjectList />} />
-            <Route path="/projects/new" element={<ProjectForm />} />
-            <Route path="/projects/:id" element={<ProjectForm />} />
-            <Route path="/timesheets" element={<TimesheetList />} />
-            <Route path="/timesheets/new" element={<TimesheetForm />} />
-            <Route path="/timesheets/:id" element={<TimesheetForm />} />
-            <Route path="/reports" element={<ReportForm />} />
-            <Route path="/settings" element={<Settings />} />
-          </Route>
-        </Routes>
+        <UnsavedChangesProvider>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/clients" element={<ClientList />} />
+              <Route path="/clients/new" element={<ClientForm />} />
+              <Route path="/clients/:id" element={<ClientForm />} />
+              <Route path="/projects" element={<ProjectList />} />
+              <Route path="/projects/new" element={<ProjectForm />} />
+              <Route path="/projects/:id" element={<ProjectForm />} />
+              <Route path="/timesheets" element={<TimesheetList />} />
+              <Route path="/timesheets/new" element={<TimesheetForm />} />
+              <Route path="/timesheets/:id" element={<TimesheetForm />} />
+              <Route path="/reports" element={<ReportForm />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+          </Routes>
+        </UnsavedChangesProvider>
       </BrowserRouter>
     </FluentProvider>
   );

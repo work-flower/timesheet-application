@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { useUnsavedChanges } from '../contexts/UnsavedChangesContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -100,6 +101,7 @@ const navItems = [
 export default function AppLayout() {
   const styles = useStyles();
   const location = useLocation();
+  const { guardedNavigate } = useUnsavedChanges();
 
   function isActive(item) {
     if (item.exact) return location.pathname === item.to;
@@ -110,11 +112,9 @@ export default function AppLayout() {
     <div className={styles.root}>
       <div className={styles.topBar}>
         <Text className={styles.topBarTitle}>Timesheet Manager</Text>
-        <NavLink to="/settings" style={{ textDecoration: 'none' }}>
-          <Button appearance="subtle" icon={<SettingsRegular />}>
-            Settings
-          </Button>
-        </NavLink>
+        <Button appearance="subtle" icon={<SettingsRegular />} onClick={() => guardedNavigate('/settings')}>
+          Settings
+        </Button>
       </div>
       <div className={styles.body}>
         <nav className={styles.sidebar}>
@@ -123,6 +123,7 @@ export default function AppLayout() {
               key={item.to}
               to={item.to}
               className={isActive(item) ? styles.navItemActive : styles.navItem}
+              onClick={(e) => { e.preventDefault(); guardedNavigate(item.to); }}
             >
               {item.icon}
               <span>{item.label}</span>

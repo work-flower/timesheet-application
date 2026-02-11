@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   makeStyles,
   tokens,
@@ -12,12 +12,13 @@ import {
   MessageBarBody,
   Breadcrumb,
   BreadcrumbItem,
-  BreadcrumbDivider,
   BreadcrumbButton,
 } from '@fluentui/react-components';
 import { SaveRegular } from '@fluentui/react-icons';
 import { settingsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { useFormTracker } from '../../hooks/useFormTracker.js';
+import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -45,7 +46,8 @@ const useStyles = makeStyles({
 
 export default function Settings() {
   const styles = useStyles();
-  const [form, setForm] = useState({
+  const { registerGuard } = useUnsavedChanges();
+  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', email: '', phone: '', address: '',
     businessName: '', utrNumber: '', vatNumber: '', companyRegistration: '',
   });
@@ -57,7 +59,7 @@ export default function Settings() {
   useEffect(() => {
     settingsApi.get().then((data) => {
       if (data) {
-        setForm({
+        setBase({
           name: data.name || '',
           email: data.email || '',
           phone: data.phone || '',
@@ -70,26 +72,39 @@ export default function Settings() {
       }
     }).catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [setBase]);
 
   const handleChange = (field) => (e, data) => {
     setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
   };
 
-  const handleSave = async () => {
+  const saveForm = useCallback(async () => {
     setSaving(true);
     setError(null);
     setSuccess(false);
     try {
       await settingsApi.update(form);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      setBase({ ...form });
+      return true;
     } catch (err) {
       setError(err.message);
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [form, setBase]);
+
+  const handleSave = async () => {
+    const ok = await saveForm();
+    if (ok) {
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    }
   };
+
+  useEffect(() => {
+    return registerGuard({ isDirty, onSave: saveForm });
+  }, [isDirty, saveForm, registerGuard]);
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
@@ -106,31 +121,31 @@ export default function Settings() {
       {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Settings saved successfully.</MessageBarBody></MessageBar>}
 
       <FormSection title="Personal Details">
-        <FormField>
+        <FormField changed={changedFields.has('name')}>
           <Field label="Full Name"><Input value={form.name} onChange={handleChange('name')} /></Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('email')}>
           <Field label="Email"><Input type="email" value={form.email} onChange={handleChange('email')} /></Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('phone')}>
           <Field label="Phone"><Input value={form.phone} onChange={handleChange('phone')} /></Field>
         </FormField>
-        <FormField fullWidth>
+        <FormField fullWidth changed={changedFields.has('address')}>
           <Field label="Address"><Textarea value={form.address} onChange={handleChange('address')} resize="vertical" /></Field>
         </FormField>
       </FormSection>
 
       <FormSection title="Business Details">
-        <FormField>
+        <FormField changed={changedFields.has('businessName')}>
           <Field label="Business Name"><Input value={form.businessName} onChange={handleChange('businessName')} /></Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('utrNumber')}>
           <Field label="UTR Number"><Input value={form.utrNumber} onChange={handleChange('utrNumber')} /></Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('vatNumber')}>
           <Field label="VAT Number"><Input value={form.vatNumber} onChange={handleChange('vatNumber')} /></Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('companyRegistration')}>
           <Field label="Company Registration"><Input value={form.companyRegistration} onChange={handleChange('companyRegistration')} /></Field>
         </FormField>
       </FormSection>

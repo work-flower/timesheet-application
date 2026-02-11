@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   makeStyles,
@@ -21,6 +21,8 @@ import { SaveRegular, ArrowLeftRegular } from '@fluentui/react-icons';
 import { timesheetsApi, projectsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
+import { useFormTracker } from '../../hooks/useFormTracker.js';
+import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -48,22 +50,26 @@ const useStyles = makeStyles({
   },
 });
 
+const EXCLUDE_FIELDS = ['days', 'amount'];
+
 export default function TimesheetForm() {
   const styles = useStyles();
   const { id } = useParams();
   const navigate = useNavigate();
   const isNew = !id;
+  const { registerGuard, guardedNavigate } = useUnsavedChanges();
 
   const today = new Date().toISOString().split('T')[0];
 
-  const [form, setForm] = useState({
+  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     projectId: '',
     date: today,
     hours: 8,
     days: null,
     amount: null,
     notes: '',
-  });
+  }, { excludeFields: EXCLUDE_FIELDS });
+
   const [allProjects, setAllProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -90,7 +96,7 @@ export default function TimesheetForm() {
 
         if (!isNew) {
           const data = await timesheetsApi.getById(id);
-          setForm({
+          setBase({
             projectId: data.projectId || '',
             date: data.date || today,
             hours: data.hours || 8,
@@ -99,7 +105,14 @@ export default function TimesheetForm() {
             notes: data.notes || '',
           });
         } else if (active.length > 0) {
-          setForm((prev) => ({ ...prev, projectId: active[0]._id }));
+          setBase({
+            projectId: active[0]._id,
+            date: today,
+            hours: 8,
+            days: null,
+            amount: null,
+            notes: '',
+          });
         }
       } catch (err) {
         setError(err.message);
@@ -108,7 +121,7 @@ export default function TimesheetForm() {
       }
     };
     init();
-  }, [id, isNew]);
+  }, [id, isNew, setBase, today]);
 
   const selectedProject = useMemo(
     () => allProjects.find((p) => p._id === form.projectId),
@@ -138,7 +151,7 @@ export default function TimesheetForm() {
     });
   };
 
-  const handleSave = async () => {
+  const saveForm = useCallback(async () => {
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -147,17 +160,39 @@ export default function TimesheetForm() {
       if (isNew) {
         await timesheetsApi.create(payload);
         navigate('/timesheets', { replace: true });
+        return true;
       } else {
         await timesheetsApi.update(id, payload);
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
+        const data = await timesheetsApi.getById(id);
+        setBase({
+          projectId: data.projectId || '',
+          date: data.date || today,
+          hours: data.hours || 8,
+          days: data.days ?? null,
+          amount: data.amount ?? null,
+          notes: data.notes || '',
+        });
+        return true;
       }
     } catch (err) {
       setError(err.message);
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [form, isNew, id, navigate, setBase, today]);
+
+  const handleSave = async () => {
+    const ok = await saveForm();
+    if (ok && !isNew) {
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    }
   };
+
+  useEffect(() => {
+    return registerGuard({ isDirty, onSave: saveForm });
+  }, [isDirty, saveForm, registerGuard]);
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
@@ -166,7 +201,7 @@ export default function TimesheetForm() {
       <div className={styles.header}>
         <Breadcrumb>
           <BreadcrumbItem>
-            <BreadcrumbButton onClick={() => navigate('/timesheets')}>Timesheets</BreadcrumbButton>
+            <BreadcrumbButton onClick={() => guardedNavigate('/timesheets')}>Timesheets</BreadcrumbButton>
           </BreadcrumbItem>
           <BreadcrumbDivider />
           <BreadcrumbItem>
@@ -180,12 +215,12 @@ export default function TimesheetForm() {
       {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Timesheet entry saved successfully.</MessageBarBody></MessageBar>}
 
       <FormSection title="Entry Details">
-        <FormField>
+        <FormField changed={changedFields.has('date')}>
           <Field label="Date" required>
             <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
           </Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('projectId')}>
           <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
             <Select value={form.projectId} onChange={handleChange('projectId')}>
               <option value="">Select project...</option>
@@ -201,7 +236,7 @@ export default function TimesheetForm() {
             </Select>
           </Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('hours')}>
           <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
             <SpinButton
               defaultValue={form.hours}
@@ -241,18 +276,20 @@ export default function TimesheetForm() {
         </FormField>
       </FormSection>
 
-      <div className={styles.notes}>
-        <MarkdownEditor
-          label="Notes"
-          value={form.notes}
-          onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
-          placeholder="What did you work on today?"
-          height={200}
-        />
-      </div>
+      <FormField fullWidth changed={changedFields.has('notes')}>
+        <div className={styles.notes}>
+          <MarkdownEditor
+            label="Notes"
+            value={form.notes}
+            onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+            placeholder="What did you work on today?"
+            height={200}
+          />
+        </div>
+      </FormField>
 
       <div className={styles.actions}>
-        <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => navigate('/timesheets')}>Back</Button>
+        <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => guardedNavigate('/timesheets')}>Back</Button>
         <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving || !form.projectId || !form.date}>
           {saving ? 'Saving...' : 'Save'}
         </Button>

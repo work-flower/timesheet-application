@@ -1,4 +1,4 @@
-import { makeStyles, tokens, Text } from '@fluentui/react-components';
+import { makeStyles, mergeClasses, tokens, Text } from '@fluentui/react-components';
 
 const useStyles = makeStyles({
   section: {
@@ -23,6 +23,12 @@ const useStyles = makeStyles({
       gridColumn: 'span 1',
     },
   },
+  changed: {
+    borderLeft: `3px solid ${tokens.colorBrandStroke1}`,
+    paddingLeft: '8px',
+    backgroundColor: tokens.colorBrandBackground2,
+    borderRadius: tokens.borderRadiusSmall,
+  },
 });
 
 export function FormSection({ title, children }) {
@@ -35,7 +41,11 @@ export function FormSection({ title, children }) {
   );
 }
 
-export function FormField({ fullWidth, children }) {
+export function FormField({ fullWidth, changed, children }) {
   const styles = useStyles();
-  return <div className={fullWidth ? styles.fullWidth : undefined}>{children}</div>;
+  const className = mergeClasses(
+    fullWidth ? styles.fullWidth : undefined,
+    changed ? styles.changed : undefined,
+  );
+  return <div className={className}>{children}</div>;
 }

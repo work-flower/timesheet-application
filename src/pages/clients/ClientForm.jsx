@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   makeStyles,
@@ -24,6 +24,8 @@ import { clientsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import EntityGrid from '../../components/EntityGrid.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
+import { useFormTracker } from '../../hooks/useFormTracker.js';
+import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -74,8 +76,9 @@ export default function ClientForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const isNew = !id;
+  const { registerGuard, guardedNavigate } = useUnsavedChanges();
 
-  const [form, setForm] = useState({
+  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     companyName: '', primaryContactName: '', primaryContactEmail: '',
     primaryContactPhone: '', defaultRate: 0, currency: 'GBP', workingHoursPerDay: 8,
     notes: '', ir35Status: 'OUTSIDE_IR35',
@@ -92,7 +95,7 @@ export default function ClientForm() {
       clientsApi.getById(id)
         .then((data) => {
           setClientData(data);
-          setForm({
+          setBase({
             companyName: data.companyName || '',
             primaryContactName: data.primaryContactName || '',
             primaryContactEmail: data.primaryContactEmail || '',
@@ -107,13 +110,13 @@ export default function ClientForm() {
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
     }
-  }, [id, isNew]);
+  }, [id, isNew, setBase]);
 
   const handleChange = (field) => (e, data) => {
     setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
   };
 
-  const handleSave = async () => {
+  const saveForm = useCallback(async () => {
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -121,21 +124,44 @@ export default function ClientForm() {
       if (isNew) {
         const created = await clientsApi.create(form);
         navigate(`/clients/${created._id}`, { replace: true });
+        return true;
       } else {
         const { ir35Status, ...updatePayload } = form;
         await clientsApi.update(id, updatePayload);
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
-        // Reload data
         const data = await clientsApi.getById(id);
         setClientData(data);
+        setBase({
+          companyName: data.companyName || '',
+          primaryContactName: data.primaryContactName || '',
+          primaryContactEmail: data.primaryContactEmail || '',
+          primaryContactPhone: data.primaryContactPhone || '',
+          defaultRate: data.defaultRate || 0,
+          currency: data.currency || 'GBP',
+          workingHoursPerDay: data.workingHoursPerDay ?? 8,
+          notes: data.notes || '',
+          ir35Status: 'OUTSIDE_IR35',
+        });
+        return true;
       }
     } catch (err) {
       setError(err.message);
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [form, isNew, id, navigate, setBase]);
+
+  const handleSave = async () => {
+    const ok = await saveForm();
+    if (ok && !isNew) {
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    }
   };
+
+  useEffect(() => {
+    return registerGuard({ isDirty, onSave: saveForm });
+  }, [isDirty, saveForm, registerGuard]);
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
@@ -144,7 +170,7 @@ export default function ClientForm() {
       <div className={styles.header}>
         <Breadcrumb>
           <BreadcrumbItem>
-            <BreadcrumbButton onClick={() => navigate('/clients')}>Clients</BreadcrumbButton>
+            <BreadcrumbButton onClick={() => guardedNavigate('/clients')}>Clients</BreadcrumbButton>
           </BreadcrumbItem>
           <BreadcrumbDivider />
           <BreadcrumbItem>
@@ -169,12 +195,12 @@ export default function ClientForm() {
         {(isNew || tab === 'general') && (
           <>
             <FormSection title="Company Information">
-              <FormField>
+              <FormField changed={changedFields.has('companyName')}>
                 <Field label="Company Name" required>
                   <Input value={form.companyName} onChange={handleChange('companyName')} />
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('currency')}>
                 <Field label="Currency">
                   <Select value={form.currency} onChange={handleChange('currency')}>
                     <option value="GBP">GBP</option>
@@ -183,7 +209,7 @@ export default function ClientForm() {
                   </Select>
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('defaultRate')}>
                 <Field label="Default Rate (per day)">
                   <SpinButton
                     defaultValue={form.defaultRate}
@@ -196,7 +222,7 @@ export default function ClientForm() {
                   />
                 </Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('workingHoursPerDay')}>
                 <Field label="Working Hours Per Day">
                   <SpinButton
                     defaultValue={form.workingHoursPerDay}
@@ -211,7 +237,7 @@ export default function ClientForm() {
                 </Field>
               </FormField>
               {isNew && (
-                <FormField>
+                <FormField changed={changedFields.has('ir35Status')}>
                   <Field label="IR35 Status (for default project)" required>
                     <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
                       <option value="OUTSIDE_IR35">Outside IR35</option>
@@ -224,29 +250,31 @@ export default function ClientForm() {
             </FormSection>
 
             <FormSection title="Primary Contact">
-              <FormField>
+              <FormField changed={changedFields.has('primaryContactName')}>
                 <Field label="Contact Name"><Input value={form.primaryContactName} onChange={handleChange('primaryContactName')} /></Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('primaryContactEmail')}>
                 <Field label="Contact Email"><Input type="email" value={form.primaryContactEmail} onChange={handleChange('primaryContactEmail')} /></Field>
               </FormField>
-              <FormField>
+              <FormField changed={changedFields.has('primaryContactPhone')}>
                 <Field label="Contact Phone"><Input value={form.primaryContactPhone} onChange={handleChange('primaryContactPhone')} /></Field>
               </FormField>
             </FormSection>
 
-            <div style={{ marginTop: '16px' }}>
-              <MarkdownEditor
-                label="Notes"
-                value={form.notes}
-                onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
-                placeholder="Additional notes..."
-                height={180}
-              />
-            </div>
+            <FormField fullWidth changed={changedFields.has('notes')}>
+              <div style={{ marginTop: '16px' }}>
+                <MarkdownEditor
+                  label="Notes"
+                  value={form.notes}
+                  onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+                  placeholder="Additional notes..."
+                  height={180}
+                />
+              </div>
+            </FormField>
 
             <div className={styles.actions}>
-              <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => navigate('/clients')}>Back</Button>
+              <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => guardedNavigate('/clients')}>Back</Button>
               <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving || !form.companyName}>
                 {saving ? 'Saving...' : 'Save'}
               </Button>
@@ -259,7 +287,7 @@ export default function ClientForm() {
             columns={projectColumns}
             items={clientData.projects || []}
             emptyMessage="No projects for this client."
-            onRowClick={(item) => navigate(`/projects/${item._id}`)}
+            onRowClick={(item) => guardedNavigate(`/projects/${item._id}`)}
           />
         )}
 
@@ -268,7 +296,7 @@ export default function ClientForm() {
             columns={timesheetColumns}
             items={clientData.timesheets || []}
             emptyMessage="No timesheet entries for this client."
-            onRowClick={(item) => navigate(`/timesheets/${item._id}`)}
+            onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
           />
         )}
       </div>

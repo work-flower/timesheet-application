@@ -50,14 +50,19 @@ timesheet-app/
 │   ├── main.jsx              # React entry point
 │   ├── App.jsx               # Root component with FluentProvider and Router
 │   ├── theme.js              # Fluent UI theme config (default theme, Power Platform look)
+│   ├── hooks/
+│   │   └── useFormTracker.js # Form dirty tracking hook (base vs current state, changedFields)
+│   ├── contexts/
+│   │   └── UnsavedChangesContext.jsx # Navigation guard context + provider (beforeunload, popstate, dialog)
 │   ├── layouts/
 │   │   └── AppLayout.jsx     # Main layout: top bar + left nav sidebar + main content area
 │   ├── components/
 │   │   ├── CommandBar.jsx    # Reusable top command bar (New, Delete, Search)
 │   │   ├── ConfirmDialog.jsx # Reusable delete confirmation dialog
 │   │   ├── EntityGrid.jsx    # Reusable data grid for list views (uses createTableColumn)
-│   │   ├── FormSection.jsx   # Reusable form section wrapper (2-column grid)
-│   │   └── MarkdownEditor.jsx # Markdown editor wrapper (@uiw/react-md-editor with Fluent UI styling)
+│   │   ├── FormSection.jsx   # Reusable form section wrapper (2-column grid, changed field indicator)
+│   │   ├── MarkdownEditor.jsx # Markdown editor wrapper (@uiw/react-md-editor with Fluent UI styling)
+│   │   └── UnsavedChangesDialog.jsx # Save/Discard/Cancel dialog for unsaved changes
 │   ├── pages/
 │   │   ├── Dashboard.jsx     # Summary cards: hours this week/month, active projects, recent entries
 │   │   ├── clients/
@@ -254,6 +259,7 @@ All endpoints are prefixed with `/api`.
 - **Project form:** Rate and Working Hours Per Day fields show placeholder text "Inherited from client: £X/day" / "Inherited from client: Xh/day" when null. User can override by entering a value. Creating a new project auto-fills rate and working hours from the selected client.
 - **Timesheet list:** Default view shows current week. User can switch to month or all time. Shows Days, Amount, and total summary row. Values are persisted — no on-the-fly recomputation.
 - **Timesheet entry:** Date input (no future dates) + Project dropdown (grouped by client, with client name hint) + Hours (SpinButton 0.25–24, step 0.25, with project daily hours hint) + read-only Days and Amount fields + Markdown notes editor. Days and Amount are only computed when the user explicitly changes Hours or Project — not on form load. On edit, persisted values are shown as-is.
+- **Unsaved changes guard:** All forms (Settings, ClientForm, ProjectForm, TimesheetForm) use `useFormTracker` for dirty tracking and register a navigation guard via `UnsavedChangesContext`. Changed fields show a blue left-border indicator (Power Platform style). Navigating away from a dirty form (sidebar, breadcrumb, back button, browser back/refresh) triggers a Save/Discard/Cancel dialog. The `beforeunload` event shows the browser's native "Leave page?" dialog on refresh/close.
 - **Delete confirmations:** Always show a confirmation dialog before deleting
 - **Reports page:** Two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods are computed from actual timesheet dates (monthly or weekly). Generate button produces a PDF previewed via `<object>`. Download saves to disk via browser download. Save Document persists the PDF server-side, viewable from the project's Documents tab.
 - **Project Documents tab:** Shows saved documents for the project. Clicking a row opens the PDF in a new browser tab.
@@ -287,6 +293,8 @@ All endpoints are prefixed with `/api`.
 - DataGrid columns must use `createTableColumn()` from Fluent UI to avoid sort crashes — columns with a `compare` function are sortable, others are not.
 - All notes fields (clients, projects, timesheets) use `@uiw/react-md-editor` with Fluent UI token overrides for consistent styling.
 - Fluent UI v9 SpinButton must use uncontrolled mode (`defaultValue`, not `value`) — controlled mode breaks typing. In `onChange`, `data.value` is `null` during typing; always parse `data.displayValue` as fallback: `const val = data.value ?? parseFloat(data.displayValue); if (val != null && !isNaN(val)) ...`
+- **Form dirty tracking pattern:** All forms use `useFormTracker(initialState, { excludeFields })` instead of raw `useState`. Call `setBase(...)` after API load and after successful save to reset the baseline. Provide a `saveForm` callback (returns boolean, no navigation) and register with `useEffect(() => registerGuard({ isDirty, onSave: saveForm }), [isDirty, saveForm, registerGuard])`. The normal Save button calls `handleSave` which wraps `saveForm` + navigates on create. Use `guardedNavigate(to)` from `useUnsavedChanges()` for breadcrumbs, back buttons, and tab row clicks. The `excludeFields` option is only needed for TimesheetForm (`['days', 'amount']` — computed fields).
+- **Navigation guard architecture:** Uses a context-based approach (`UnsavedChangesContext`) instead of React Router's `useBlocker` (which requires `createBrowserRouter`, not `BrowserRouter`). The provider wraps routes inside `BrowserRouter` in `App.jsx`. `AppLayout` intercepts sidebar NavLink clicks and the Settings button via `guardedNavigate`. Browser back/forward is handled via a popstate sentinel entry.
 - `npm run dev` does NOT auto-restart the backend server — restart manually after server-side file changes.
 
 ## Future Considerations (Out of Scope Now, But Keep in Mind)
