@@ -12,8 +12,25 @@ A single-user desktop timesheet application for UK technology contractors. The a
 - **Markdown Editor:** `@uiw/react-md-editor` — used for all notes fields (clients, projects, timesheets)
 - **Backend:** Express.js (local server)
 - **Database:** NeDB (`nedb-promises` package) — embedded file-based database, MongoDB-like API, zero setup
+- **PDF Generation:** pdfmake (`pdfmake` package) — server-side PDF creation
 - **Build Tool:** Vite
 - **Environment:** `dotenv` — loads `.env` file for configuration (e.g. `DATA_DIR`)
+
+## Configuration
+
+### Environment Variables (`.env`)
+- `DATA_DIR` — path to the database/documents directory (default: `./data`)
+- `PORT` — Express server port (default: `3001`)
+
+### npm Scripts
+- `npm run dev` — runs Express (port 3001) + Vite dev server (port 5173) via `concurrently`
+- `npm run build` — Vite production build to `dist/`
+- `npm start` — runs Express only (serves API + built frontend from `dist/`)
+- `npm run seed` — clears all data and populates sample records
+
+### Vite Config
+- Proxy: `/api` requests forwarded to `http://localhost:3001`
+- Dev server port: `5173`
 
 ## Project Structure
 
@@ -67,7 +84,7 @@ timesheet-app/
 │   │   ├── MarkdownEditor.jsx # Markdown editor wrapper (@uiw/react-md-editor with Fluent UI styling)
 │   │   └── UnsavedChangesDialog.jsx # Save/Discard/Cancel dialog for unsaved changes
 │   ├── pages/
-│   │   ├── Dashboard.jsx     # Summary cards: hours this week/month, active projects, recent entries
+│   │   ├── Dashboard.jsx     # Four summary cards (week/month hours, active projects, month earnings) + recent entries grid
 │   │   ├── clients/
 │   │   │   ├── ClientList.jsx    # DataGrid list of all clients
 │   │   │   └── ClientForm.jsx    # Client record form with tabs (General, Projects, Timesheets)
@@ -228,6 +245,25 @@ All endpoints are prefixed with `/api`.
 - `POST /api/documents` — generate PDF server-side, save file + record (body: `clientId`, `projectId`, `startDate`, `endDate`, `granularity`)
 - `DELETE /api/documents/:id` — delete file from disk + remove record
 
+## API Response Enrichment
+
+Services manually join related data (NeDB has no populate). Key enriched fields:
+
+### `GET /api/projects` (list)
+Each project includes: `clientName`, `effectiveRate`, `effectiveWorkingHours` — computed from the project's client.
+
+### `GET /api/projects/:id` (detail)
+Same enriched fields as list, plus: `timesheets[]` — all timesheet entries for this project.
+
+### `GET /api/timesheets` (list)
+Each entry includes: `projectName`, `clientName`, `clientId` — joined from the project and its client. Supports `groupBy` which returns `{ period, totalHours, totalDays, totalAmount, entries[] }[]`.
+
+### `GET /api/timesheets/:id` (detail)
+Same enriched fields as list, plus: `effectiveRate`, `effectiveWorkingHours` — for client-side display.
+
+### `GET /api/clients/:id` (detail)
+Includes: `projects[]` — all projects for this client, `timesheets[]` — all timesheets across all client projects (enriched with `projectName`).
+
 ## UI Layout — Power Platform Model-Driven App Style
 
 ### General Appearance
@@ -241,7 +277,7 @@ All endpoints are prefixed with `/api`.
 3. **Main Content Area** (remaining space, scrollable):
    - **List Views:** Command bar on top (New button, search, filters) → DataGrid below with sortable columns, row click to open record
    - **Form Views:** Sticky FormCommandBar at top (Back, Save, Save & Close) → Breadcrumb → Form title → Tabbed sections (General, Related Records) → Form fields in 2-column layout where appropriate
-   - **Dashboard:** Summary cards row at top → Recent timesheets table below
+   - **Dashboard:** Four summary cards (Hours This Week, Hours This Month, Active Projects, Earnings This Month) in a responsive grid → "Recent Timesheet Entries" section with an EntityGrid showing the last 10 entries (Date, Client, Project, Hours, Amount columns)
 
 ### Navigation (React Router)
 - `/` → Dashboard
@@ -287,7 +323,8 @@ All endpoints are prefixed with `/api`.
 ## Development Notes
 
 - Use `nedb-promises` (not raw `nedb`) for async/await support.
-- The Express server should serve both the API and the built React frontend (Vite build output).
+- The Express server should serve both the API and the built React frontend (Vite build output from `dist/`). In production, a catch-all `app.get('*')` serves `index.html` for client-side routing. A health check is available at `GET /api/health`.
+- The server entry point (`server/index.js`) imports `dotenv/config` as its first import to load `.env` before any other module initialises.
 - For development, `npm run dev` uses `concurrently` to run Vite dev server + Express API in parallel. Vite proxies `/api` to `localhost:3001`.
 - Database files are stored in the directory specified by the `DATA_DIR` environment variable (defaults to `./data/`), auto-created on first run. `npm run seed` populates sample data. The `.env` file is loaded via `dotenv` at server startup.
 - No authentication needed — single user, local app.
@@ -300,6 +337,26 @@ All endpoints are prefixed with `/api`.
 - **Form page layout pattern:** Form pages use a two-layer structure: outer `page` div (no padding, so FormCommandBar spans full width) → `FormCommandBar` (sticky, `position: sticky; top: 0; z-index: 10`) → inner `pageBody` div (`padding: 16px 24px`) containing breadcrumb, title, and form content.
 - **Navigation guard architecture:** Uses a context-based approach (`UnsavedChangesContext`) instead of React Router's `useBlocker` (which requires `createBrowserRouter`, not `BrowserRouter`). The provider wraps routes inside `BrowserRouter` in `App.jsx`. `AppLayout` intercepts sidebar NavLink clicks and the Settings button via `guardedNavigate`. Browser back/forward is handled via a popstate sentinel entry.
 - `npm run dev` does NOT auto-restart the backend server — restart manually after server-side file changes.
+
+## PDF Report Layout (pdfmake)
+
+Generated via `reportService.js`. One page per project with entries in the period.
+
+**Structure per page:**
+1. **Contractor header:** Business name (or personal name) + contact details (address | email | phone)
+2. **Info table** (no borders): Client, Project, Period, IR35 Status, Rate
+3. **Timesheet table:** Columns — Date, Hours, Days, Notes, Rate, Amount. Blue header row (`#0078D4`), light grey totals row. Horizontal lines only (no vertical).
+4. **Footer:** "Page X of Y" centred
+
+**Styles:** A4, 40px margins, Roboto font, 9pt table cells, 14pt contractor name. Period labels auto-detect full months (e.g. "January 2025") vs arbitrary ranges ("1 Jan 2025 – 15 Jan 2025").
+
+## Seed Data (`npm run seed`)
+
+Clears all data and creates:
+- **Settings:** John Smith, Smith Consulting Ltd, London address, UTR/VAT/company reg
+- **Clients:** Barclays Bank (£650/day, 8h) + HMRC Digital (£600/day, 7.5h)
+- **Projects:** 3 total — Barclays Default Project (Outside IR35, inherits rate), Payment Platform Migration (Outside IR35, £700/day override), HMRC Default Project (Inside IR35, inherits rate)
+- **Timesheets:** Up to 5 entries for current week on Payment Platform Migration (8h/day, £700) + 3 entries for last week on HMRC (7.5h/day, £600). Only creates entries for dates that are not in the future.
 
 ## Future Considerations (Out of Scope Now, But Keep in Mind)
 
