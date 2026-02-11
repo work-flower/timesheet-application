@@ -5,7 +5,6 @@ import {
   tokens,
   Text,
   Input,
-  Button,
   Field,
   Spinner,
   Select,
@@ -18,9 +17,9 @@ import {
   BreadcrumbDivider,
   BreadcrumbButton,
 } from '@fluentui/react-components';
-import { SaveRegular, ArrowLeftRegular } from '@fluentui/react-icons';
 import { projectsApi, clientsApi, documentsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
+import FormCommandBar from '../../components/FormCommandBar.jsx';
 import EntityGrid from '../../components/EntityGrid.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
@@ -28,8 +27,10 @@ import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {
-    padding: '16px 24px',
     maxWidth: '1000px',
+  },
+  pageBody: {
+    padding: '16px 24px',
   },
   header: {
     marginBottom: '16px',
@@ -39,11 +40,6 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase500,
     display: 'block',
     marginBottom: '4px',
-  },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '24px',
   },
   tabs: {
     marginTop: '16px',
@@ -157,8 +153,7 @@ export default function ProjectForm() {
       };
       if (isNew) {
         const created = await projectsApi.create(payload);
-        navigate(`/projects/${created._id}`, { replace: true });
-        return true;
+        return { ok: true, id: created._id };
       } else {
         const updated = await projectsApi.update(id, payload);
         setProjectData(updated);
@@ -172,22 +167,31 @@ export default function ProjectForm() {
           status: updated.status || 'active',
           notes: updated.notes || '',
         });
-        return true;
+        return { ok: true };
       }
     } catch (err) {
       setError(err.message);
-      return false;
+      return { ok: false };
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, navigate, setBase]);
+  }, [form, isNew, id, setBase]);
 
   const handleSave = async () => {
-    const ok = await saveForm();
-    if (ok && !isNew) {
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+    const result = await saveForm();
+    if (result.ok) {
+      if (isNew) {
+        navigate(`/projects/${result.id}`, { replace: true });
+      } else {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      }
     }
+  };
+
+  const handleSaveAndClose = async () => {
+    const result = await saveForm();
+    if (result.ok) navigate('/projects');
   };
 
   useEffect(() => {
@@ -203,136 +207,138 @@ export default function ProjectForm() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.header}>
-        <Breadcrumb>
-          <BreadcrumbItem>
-            <BreadcrumbButton onClick={() => guardedNavigate('/projects')}>Projects</BreadcrumbButton>
-          </BreadcrumbItem>
-          <BreadcrumbDivider />
-          <BreadcrumbItem>
-            <BreadcrumbButton current>{isNew ? 'New Project' : form.name}</BreadcrumbButton>
-          </BreadcrumbItem>
-        </Breadcrumb>
-        <Text className={styles.title}>{isNew ? 'New Project' : form.name}</Text>
-      </div>
+      <FormCommandBar
+        onBack={() => guardedNavigate('/projects')}
+        onSave={handleSave}
+        onSaveAndClose={handleSaveAndClose}
+        saveDisabled={!form.name || !form.clientId}
+        saving={saving}
+      />
+      <div className={styles.pageBody}>
+        <div className={styles.header}>
+          <Breadcrumb>
+            <BreadcrumbItem>
+              <BreadcrumbButton onClick={() => guardedNavigate('/projects')}>Projects</BreadcrumbButton>
+            </BreadcrumbItem>
+            <BreadcrumbDivider />
+            <BreadcrumbItem>
+              <BreadcrumbButton current>{isNew ? 'New Project' : form.name}</BreadcrumbButton>
+            </BreadcrumbItem>
+          </Breadcrumb>
+          <Text className={styles.title}>{isNew ? 'New Project' : form.name}</Text>
+        </div>
 
-      {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-      {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Project saved successfully.</MessageBarBody></MessageBar>}
+        {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+        {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Project saved successfully.</MessageBarBody></MessageBar>}
 
-      {!isNew && (
-        <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
-          <Tab value="general">General</Tab>
-          <Tab value="timesheets">Timesheets ({projectData?.timesheets?.length || 0})</Tab>
-          <Tab value="documents">Documents ({documents.length})</Tab>
-        </TabList>
-      )}
+        {!isNew && (
+          <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
+            <Tab value="general">General</Tab>
+            <Tab value="timesheets">Timesheets ({projectData?.timesheets?.length || 0})</Tab>
+            <Tab value="documents">Documents ({documents.length})</Tab>
+          </TabList>
+        )}
 
-      <div className={styles.tabContent}>
-        {(isNew || tab === 'general') && (
-          <>
-            <FormSection title="Project Details">
-              <FormField changed={changedFields.has('name')}>
-                <Field label="Project Name" required>
-                  <Input value={form.name} onChange={handleChange('name')} />
-                </Field>
-              </FormField>
-              <FormField changed={changedFields.has('clientId')}>
-                <Field label="Client" required hint={!isNew && projectData?.isDefault ? 'Client cannot be changed for default projects' : undefined}>
-                  <Select value={form.clientId} onChange={handleChange('clientId')} disabled={!isNew && projectData?.isDefault}>
-                    <option value="">Select client...</option>
-                    {allClients.map((c) => (
-                      <option key={c._id} value={c._id}>{c.companyName}</option>
-                    ))}
-                  </Select>
-                </Field>
-              </FormField>
-              <FormField changed={changedFields.has('endClientId')}>
-                <Field label="End Client">
-                  <Select value={form.endClientId} onChange={handleChange('endClientId')}>
-                    <option value="">None</option>
-                    {allClients.map((c) => (
-                      <option key={c._id} value={c._id}>{c.companyName}</option>
-                    ))}
-                  </Select>
-                </Field>
-              </FormField>
-              <FormField changed={changedFields.has('ir35Status')}>
-                <Field label="IR35 Status" required>
-                  <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
-                    <option value="OUTSIDE_IR35">Outside IR35</option>
-                    <option value="INSIDE_IR35">Inside IR35</option>
-                    <option value="FIXED_TERM">Fixed Term</option>
-                  </Select>
-                </Field>
-              </FormField>
-              <FormField changed={changedFields.has('rate')}>
-                <Field label="Rate (per day)" hint={form.rate === '' ? ratePlaceholder : undefined}>
-                  <Input
-                    type="number"
-                    value={form.rate}
-                    onChange={handleChange('rate')}
-                    placeholder={ratePlaceholder}
+        <div className={styles.tabContent}>
+          {(isNew || tab === 'general') && (
+            <>
+              <FormSection title="Project Details">
+                <FormField changed={changedFields.has('name')}>
+                  <Field label="Project Name" required>
+                    <Input value={form.name} onChange={handleChange('name')} />
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('clientId')}>
+                  <Field label="Client" required hint={!isNew && projectData?.isDefault ? 'Client cannot be changed for default projects' : undefined}>
+                    <Select value={form.clientId} onChange={handleChange('clientId')} disabled={!isNew && projectData?.isDefault}>
+                      <option value="">Select client...</option>
+                      {allClients.map((c) => (
+                        <option key={c._id} value={c._id}>{c.companyName}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('endClientId')}>
+                  <Field label="End Client">
+                    <Select value={form.endClientId} onChange={handleChange('endClientId')}>
+                      <option value="">None</option>
+                      {allClients.map((c) => (
+                        <option key={c._id} value={c._id}>{c.companyName}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('ir35Status')}>
+                  <Field label="IR35 Status" required>
+                    <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
+                      <option value="OUTSIDE_IR35">Outside IR35</option>
+                      <option value="INSIDE_IR35">Inside IR35</option>
+                      <option value="FIXED_TERM">Fixed Term</option>
+                    </Select>
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('rate')}>
+                  <Field label="Rate (per day)" hint={form.rate === '' ? ratePlaceholder : undefined}>
+                    <Input
+                      type="number"
+                      value={form.rate}
+                      onChange={handleChange('rate')}
+                      placeholder={ratePlaceholder}
+                    />
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('workingHoursPerDay')}>
+                  <Field label="Working Hours Per Day" hint={form.workingHoursPerDay === '' ? hoursPlaceholder : undefined}>
+                    <Input
+                      type="number"
+                      value={form.workingHoursPerDay}
+                      onChange={handleChange('workingHoursPerDay')}
+                      placeholder={hoursPlaceholder}
+                    />
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('status')}>
+                  <Field label="Status">
+                    <Select value={form.status} onChange={handleChange('status')}>
+                      <option value="active">Active</option>
+                      <option value="archived">Archived</option>
+                    </Select>
+                  </Field>
+                </FormField>
+              </FormSection>
+
+              <FormField fullWidth changed={changedFields.has('notes')}>
+                <div style={{ marginTop: '16px' }}>
+                  <MarkdownEditor
+                    label="Notes"
+                    value={form.notes}
+                    onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+                    placeholder="Additional notes..."
+                    height={180}
                   />
-                </Field>
+                </div>
               </FormField>
-              <FormField changed={changedFields.has('workingHoursPerDay')}>
-                <Field label="Working Hours Per Day" hint={form.workingHoursPerDay === '' ? hoursPlaceholder : undefined}>
-                  <Input
-                    type="number"
-                    value={form.workingHoursPerDay}
-                    onChange={handleChange('workingHoursPerDay')}
-                    placeholder={hoursPlaceholder}
-                  />
-                </Field>
-              </FormField>
-              <FormField changed={changedFields.has('status')}>
-                <Field label="Status">
-                  <Select value={form.status} onChange={handleChange('status')}>
-                    <option value="active">Active</option>
-                    <option value="archived">Archived</option>
-                  </Select>
-                </Field>
-              </FormField>
-            </FormSection>
+            </>
+          )}
 
-            <FormField fullWidth changed={changedFields.has('notes')}>
-              <div style={{ marginTop: '16px' }}>
-                <MarkdownEditor
-                  label="Notes"
-                  value={form.notes}
-                  onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
-                  placeholder="Additional notes..."
-                  height={180}
-                />
-              </div>
-            </FormField>
+          {tab === 'timesheets' && projectData && (
+            <EntityGrid
+              columns={timesheetColumns}
+              items={projectData.timesheets || []}
+              emptyMessage="No timesheet entries for this project."
+              onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
+            />
+          )}
 
-            <div className={styles.actions}>
-              <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => guardedNavigate('/projects')}>Back</Button>
-              <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving || !form.name || !form.clientId}>
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </>
-        )}
-
-        {tab === 'timesheets' && projectData && (
-          <EntityGrid
-            columns={timesheetColumns}
-            items={projectData.timesheets || []}
-            emptyMessage="No timesheet entries for this project."
-            onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
-          />
-        )}
-
-        {tab === 'documents' && (
-          <EntityGrid
-            columns={documentColumns}
-            items={documents}
-            emptyMessage="No saved documents for this project."
-            onRowClick={(item) => window.open(documentsApi.getFileUrl(item._id), '_blank')}
-          />
-        )}
+          {tab === 'documents' && (
+            <EntityGrid
+              columns={documentColumns}
+              items={documents}
+              emptyMessage="No saved documents for this project."
+              onRowClick={(item) => window.open(documentsApi.getFileUrl(item._id), '_blank')}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

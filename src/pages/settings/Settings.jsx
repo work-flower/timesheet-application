@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
   Text,
   Input,
   Textarea,
-  Button,
   Field,
   Spinner,
   MessageBar,
@@ -14,16 +14,18 @@ import {
   BreadcrumbItem,
   BreadcrumbButton,
 } from '@fluentui/react-components';
-import { SaveRegular } from '@fluentui/react-icons';
 import { settingsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
+import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {
-    padding: '16px 24px',
     maxWidth: '900px',
+  },
+  pageBody: {
+    padding: '16px 24px',
   },
   header: {
     marginBottom: '16px',
@@ -34,11 +36,6 @@ const useStyles = makeStyles({
     display: 'block',
     marginBottom: '4px',
   },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '24px',
-  },
   message: {
     marginBottom: '16px',
   },
@@ -46,7 +43,8 @@ const useStyles = makeStyles({
 
 export default function Settings() {
   const styles = useStyles();
-  const { registerGuard } = useUnsavedChanges();
+  const navigate = useNavigate();
+  const { registerGuard, guardedNavigate } = useUnsavedChanges();
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', email: '', phone: '', address: '',
     businessName: '', utrNumber: '', vatNumber: '', companyRegistration: '',
@@ -85,21 +83,26 @@ export default function Settings() {
     try {
       await settingsApi.update(form);
       setBase({ ...form });
-      return true;
+      return { ok: true };
     } catch (err) {
       setError(err.message);
-      return false;
+      return { ok: false };
     } finally {
       setSaving(false);
     }
   }, [form, setBase]);
 
   const handleSave = async () => {
-    const ok = await saveForm();
+    const { ok } = await saveForm();
     if (ok) {
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     }
+  };
+
+  const handleSaveAndClose = async () => {
+    const { ok } = await saveForm();
+    if (ok) navigate('/');
   };
 
   useEffect(() => {
@@ -110,50 +113,52 @@ export default function Settings() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.header}>
-        <Breadcrumb>
-          <BreadcrumbItem><BreadcrumbButton>Settings</BreadcrumbButton></BreadcrumbItem>
-        </Breadcrumb>
-        <Text className={styles.title}>Contractor Profile</Text>
-      </div>
+      <FormCommandBar
+        onBack={() => guardedNavigate('/')}
+        onSave={handleSave}
+        onSaveAndClose={handleSaveAndClose}
+        saving={saving}
+      />
+      <div className={styles.pageBody}>
+        <div className={styles.header}>
+          <Breadcrumb>
+            <BreadcrumbItem><BreadcrumbButton>Settings</BreadcrumbButton></BreadcrumbItem>
+          </Breadcrumb>
+          <Text className={styles.title}>Contractor Profile</Text>
+        </div>
 
-      {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-      {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Settings saved successfully.</MessageBarBody></MessageBar>}
+        {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+        {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Settings saved successfully.</MessageBarBody></MessageBar>}
 
-      <FormSection title="Personal Details">
-        <FormField changed={changedFields.has('name')}>
-          <Field label="Full Name"><Input value={form.name} onChange={handleChange('name')} /></Field>
-        </FormField>
-        <FormField changed={changedFields.has('email')}>
-          <Field label="Email"><Input type="email" value={form.email} onChange={handleChange('email')} /></Field>
-        </FormField>
-        <FormField changed={changedFields.has('phone')}>
-          <Field label="Phone"><Input value={form.phone} onChange={handleChange('phone')} /></Field>
-        </FormField>
-        <FormField fullWidth changed={changedFields.has('address')}>
-          <Field label="Address"><Textarea value={form.address} onChange={handleChange('address')} resize="vertical" /></Field>
-        </FormField>
-      </FormSection>
+        <FormSection title="Personal Details">
+          <FormField changed={changedFields.has('name')}>
+            <Field label="Full Name"><Input value={form.name} onChange={handleChange('name')} /></Field>
+          </FormField>
+          <FormField changed={changedFields.has('email')}>
+            <Field label="Email"><Input type="email" value={form.email} onChange={handleChange('email')} /></Field>
+          </FormField>
+          <FormField changed={changedFields.has('phone')}>
+            <Field label="Phone"><Input value={form.phone} onChange={handleChange('phone')} /></Field>
+          </FormField>
+          <FormField fullWidth changed={changedFields.has('address')}>
+            <Field label="Address"><Textarea value={form.address} onChange={handleChange('address')} resize="vertical" /></Field>
+          </FormField>
+        </FormSection>
 
-      <FormSection title="Business Details">
-        <FormField changed={changedFields.has('businessName')}>
-          <Field label="Business Name"><Input value={form.businessName} onChange={handleChange('businessName')} /></Field>
-        </FormField>
-        <FormField changed={changedFields.has('utrNumber')}>
-          <Field label="UTR Number"><Input value={form.utrNumber} onChange={handleChange('utrNumber')} /></Field>
-        </FormField>
-        <FormField changed={changedFields.has('vatNumber')}>
-          <Field label="VAT Number"><Input value={form.vatNumber} onChange={handleChange('vatNumber')} /></Field>
-        </FormField>
-        <FormField changed={changedFields.has('companyRegistration')}>
-          <Field label="Company Registration"><Input value={form.companyRegistration} onChange={handleChange('companyRegistration')} /></Field>
-        </FormField>
-      </FormSection>
-
-      <div className={styles.actions}>
-        <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
+        <FormSection title="Business Details">
+          <FormField changed={changedFields.has('businessName')}>
+            <Field label="Business Name"><Input value={form.businessName} onChange={handleChange('businessName')} /></Field>
+          </FormField>
+          <FormField changed={changedFields.has('utrNumber')}>
+            <Field label="UTR Number"><Input value={form.utrNumber} onChange={handleChange('utrNumber')} /></Field>
+          </FormField>
+          <FormField changed={changedFields.has('vatNumber')}>
+            <Field label="VAT Number"><Input value={form.vatNumber} onChange={handleChange('vatNumber')} /></Field>
+          </FormField>
+          <FormField changed={changedFields.has('companyRegistration')}>
+            <Field label="Company Registration"><Input value={form.companyRegistration} onChange={handleChange('companyRegistration')} /></Field>
+          </FormField>
+        </FormSection>
       </div>
     </div>
   );

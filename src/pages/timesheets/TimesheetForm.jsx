@@ -5,7 +5,6 @@ import {
   tokens,
   Text,
   Input,
-  Button,
   Field,
   Spinner,
   SpinButton,
@@ -17,15 +16,16 @@ import {
   BreadcrumbDivider,
   BreadcrumbButton,
 } from '@fluentui/react-components';
-import { SaveRegular, ArrowLeftRegular } from '@fluentui/react-icons';
 import { timesheetsApi, projectsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
+import FormCommandBar from '../../components/FormCommandBar.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
-  page: {
+  page: {},
+  pageBody: {
     padding: '16px 24px',
   },
   header: {
@@ -36,11 +36,6 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase500,
     display: 'block',
     marginBottom: '4px',
-  },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '24px',
   },
   message: {
     marginBottom: '16px',
@@ -158,9 +153,8 @@ export default function TimesheetForm() {
     try {
       const { days, amount, ...payload } = form;
       if (isNew) {
-        await timesheetsApi.create(payload);
-        navigate('/timesheets', { replace: true });
-        return true;
+        const created = await timesheetsApi.create(payload);
+        return { ok: true, id: created._id };
       } else {
         await timesheetsApi.update(id, payload);
         const data = await timesheetsApi.getById(id);
@@ -172,22 +166,31 @@ export default function TimesheetForm() {
           amount: data.amount ?? null,
           notes: data.notes || '',
         });
-        return true;
+        return { ok: true };
       }
     } catch (err) {
       setError(err.message);
-      return false;
+      return { ok: false };
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, navigate, setBase, today]);
+  }, [form, isNew, id, setBase, today]);
 
   const handleSave = async () => {
-    const ok = await saveForm();
-    if (ok && !isNew) {
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+    const result = await saveForm();
+    if (result.ok) {
+      if (isNew) {
+        navigate(`/timesheets/${result.id}`, { replace: true });
+      } else {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      }
     }
+  };
+
+  const handleSaveAndClose = async () => {
+    const result = await saveForm();
+    if (result.ok) navigate('/timesheets');
   };
 
   useEffect(() => {
@@ -198,101 +201,103 @@ export default function TimesheetForm() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.header}>
-        <Breadcrumb>
-          <BreadcrumbItem>
-            <BreadcrumbButton onClick={() => guardedNavigate('/timesheets')}>Timesheets</BreadcrumbButton>
-          </BreadcrumbItem>
-          <BreadcrumbDivider />
-          <BreadcrumbItem>
-            <BreadcrumbButton current>{isNew ? 'New Entry' : 'Edit Entry'}</BreadcrumbButton>
-          </BreadcrumbItem>
-        </Breadcrumb>
-        <Text className={styles.title}>{isNew ? 'New Timesheet Entry' : 'Edit Timesheet Entry'}</Text>
-      </div>
-
-      {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-      {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Timesheet entry saved successfully.</MessageBarBody></MessageBar>}
-
-      <FormSection title="Entry Details">
-        <FormField changed={changedFields.has('date')}>
-          <Field label="Date" required>
-            <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
-          </Field>
-        </FormField>
-        <FormField changed={changedFields.has('projectId')}>
-          <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
-            <Select value={form.projectId} onChange={handleChange('projectId')}>
-              <option value="">Select project...</option>
-              {Object.entries(projectsByClient).map(([clientName, projs]) => (
-                <optgroup key={clientName} label={clientName}>
-                  {projs.map((p) => (
-                    <option key={p._id} value={p._id}>
-                      {p.name} (£{p.effectiveRate}/day)
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </Select>
-          </Field>
-        </FormField>
-        <FormField changed={changedFields.has('hours')}>
-          <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
-            <SpinButton
-              defaultValue={form.hours}
-              onChange={(e, data) => {
-                const val = data.value ?? parseFloat(data.displayValue);
-                if (val != null && !isNaN(val)) {
-                  setForm((prev) => ({
-                    ...prev,
-                    hours: val,
-                    ...computeDaysAmount(val, prev.projectId, allProjects),
-                  }));
-                }
-              }}
-              min={0.25}
-              max={24}
-              step={0.25}
-            />
-          </Field>
-        </FormField>
-        <FormField>
-          <Field label="Days">
-            <Input
-              readOnly
-              value={form.days != null ? form.days.toFixed(2) : '—'}
-            />
-          </Field>
-        </FormField>
-        <FormField>
-          <Field label="Amount">
-            <Input
-              readOnly
-              value={form.amount != null
-                ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(form.amount)
-                : '—'}
-            />
-          </Field>
-        </FormField>
-      </FormSection>
-
-      <FormField fullWidth changed={changedFields.has('notes')}>
-        <div className={styles.notes}>
-          <MarkdownEditor
-            label="Notes"
-            value={form.notes}
-            onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
-            placeholder="What did you work on today?"
-            height={200}
-          />
+      <FormCommandBar
+        onBack={() => guardedNavigate('/timesheets')}
+        onSave={handleSave}
+        onSaveAndClose={handleSaveAndClose}
+        saveDisabled={!form.projectId || !form.date}
+        saving={saving}
+      />
+      <div className={styles.pageBody}>
+        <div className={styles.header}>
+          <Breadcrumb>
+            <BreadcrumbItem>
+              <BreadcrumbButton onClick={() => guardedNavigate('/timesheets')}>Timesheets</BreadcrumbButton>
+            </BreadcrumbItem>
+            <BreadcrumbDivider />
+            <BreadcrumbItem>
+              <BreadcrumbButton current>{isNew ? 'New Entry' : 'Edit Entry'}</BreadcrumbButton>
+            </BreadcrumbItem>
+          </Breadcrumb>
+          <Text className={styles.title}>{isNew ? 'New Timesheet Entry' : 'Edit Timesheet Entry'}</Text>
         </div>
-      </FormField>
 
-      <div className={styles.actions}>
-        <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => guardedNavigate('/timesheets')}>Back</Button>
-        <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving || !form.projectId || !form.date}>
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
+        {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+        {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Timesheet entry saved successfully.</MessageBarBody></MessageBar>}
+
+        <FormSection title="Entry Details">
+          <FormField changed={changedFields.has('date')}>
+            <Field label="Date" required>
+              <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
+            </Field>
+          </FormField>
+          <FormField changed={changedFields.has('projectId')}>
+            <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
+              <Select value={form.projectId} onChange={handleChange('projectId')}>
+                <option value="">Select project...</option>
+                {Object.entries(projectsByClient).map(([clientName, projs]) => (
+                  <optgroup key={clientName} label={clientName}>
+                    {projs.map((p) => (
+                      <option key={p._id} value={p._id}>
+                        {p.name} (£{p.effectiveRate}/day)
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </Select>
+            </Field>
+          </FormField>
+          <FormField changed={changedFields.has('hours')}>
+            <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
+              <SpinButton
+                defaultValue={form.hours}
+                onChange={(e, data) => {
+                  const val = data.value ?? parseFloat(data.displayValue);
+                  if (val != null && !isNaN(val)) {
+                    setForm((prev) => ({
+                      ...prev,
+                      hours: val,
+                      ...computeDaysAmount(val, prev.projectId, allProjects),
+                    }));
+                  }
+                }}
+                min={0.25}
+                max={24}
+                step={0.25}
+              />
+            </Field>
+          </FormField>
+          <FormField>
+            <Field label="Days">
+              <Input
+                readOnly
+                value={form.days != null ? form.days.toFixed(2) : '—'}
+              />
+            </Field>
+          </FormField>
+          <FormField>
+            <Field label="Amount">
+              <Input
+                readOnly
+                value={form.amount != null
+                  ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(form.amount)
+                  : '—'}
+              />
+            </Field>
+          </FormField>
+        </FormSection>
+
+        <FormField fullWidth changed={changedFields.has('notes')}>
+          <div className={styles.notes}>
+            <MarkdownEditor
+              label="Notes"
+              value={form.notes}
+              onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+              placeholder="What did you work on today?"
+              height={200}
+            />
+          </div>
+        </FormField>
       </div>
     </div>
   );

@@ -63,7 +63,8 @@ export function UnsavedChangesProvider({ children }) {
   const handleSave = useCallback(async () => {
     const guard = guardRef.current;
     if (!guard) return;
-    const ok = await guard.onSave();
+    const result = await guard.onSave();
+    const ok = typeof result === 'object' ? result.ok : result;
     setDialogOpen(false);
     if (ok) {
       executePending();

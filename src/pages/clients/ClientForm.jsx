@@ -5,7 +5,6 @@ import {
   tokens,
   Text,
   Input,
-  Button,
   Field,
   Spinner,
   SpinButton,
@@ -19,9 +18,9 @@ import {
   BreadcrumbDivider,
   BreadcrumbButton,
 } from '@fluentui/react-components';
-import { SaveRegular, ArrowLeftRegular } from '@fluentui/react-icons';
 import { clientsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
+import FormCommandBar from '../../components/FormCommandBar.jsx';
 import EntityGrid from '../../components/EntityGrid.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
@@ -29,8 +28,10 @@ import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {
-    padding: '16px 24px',
     maxWidth: '1000px',
+  },
+  pageBody: {
+    padding: '16px 24px',
   },
   header: {
     marginBottom: '16px',
@@ -40,11 +41,6 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase500,
     display: 'block',
     marginBottom: '4px',
-  },
-  actions: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '24px',
   },
   tabs: {
     marginTop: '16px',
@@ -123,8 +119,7 @@ export default function ClientForm() {
     try {
       if (isNew) {
         const created = await clientsApi.create(form);
-        navigate(`/clients/${created._id}`, { replace: true });
-        return true;
+        return { ok: true, id: created._id };
       } else {
         const { ir35Status, ...updatePayload } = form;
         await clientsApi.update(id, updatePayload);
@@ -141,22 +136,31 @@ export default function ClientForm() {
           notes: data.notes || '',
           ir35Status: 'OUTSIDE_IR35',
         });
-        return true;
+        return { ok: true };
       }
     } catch (err) {
       setError(err.message);
-      return false;
+      return { ok: false };
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, navigate, setBase]);
+  }, [form, isNew, id, setBase]);
 
   const handleSave = async () => {
-    const ok = await saveForm();
-    if (ok && !isNew) {
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+    const result = await saveForm();
+    if (result.ok) {
+      if (isNew) {
+        navigate(`/clients/${result.id}`, { replace: true });
+      } else {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      }
     }
+  };
+
+  const handleSaveAndClose = async () => {
+    const result = await saveForm();
+    if (result.ok) navigate('/clients');
   };
 
   useEffect(() => {
@@ -167,138 +171,140 @@ export default function ClientForm() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.header}>
-        <Breadcrumb>
-          <BreadcrumbItem>
-            <BreadcrumbButton onClick={() => guardedNavigate('/clients')}>Clients</BreadcrumbButton>
-          </BreadcrumbItem>
-          <BreadcrumbDivider />
-          <BreadcrumbItem>
-            <BreadcrumbButton current>{isNew ? 'New Client' : form.companyName}</BreadcrumbButton>
-          </BreadcrumbItem>
-        </Breadcrumb>
-        <Text className={styles.title}>{isNew ? 'New Client' : form.companyName}</Text>
-      </div>
+      <FormCommandBar
+        onBack={() => guardedNavigate('/clients')}
+        onSave={handleSave}
+        onSaveAndClose={handleSaveAndClose}
+        saveDisabled={!form.companyName}
+        saving={saving}
+      />
+      <div className={styles.pageBody}>
+        <div className={styles.header}>
+          <Breadcrumb>
+            <BreadcrumbItem>
+              <BreadcrumbButton onClick={() => guardedNavigate('/clients')}>Clients</BreadcrumbButton>
+            </BreadcrumbItem>
+            <BreadcrumbDivider />
+            <BreadcrumbItem>
+              <BreadcrumbButton current>{isNew ? 'New Client' : form.companyName}</BreadcrumbButton>
+            </BreadcrumbItem>
+          </Breadcrumb>
+          <Text className={styles.title}>{isNew ? 'New Client' : form.companyName}</Text>
+        </div>
 
-      {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-      {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Client saved successfully.</MessageBarBody></MessageBar>}
+        {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+        {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Client saved successfully.</MessageBarBody></MessageBar>}
 
-      {!isNew && (
-        <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
-          <Tab value="general">General</Tab>
-          <Tab value="projects">Projects ({clientData?.projects?.length || 0})</Tab>
-          <Tab value="timesheets">Timesheets ({clientData?.timesheets?.length || 0})</Tab>
-        </TabList>
-      )}
+        {!isNew && (
+          <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
+            <Tab value="general">General</Tab>
+            <Tab value="projects">Projects ({clientData?.projects?.length || 0})</Tab>
+            <Tab value="timesheets">Timesheets ({clientData?.timesheets?.length || 0})</Tab>
+          </TabList>
+        )}
 
-      <div className={styles.tabContent}>
-        {(isNew || tab === 'general') && (
-          <>
-            <FormSection title="Company Information">
-              <FormField changed={changedFields.has('companyName')}>
-                <Field label="Company Name" required>
-                  <Input value={form.companyName} onChange={handleChange('companyName')} />
-                </Field>
-              </FormField>
-              <FormField changed={changedFields.has('currency')}>
-                <Field label="Currency">
-                  <Select value={form.currency} onChange={handleChange('currency')}>
-                    <option value="GBP">GBP</option>
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                  </Select>
-                </Field>
-              </FormField>
-              <FormField changed={changedFields.has('defaultRate')}>
-                <Field label="Default Rate (per day)">
-                  <SpinButton
-                    defaultValue={form.defaultRate}
-                    onChange={(e, data) => {
-                      const val = data.value ?? parseFloat(data.displayValue);
-                      if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, defaultRate: val }));
-                    }}
-                    min={0}
-                    step={25}
-                  />
-                </Field>
-              </FormField>
-              <FormField changed={changedFields.has('workingHoursPerDay')}>
-                <Field label="Working Hours Per Day">
-                  <SpinButton
-                    defaultValue={form.workingHoursPerDay}
-                    onChange={(e, data) => {
-                      const val = data.value ?? parseFloat(data.displayValue);
-                      if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, workingHoursPerDay: val }));
-                    }}
-                    min={0.25}
-                    max={24}
-                    step={0.25}
-                  />
-                </Field>
-              </FormField>
-              {isNew && (
-                <FormField changed={changedFields.has('ir35Status')}>
-                  <Field label="IR35 Status (for default project)" required>
-                    <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
-                      <option value="OUTSIDE_IR35">Outside IR35</option>
-                      <option value="INSIDE_IR35">Inside IR35</option>
-                      <option value="FIXED_TERM">Fixed Term</option>
+        <div className={styles.tabContent}>
+          {(isNew || tab === 'general') && (
+            <>
+              <FormSection title="Company Information">
+                <FormField changed={changedFields.has('companyName')}>
+                  <Field label="Company Name" required>
+                    <Input value={form.companyName} onChange={handleChange('companyName')} />
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('currency')}>
+                  <Field label="Currency">
+                    <Select value={form.currency} onChange={handleChange('currency')}>
+                      <option value="GBP">GBP</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
                     </Select>
                   </Field>
                 </FormField>
-              )}
-            </FormSection>
+                <FormField changed={changedFields.has('defaultRate')}>
+                  <Field label="Default Rate (per day)">
+                    <SpinButton
+                      defaultValue={form.defaultRate}
+                      onChange={(e, data) => {
+                        const val = data.value ?? parseFloat(data.displayValue);
+                        if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, defaultRate: val }));
+                      }}
+                      min={0}
+                      step={25}
+                    />
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('workingHoursPerDay')}>
+                  <Field label="Working Hours Per Day">
+                    <SpinButton
+                      defaultValue={form.workingHoursPerDay}
+                      onChange={(e, data) => {
+                        const val = data.value ?? parseFloat(data.displayValue);
+                        if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, workingHoursPerDay: val }));
+                      }}
+                      min={0.25}
+                      max={24}
+                      step={0.25}
+                    />
+                  </Field>
+                </FormField>
+                {isNew && (
+                  <FormField changed={changedFields.has('ir35Status')}>
+                    <Field label="IR35 Status (for default project)" required>
+                      <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
+                        <option value="OUTSIDE_IR35">Outside IR35</option>
+                        <option value="INSIDE_IR35">Inside IR35</option>
+                        <option value="FIXED_TERM">Fixed Term</option>
+                      </Select>
+                    </Field>
+                  </FormField>
+                )}
+              </FormSection>
 
-            <FormSection title="Primary Contact">
-              <FormField changed={changedFields.has('primaryContactName')}>
-                <Field label="Contact Name"><Input value={form.primaryContactName} onChange={handleChange('primaryContactName')} /></Field>
+              <FormSection title="Primary Contact">
+                <FormField changed={changedFields.has('primaryContactName')}>
+                  <Field label="Contact Name"><Input value={form.primaryContactName} onChange={handleChange('primaryContactName')} /></Field>
+                </FormField>
+                <FormField changed={changedFields.has('primaryContactEmail')}>
+                  <Field label="Contact Email"><Input type="email" value={form.primaryContactEmail} onChange={handleChange('primaryContactEmail')} /></Field>
+                </FormField>
+                <FormField changed={changedFields.has('primaryContactPhone')}>
+                  <Field label="Contact Phone"><Input value={form.primaryContactPhone} onChange={handleChange('primaryContactPhone')} /></Field>
+                </FormField>
+              </FormSection>
+
+              <FormField fullWidth changed={changedFields.has('notes')}>
+                <div style={{ marginTop: '16px' }}>
+                  <MarkdownEditor
+                    label="Notes"
+                    value={form.notes}
+                    onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+                    placeholder="Additional notes..."
+                    height={180}
+                  />
+                </div>
               </FormField>
-              <FormField changed={changedFields.has('primaryContactEmail')}>
-                <Field label="Contact Email"><Input type="email" value={form.primaryContactEmail} onChange={handleChange('primaryContactEmail')} /></Field>
-              </FormField>
-              <FormField changed={changedFields.has('primaryContactPhone')}>
-                <Field label="Contact Phone"><Input value={form.primaryContactPhone} onChange={handleChange('primaryContactPhone')} /></Field>
-              </FormField>
-            </FormSection>
+            </>
+          )}
 
-            <FormField fullWidth changed={changedFields.has('notes')}>
-              <div style={{ marginTop: '16px' }}>
-                <MarkdownEditor
-                  label="Notes"
-                  value={form.notes}
-                  onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
-                  placeholder="Additional notes..."
-                  height={180}
-                />
-              </div>
-            </FormField>
+          {tab === 'projects' && clientData && (
+            <EntityGrid
+              columns={projectColumns}
+              items={clientData.projects || []}
+              emptyMessage="No projects for this client."
+              onRowClick={(item) => guardedNavigate(`/projects/${item._id}`)}
+            />
+          )}
 
-            <div className={styles.actions}>
-              <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => guardedNavigate('/clients')}>Back</Button>
-              <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving || !form.companyName}>
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </>
-        )}
-
-        {tab === 'projects' && clientData && (
-          <EntityGrid
-            columns={projectColumns}
-            items={clientData.projects || []}
-            emptyMessage="No projects for this client."
-            onRowClick={(item) => guardedNavigate(`/projects/${item._id}`)}
-          />
-        )}
-
-        {tab === 'timesheets' && clientData && (
-          <EntityGrid
-            columns={timesheetColumns}
-            items={clientData.timesheets || []}
-            emptyMessage="No timesheet entries for this client."
-            onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
-          />
-        )}
+          {tab === 'timesheets' && clientData && (
+            <EntityGrid
+              columns={timesheetColumns}
+              items={clientData.timesheets || []}
+              emptyMessage="No timesheet entries for this client."
+              onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
