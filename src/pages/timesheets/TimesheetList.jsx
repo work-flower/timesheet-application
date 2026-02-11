@@ -53,6 +53,18 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase400,
   },
+  dateInput: {
+    height: '24px',
+    fontSize: tokens.fontSizeBase200,
+    fontFamily: tokens.fontFamilyBase,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    padding: '0 8px',
+    outline: 'none',
+    ':focus': {
+      borderColor: tokens.colorBrandStroke1,
+    },
+  },
 });
 
 function getWeekRange() {
@@ -101,13 +113,22 @@ export default function TimesheetList() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState('week');
+  const [range, setRange] = useState(() => localStorage.getItem('timesheets.range') || 'week');
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [clients, setClients] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
-  const [clientId, setClientId] = useState('');
-  const [projectId, setProjectId] = useState('');
+  const [clientId, setClientId] = useState(() => localStorage.getItem('timesheets.clientId') || '');
+  const [projectId, setProjectId] = useState(() => localStorage.getItem('timesheets.projectId') || '');
+  const [customStart, setCustomStart] = useState(() => localStorage.getItem('timesheets.customStart') || getWeekRange().startDate);
+  const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('timesheets.customEnd') || getWeekRange().endDate);
+
+  // Persist filter selections to localStorage
+  useEffect(() => { localStorage.setItem('timesheets.range', range); }, [range]);
+  useEffect(() => { localStorage.setItem('timesheets.clientId', clientId); }, [clientId]);
+  useEffect(() => { localStorage.setItem('timesheets.projectId', projectId); }, [projectId]);
+  useEffect(() => { localStorage.setItem('timesheets.customStart', customStart); }, [customStart]);
+  useEffect(() => { localStorage.setItem('timesheets.customEnd', customEnd); }, [customEnd]);
 
   const filteredProjects = useMemo(
     () => clientId ? allProjects.filter((p) => p.clientId === clientId) : allProjects,
@@ -122,8 +143,9 @@ export default function TimesheetList() {
   const dateRange = useMemo(() => {
     if (range === 'week') return getWeekRange();
     if (range === 'month') return getMonthRange();
+    if (range === 'custom') return { startDate: customStart, endDate: customEnd };
     return {};
-  }, [range]);
+  }, [range, customStart, customEnd]);
 
   useEffect(() => {
     setLoading(true);
@@ -169,6 +191,24 @@ export default function TimesheetList() {
         <ToggleButton size="small" checked={range === 'week'} onClick={() => setRange('week')}>This Week</ToggleButton>
         <ToggleButton size="small" checked={range === 'month'} onClick={() => setRange('month')}>This Month</ToggleButton>
         <ToggleButton size="small" checked={range === 'all'} onClick={() => setRange('all')}>All Time</ToggleButton>
+        <ToggleButton size="small" checked={range === 'custom'} onClick={() => setRange('custom')}>Custom</ToggleButton>
+        {range === 'custom' && (
+          <>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+            />
+            <Text size={200}>to</Text>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+            />
+          </>
+        )}
         <Text size={200} weight="semibold" style={{ marginLeft: 12 }}>Client:</Text>
         <Select
           size="small"
