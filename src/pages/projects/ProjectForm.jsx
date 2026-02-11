@@ -1,0 +1,312 @@
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  makeStyles,
+  tokens,
+  Text,
+  Input,
+  Button,
+  Field,
+  Spinner,
+  SpinButton,
+  Select,
+  Tab,
+  TabList,
+  MessageBar,
+  MessageBarBody,
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbDivider,
+  BreadcrumbButton,
+} from '@fluentui/react-components';
+import { SaveRegular, ArrowLeftRegular } from '@fluentui/react-icons';
+import { projectsApi, clientsApi, documentsApi } from '../../api/index.js';
+import { FormSection, FormField } from '../../components/FormSection.jsx';
+import EntityGrid from '../../components/EntityGrid.jsx';
+import MarkdownEditor from '../../components/MarkdownEditor.jsx';
+
+const useStyles = makeStyles({
+  page: {
+    padding: '16px 24px',
+    maxWidth: '1000px',
+  },
+  header: {
+    marginBottom: '16px',
+  },
+  title: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase500,
+    display: 'block',
+    marginBottom: '4px',
+  },
+  actions: {
+    display: 'flex',
+    gap: '8px',
+    marginTop: '24px',
+  },
+  tabs: {
+    marginTop: '16px',
+  },
+  tabContent: {
+    marginTop: '16px',
+  },
+  message: {
+    marginBottom: '16px',
+  },
+});
+
+const timesheetColumns = [
+  { key: 'date', label: 'Date' },
+  { key: 'hours', label: 'Hours' },
+  { key: 'notes', label: 'Notes' },
+];
+
+const documentColumns = [
+  { key: 'period', label: 'Period', render: (item) => `${item.periodStart} to ${item.periodEnd}` },
+  { key: 'granularity', label: 'Type', render: (item) => item.granularity === 'weekly' ? 'Weekly' : 'Monthly' },
+  { key: 'createdAt', label: 'Created', render: (item) => new Date(item.createdAt).toLocaleDateString('en-GB') },
+];
+
+export default function ProjectForm() {
+  const styles = useStyles();
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const isNew = !id;
+
+  const [form, setForm] = useState({
+    name: '', clientId: '', endClientId: '', ir35Status: 'OUTSIDE_IR35',
+    rate: '', workingHoursPerDay: '', status: 'active', notes: '',
+  });
+  const [projectData, setProjectData] = useState(null);
+  const [allClients, setAllClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(false);
+  const [tab, setTab] = useState('general');
+  const [documents, setDocuments] = useState([]);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const clients = await clientsApi.getAll();
+        setAllClients(clients);
+
+        if (!isNew) {
+          const [data, docs] = await Promise.all([
+            projectsApi.getById(id),
+            documentsApi.getAll({ projectId: id }),
+          ]);
+          setDocuments(docs);
+          setProjectData(data);
+          setForm({
+            name: data.name || '',
+            clientId: data.clientId || '',
+            endClientId: data.endClientId || '',
+            ir35Status: data.ir35Status || 'OUTSIDE_IR35',
+            rate: data.rate != null ? String(data.rate) : '',
+            workingHoursPerDay: data.workingHoursPerDay != null ? String(data.workingHoursPerDay) : '',
+            status: data.status || 'active',
+            notes: data.notes || '',
+          });
+        } else if (clients.length > 0) {
+          const firstClient = clients[0];
+          setForm((prev) => ({
+            ...prev,
+            clientId: firstClient._id,
+            rate: firstClient.defaultRate != null ? String(firstClient.defaultRate) : '',
+            workingHoursPerDay: firstClient.workingHoursPerDay != null ? String(firstClient.workingHoursPerDay) : '',
+          }));
+        }
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, [id, isNew]);
+
+  const handleChange = (field) => (e, data) => {
+    const value = data?.value ?? e.target.value;
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      // Auto-fill rate and working hours when client changes on new project
+      if (field === 'clientId' && isNew) {
+        const client = allClients.find((c) => c._id === value);
+        if (client) {
+          next.rate = client.defaultRate != null ? String(client.defaultRate) : '';
+          next.workingHoursPerDay = client.workingHoursPerDay != null ? String(client.workingHoursPerDay) : '';
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSuccess(false);
+    try {
+      const payload = {
+        ...form,
+        rate: form.rate !== '' ? Number(form.rate) : null,
+        workingHoursPerDay: form.workingHoursPerDay !== '' ? Number(form.workingHoursPerDay) : null,
+      };
+      if (isNew) {
+        const created = await projectsApi.create(payload);
+        navigate(`/projects/${created._id}`, { replace: true });
+      } else {
+        const updated = await projectsApi.update(id, payload);
+        setProjectData(updated);
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
+
+  // Compute placeholder for rate
+  const selectedClient = allClients.find((c) => c._id === form.clientId);
+  const ratePlaceholder = selectedClient ? `Inherited from client: £${selectedClient.defaultRate}/day` : 'Enter rate or leave blank to inherit';
+  const hoursPlaceholder = selectedClient ? `Inherited from client: ${selectedClient.workingHoursPerDay ?? 8}h/day` : 'Enter hours or leave blank to inherit';
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.header}>
+        <Breadcrumb>
+          <BreadcrumbItem>
+            <BreadcrumbButton onClick={() => navigate('/projects')}>Projects</BreadcrumbButton>
+          </BreadcrumbItem>
+          <BreadcrumbDivider />
+          <BreadcrumbItem>
+            <BreadcrumbButton current>{isNew ? 'New Project' : form.name}</BreadcrumbButton>
+          </BreadcrumbItem>
+        </Breadcrumb>
+        <Text className={styles.title}>{isNew ? 'New Project' : form.name}</Text>
+      </div>
+
+      {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+      {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Project saved successfully.</MessageBarBody></MessageBar>}
+
+      {!isNew && (
+        <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
+          <Tab value="general">General</Tab>
+          <Tab value="timesheets">Timesheets ({projectData?.timesheets?.length || 0})</Tab>
+          <Tab value="documents">Documents ({documents.length})</Tab>
+        </TabList>
+      )}
+
+      <div className={styles.tabContent}>
+        {(isNew || tab === 'general') && (
+          <>
+            <FormSection title="Project Details">
+              <FormField>
+                <Field label="Project Name" required>
+                  <Input value={form.name} onChange={handleChange('name')} />
+                </Field>
+              </FormField>
+              <FormField>
+                <Field label="Client" required hint={!isNew && projectData?.isDefault ? 'Client cannot be changed for default projects' : undefined}>
+                  <Select value={form.clientId} onChange={handleChange('clientId')} disabled={!isNew && projectData?.isDefault}>
+                    <option value="">Select client...</option>
+                    {allClients.map((c) => (
+                      <option key={c._id} value={c._id}>{c.companyName}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </FormField>
+              <FormField>
+                <Field label="End Client">
+                  <Select value={form.endClientId} onChange={handleChange('endClientId')}>
+                    <option value="">None</option>
+                    {allClients.map((c) => (
+                      <option key={c._id} value={c._id}>{c.companyName}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </FormField>
+              <FormField>
+                <Field label="IR35 Status" required>
+                  <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
+                    <option value="OUTSIDE_IR35">Outside IR35</option>
+                    <option value="INSIDE_IR35">Inside IR35</option>
+                    <option value="FIXED_TERM">Fixed Term</option>
+                  </Select>
+                </Field>
+              </FormField>
+              <FormField>
+                <Field label="Rate (per day)" hint={form.rate === '' ? ratePlaceholder : undefined}>
+                  <Input
+                    type="number"
+                    value={form.rate}
+                    onChange={handleChange('rate')}
+                    placeholder={ratePlaceholder}
+                  />
+                </Field>
+              </FormField>
+              <FormField>
+                <Field label="Working Hours Per Day" hint={form.workingHoursPerDay === '' ? hoursPlaceholder : undefined}>
+                  <Input
+                    type="number"
+                    value={form.workingHoursPerDay}
+                    onChange={handleChange('workingHoursPerDay')}
+                    placeholder={hoursPlaceholder}
+                  />
+                </Field>
+              </FormField>
+              <FormField>
+                <Field label="Status">
+                  <Select value={form.status} onChange={handleChange('status')}>
+                    <option value="active">Active</option>
+                    <option value="archived">Archived</option>
+                  </Select>
+                </Field>
+              </FormField>
+            </FormSection>
+
+            <div style={{ marginTop: '16px' }}>
+              <MarkdownEditor
+                label="Notes"
+                value={form.notes}
+                onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+                placeholder="Additional notes..."
+                height={180}
+              />
+            </div>
+
+            <div className={styles.actions}>
+              <Button appearance="secondary" icon={<ArrowLeftRegular />} onClick={() => navigate('/projects')}>Back</Button>
+              <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving || !form.name || !form.clientId}>
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {tab === 'timesheets' && projectData && (
+          <EntityGrid
+            columns={timesheetColumns}
+            items={projectData.timesheets || []}
+            emptyMessage="No timesheet entries for this project."
+            onRowClick={(item) => navigate(`/timesheets/${item._id}`)}
+          />
+        )}
+
+        {tab === 'documents' && (
+          <EntityGrid
+            columns={documentColumns}
+            items={documents}
+            emptyMessage="No saved documents for this project."
+            onRowClick={(item) => window.open(documentsApi.getFileUrl(item._id), '_blank')}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
