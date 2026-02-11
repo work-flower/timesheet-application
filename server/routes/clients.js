@@ -5,7 +5,7 @@ const router = Router();
 
 router.get('/', async (req, res) => {
   try {
-    const result = await clientService.getAll();
+    const result = await clientService.getAll(req.query);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

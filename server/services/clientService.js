@@ -1,7 +1,26 @@
 import { clients, projects, timesheets } from '../db/index.js';
+import { buildQuery, applySelect, formatResponse } from '../odata.js';
 
-export async function getAll() {
-  return clients.find({}).sort({ companyName: 1 });
+export async function getAll(query = {}) {
+  const { results, totalCount } = await buildQuery(clients, query, { companyName: 1 });
+
+  // $expand
+  if (query.$expand) {
+    const expands = query.$expand.split(',').map(s => s.trim());
+    for (const item of results) {
+      if (expands.includes('projects')) {
+        item.projects = await projects.find({ clientId: item._id });
+      }
+      if (expands.includes('timesheets')) {
+        const clientProjects = item.projects || await projects.find({ clientId: item._id });
+        const projectIds = clientProjects.map(p => p._id);
+        item.timesheets = await timesheets.find({ projectId: { $in: projectIds } });
+      }
+    }
+  }
+
+  const items = applySelect(results, query.$select);
+  return formatResponse(items, totalCount, query.$count === 'true');
 }
 
 export async function getById(id) {

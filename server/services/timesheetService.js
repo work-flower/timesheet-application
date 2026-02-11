@@ -1,25 +1,28 @@
 import { clients, projects, timesheets } from '../db/index.js';
+import { buildQuery, applySelect, formatResponse } from '../odata.js';
 
 export async function getAll(query = {}) {
-  const filter = {};
+  // Build base filter from legacy params
+  const baseFilter = {};
 
   if (query.projectId) {
-    filter.projectId = query.projectId;
-  }
-
-  if (query.clientId) {
+    baseFilter.projectId = query.projectId;
+  } else if (query.clientId) {
     const clientProjects = await projects.find({ clientId: query.clientId });
     const projectIds = clientProjects.map((p) => p._id);
-    filter.projectId = { $in: projectIds };
+    baseFilter.projectId = { $in: projectIds };
   }
 
   if (query.startDate || query.endDate) {
-    filter.date = {};
-    if (query.startDate) filter.date.$gte = query.startDate;
-    if (query.endDate) filter.date.$lte = query.endDate;
+    baseFilter.date = {};
+    if (query.startDate) baseFilter.date.$gte = query.startDate;
+    if (query.endDate) baseFilter.date.$lte = query.endDate;
   }
 
-  const entries = await timesheets.find(filter).sort({ date: -1 });
+  // OData query merged with base filter
+  const { results: entries, totalCount } = await buildQuery(
+    timesheets, query, { date: -1 }, baseFilter
+  );
 
   // Enrich with project and client info
   const allProjects = await projects.find({});
@@ -41,12 +44,27 @@ export async function getAll(query = {}) {
     };
   });
 
-  // Group if requested
+  // $expand
+  if (query.$expand) {
+    const expands = query.$expand.split(',').map(s => s.trim());
+    for (const item of enriched) {
+      if (expands.includes('project')) {
+        item.project = projectMap[item.projectId] || null;
+      }
+      if (expands.includes('client')) {
+        const project = projectMap[item.projectId];
+        item.client = project ? (clientMap[project.clientId] || null) : null;
+      }
+    }
+  }
+
+  // Group if requested (applied after OData pipeline)
   if (query.groupBy) {
     return groupEntries(enriched, query.groupBy);
   }
 
-  return enriched;
+  const items = applySelect(enriched, query.$select);
+  return formatResponse(items, totalCount, query.$count === 'true');
 }
 
 function groupEntries(entries, groupBy) {

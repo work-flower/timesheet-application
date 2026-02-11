@@ -48,6 +48,7 @@ timesheet-app/
 │   ├── db/
 │   │   ├── index.js          # NeDB datastore initialization (uses DATA_DIR env var, defaults to ./data)
 │   │   └── seed.js           # Optional: seed/init logic
+│   ├── odata.js              # Shared OData query parser/applier (parseFilter, buildQuery, applySelect, formatResponse)
 │   ├── services/
 │   │   ├── clientService.js  # Client business logic (auto-create default project on client creation)
 │   │   ├── projectService.js # Project logic (rate inheritance)
@@ -210,21 +211,21 @@ PDF files are stored on disk in `data/documents/`. Each document record referenc
 All endpoints are prefixed with `/api`.
 
 ### Clients
-- `GET /api/clients` — list all clients
+- `GET /api/clients` — list all clients (supports OData query params)
 - `GET /api/clients/:id` — get client with related projects and timesheets
 - `POST /api/clients` — create client (auto-creates a default project)
 - `PUT /api/clients/:id` — update client
 - `DELETE /api/clients/:id` — delete client (cascade delete projects and timesheets)
 
 ### Projects
-- `GET /api/projects` — list all projects (populate client name)
+- `GET /api/projects` — list all projects, populate client name (supports OData query params)
 - `GET /api/projects/:id` — get project with related timesheets, compute effectiveRate
 - `POST /api/projects` — create project
 - `PUT /api/projects/:id` — update project
 - `DELETE /api/projects/:id` — delete project (cascade delete timesheets)
 
 ### Timesheets
-- `GET /api/timesheets` — list timesheets, supports query params:
+- `GET /api/timesheets` — list timesheets (supports OData query params), also supports legacy query params:
   - `startDate` and `endDate` for date range filtering
   - `projectId` for filtering by project
   - `clientId` for filtering by client
@@ -242,7 +243,7 @@ All endpoints are prefixed with `/api`.
 - `GET /api/reports/timesheet-pdf` — generate PDF, supports query params: `clientId`, `startDate`, `endDate`, optional `projectId` (filters to single project)
 
 ### Documents
-- `GET /api/documents` — list documents, optional `clientId`/`projectId` query filters
+- `GET /api/documents` — list documents (supports OData query params), also supports legacy `clientId`/`projectId` query filters
 - `GET /api/documents/:id` — get document metadata
 - `GET /api/documents/:id/file` — serve the actual PDF file
 - `POST /api/documents` — generate PDF server-side, save file + record (body: `clientId`, `projectId`, `startDate`, `endDate`, `granularity`)
@@ -266,6 +267,50 @@ Same enriched fields as list, plus: `effectiveRate`, `effectiveWorkingHours` —
 
 ### `GET /api/clients/:id` (detail)
 Includes: `projects[]` — all projects for this client, `timesheets[]` — all timesheets across all client projects (enriched with `projectName`).
+
+## OData Query Support
+
+All list endpoints (`GET /api/clients`, `GET /api/projects`, `GET /api/timesheets`, `GET /api/documents`) support OData-style query parameters via a shared utility (`server/odata.js`). Legacy custom params (e.g. `startDate`, `endDate`, `groupBy`, `clientId`, `projectId`) continue to work alongside OData — filters are merged additively.
+
+### Supported Operations
+
+| Parameter | Syntax | NeDB mapping |
+|-----------|--------|--------------|
+| `$filter` | `field eq 'value'`, `field gt 123`, `contains(field,'val')`, `and` | NeDB query object |
+| `$orderby` | `field asc, field2 desc` | `.sort()` |
+| `$top` | integer | `.limit()` |
+| `$skip` | integer | `.skip()` |
+| `$count` | `true` | Count total before pagination |
+| `$select` | `field1,field2` | Post-query field projection (always includes `_id`) |
+| `$expand` | `projects,timesheets` | Post-query related entity inclusion |
+
+### $filter Operators
+- **Comparison:** `eq`, `ne`, `gt`, `ge`, `lt`, `le`
+- **String functions:** `contains(field,'val')`, `startswith(field,'val')`, `endswith(field,'val')` — case-insensitive regex
+- **Logical:** `and` (multiple conditions)
+- **Types:** strings in single quotes, numbers unquoted, booleans unquoted (`true`/`false`), `null`
+
+### Response Format
+- **Without `$count`:** plain array (backward compatible)
+- **With `$count=true`:** `{ "@odata.count": N, "value": [...] }`
+
+### $expand Relationships
+
+| Entity | Expandable | Source |
+|--------|-----------|--------|
+| clients | `projects`, `timesheets` | projects by clientId, timesheets via client's projects |
+| projects | `client`, `timesheets`, `documents` | client by clientId, timesheets by projectId, documents by projectId |
+| timesheets | `project`, `client` | project by projectId, client via project.clientId |
+| documents | `client`, `project` | client by clientId, project by projectId |
+
+### Examples
+```
+GET /api/clients?$filter=defaultRate gt 500&$orderby=companyName desc
+GET /api/projects?$expand=client,timesheets&$top=10
+GET /api/timesheets?startDate=2025-01-01&$filter=hours ge 8&$orderby=date desc&$top=10&$expand=project
+GET /api/clients?$count=true&$select=companyName,defaultRate
+GET /api/documents?projectId=abc123&$count=true
+```
 
 ## UI Layout — Power Platform Model-Driven App Style
 

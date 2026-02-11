@@ -1,4 +1,5 @@
-import { documents } from '../db/index.js';
+import { clients, projects, documents } from '../db/index.js';
+import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { writeFileSync, unlinkSync } from 'fs';
@@ -9,10 +10,35 @@ const dataDir = process.env.DATA_DIR || join(__dirname, '..', '..', 'data');
 const documentsDir = join(dataDir, 'documents');
 
 export async function getAll(query = {}) {
-  const filter = {};
-  if (query.clientId) filter.clientId = query.clientId;
-  if (query.projectId) filter.projectId = query.projectId;
-  return documents.find(filter).sort({ createdAt: -1 });
+  // Build base filter from legacy params
+  const baseFilter = {};
+  if (query.clientId) baseFilter.clientId = query.clientId;
+  if (query.projectId) baseFilter.projectId = query.projectId;
+
+  const { results, totalCount } = await buildQuery(
+    documents, query, { createdAt: -1 }, baseFilter
+  );
+
+  // $expand
+  if (query.$expand) {
+    const allClients = await clients.find({});
+    const allProjects = await projects.find({});
+    const clientMap = Object.fromEntries(allClients.map(c => [c._id, c]));
+    const projectMap = Object.fromEntries(allProjects.map(p => [p._id, p]));
+
+    const expands = query.$expand.split(',').map(s => s.trim());
+    for (const item of results) {
+      if (expands.includes('client')) {
+        item.client = clientMap[item.clientId] || null;
+      }
+      if (expands.includes('project')) {
+        item.project = projectMap[item.projectId] || null;
+      }
+    }
+  }
+
+  const items = applySelect(results, query.$select);
+  return formatResponse(items, totalCount, query.$count === 'true');
 }
 
 export async function getById(id) {

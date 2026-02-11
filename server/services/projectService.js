@@ -1,17 +1,38 @@
-import { clients, projects, timesheets } from '../db/index.js';
+import { clients, projects, timesheets, documents } from '../db/index.js';
+import { buildQuery, applySelect, formatResponse } from '../odata.js';
 
-export async function getAll() {
-  const allProjects = await projects.find({}).sort({ name: 1 });
+export async function getAll(query = {}) {
+  const { results, totalCount } = await buildQuery(projects, query, { name: 1 });
+
+  // Existing enrichment (always applied)
   const allClients = await clients.find({});
-  const clientMap = Object.fromEntries(allClients.map((c) => [c._id, c]));
-
-  return allProjects.map((p) => ({
+  const clientMap = Object.fromEntries(allClients.map(c => [c._id, c]));
+  const enriched = results.map(p => ({
     ...p,
     clientName: clientMap[p.clientId]?.companyName || 'Unknown',
     effectiveRate: p.rate != null ? p.rate : (clientMap[p.clientId]?.defaultRate || 0),
     effectiveWorkingHours: p.workingHoursPerDay != null
       ? p.workingHoursPerDay : (clientMap[p.clientId]?.workingHoursPerDay || 8),
   }));
+
+  // $expand
+  if (query.$expand) {
+    const expands = query.$expand.split(',').map(s => s.trim());
+    for (const item of enriched) {
+      if (expands.includes('client')) {
+        item.client = clientMap[item.clientId] || null;
+      }
+      if (expands.includes('timesheets')) {
+        item.timesheets = await timesheets.find({ projectId: item._id });
+      }
+      if (expands.includes('documents')) {
+        item.documents = await documents.find({ projectId: item._id });
+      }
+    }
+  }
+
+  const items = applySelect(enriched, query.$select);
+  return formatResponse(items, totalCount, query.$count === 'true');
 }
 
 export async function getById(id) {
