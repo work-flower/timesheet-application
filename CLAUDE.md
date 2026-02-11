@@ -37,7 +37,10 @@ A single-user desktop timesheet application for UK technology contractors. The a
 ```
 timesheet-app/
 ├── CLAUDE.md
-├── .env                          # Environment variables (DATA_DIR)
+├── .env                          # Environment variables (PORT, DATA_DIR)
+├── Dockerfile                    # Multi-stage build (build frontend → slim production image)
+├── docker-compose.yml            # Port, volume, restart config
+├── .dockerignore                 # Excludes node_modules, dist, data from build context
 ├── package.json
 ├── vite.config.js
 ├── server/
@@ -357,6 +360,38 @@ Clears all data and creates:
 - **Clients:** Barclays Bank (£650/day, 8h) + HMRC Digital (£600/day, 7.5h)
 - **Projects:** 3 total — Barclays Default Project (Outside IR35, inherits rate), Payment Platform Migration (Outside IR35, £700/day override), HMRC Default Project (Inside IR35, inherits rate)
 - **Timesheets:** Up to 5 entries for current week on Payment Platform Migration (8h/day, £700) + 3 entries for last week on HMRC (7.5h/day, £600). Only creates entries for dates that are not in the future.
+
+## Docker
+
+The app is fully containerised via a multi-stage Dockerfile.
+
+### Files
+- `Dockerfile` — Stage 1 builds the React frontend (`npm run build`), Stage 2 copies `dist/` + `server/` + production deps into a slim `node:20-alpine` image.
+- `.dockerignore` — excludes `node_modules`, `dist`, `data`, `.env`, `.git` from build context.
+- `docker-compose.yml` — configures port, volume mount, and restart policy.
+
+### Configuration
+Both `PORT` and `DATA_DIR` are configurable via environment variables (in `.env` or inline):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3001` | Express server port (both container-internal and host mapping) |
+| `DATA_DIR` | `./data` | Host path for database files and PDF documents (mounted to `/app/data` inside the container) |
+
+### Usage
+```bash
+# Default (port 3001, data in ./data)
+docker compose up -d
+
+# Custom port and data path
+PORT=8080 DATA_DIR=/mnt/nas/timesheet-data docker compose up -d
+
+# Or set in .env file:
+# PORT=8080
+# DATA_DIR=/mnt/nas/timesheet-data
+```
+
+The container stores no data — all `.db` files and PDFs live on the host at the mounted path. Access the app from other machines at `http://<host-ip>:<PORT>`.
 
 ## Future Considerations (Out of Scope Now, But Keep in Mind)
 

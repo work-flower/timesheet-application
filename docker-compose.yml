@@ -1,0 +1,10 @@
+services:
+  timesheet:
+    build: .
+    environment:
+      - PORT=${PORT:-3001}
+    ports:
+      - "${PORT:-3001}:${PORT:-3001}"
+    volumes:
+      - ${DATA_DIR:-./data}:/app/data
+    restart: unless-stopped
