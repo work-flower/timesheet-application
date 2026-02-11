@@ -5,7 +5,8 @@ import { writeFileSync, unlinkSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const documentsDir = join(__dirname, '..', '..', 'data', 'documents');
+const dataDir = process.env.DATA_DIR || join(__dirname, '..', '..', 'data');
+const documentsDir = join(dataDir, 'documents');
 
 export async function getAll(query = {}) {
   const filter = {};
