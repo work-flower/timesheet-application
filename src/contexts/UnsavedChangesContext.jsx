@@ -123,11 +123,15 @@ export function UnsavedChangesProvider({ children }) {
     window.addEventListener('popstate', handler);
     return () => {
       window.removeEventListener('popstate', handler);
-      // Clean up sentinel if still present
+      // Clean up sentinel if still present and still the current entry
       if (sentinelPushedRef.current) {
-        // Go back to remove the sentinel entry we pushed
-        window.history.go(-1);
         sentinelPushedRef.current = false;
+        // Only go back if the sentinel is still the current history entry.
+        // If an intentional navigation (e.g. Save & Close) already pushed
+        // a new entry, history.go(-1) would undo that navigation.
+        if (window.history.state?.sentinel) {
+          window.history.go(-1);
+        }
       }
     };
   }, [isAnyDirty]);
