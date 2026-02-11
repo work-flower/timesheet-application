@@ -40,7 +40,9 @@ timesheet-app/
 ├── .env                          # Environment variables (PORT, DATA_DIR)
 ├── Dockerfile                    # Multi-stage build (build frontend → slim production image)
 ├── docker-compose.yml            # Port, volume, restart config
-├── .dockerignore                 # Excludes node_modules, dist, data from build context
+├── .dockerignore                 # Excludes node_modules, dist, data, .env, *.md, .git, .gitignore from build context
+├── .gitignore
+├── index.html                    # Vite HTML entry point
 ├── package.json
 ├── vite.config.js
 ├── server/
@@ -48,7 +50,7 @@ timesheet-app/
 │   ├── db/
 │   │   ├── index.js          # NeDB datastore initialization (uses DATA_DIR env var, defaults to ./data)
 │   │   └── seed.js           # Optional: seed/init logic
-│   ├── odata.js              # Shared OData query parser/applier (parseFilter, buildQuery, applySelect, formatResponse)
+│   ├── odata.js              # Shared OData query parser/applier (parseFilter, parseOrderBy, buildQuery, applySelect, formatResponse)
 │   ├── services/
 │   │   ├── clientService.js  # Client business logic (auto-create default project on client creation)
 │   │   ├── projectService.js # Project logic (rate inheritance)
@@ -81,9 +83,9 @@ timesheet-app/
 │   │   └── AppLayout.jsx     # Main layout: top bar + left nav sidebar + main content area
 │   ├── components/
 │   │   ├── CommandBar.jsx    # Reusable top command bar for list views (New, Delete, Search)
-│   │   ├── ConfirmDialog.jsx # Reusable delete confirmation dialog
+│   │   ├── ConfirmDialog.jsx # Reusable confirmation dialog (title + message props)
 │   │   ├── EntityGrid.jsx    # Reusable data grid for list views (uses createTableColumn)
-│   │   ├── FormCommandBar.jsx # Sticky form command bar (Back, Save, Save & Close) — used on all form pages
+│   │   ├── FormCommandBar.jsx # Sticky form command bar (Back, Save, Save & Close, optional Delete) — used on all form pages
 │   │   ├── FormSection.jsx   # Reusable form section wrapper (2-column grid, changed field indicator)
 │   │   ├── MarkdownEditor.jsx # Markdown editor wrapper (@uiw/react-md-editor with Fluent UI styling)
 │   │   └── UnsavedChangesDialog.jsx # Save/Discard/Cancel dialog for unsaved changes
@@ -96,7 +98,7 @@ timesheet-app/
 │   │   │   ├── ProjectList.jsx   # DataGrid list of all projects
 │   │   │   └── ProjectForm.jsx   # Project record form with tabs (General, Timesheets, Documents)
 │   │   ├── timesheets/
-│   │   │   ├── TimesheetList.jsx # DataGrid with date range filters (week/month/year)
+│   │   │   ├── TimesheetList.jsx # DataGrid with period/client/project filters, localStorage-persisted
 │   │   │   └── TimesheetForm.jsx # Daily timesheet entry form
 │   │   ├── reports/
 │   │   │   └── ReportForm.jsx    # Two-column report page: parameter sidebar + PDF preview
@@ -104,7 +106,6 @@ timesheet-app/
 │   │       └── Settings.jsx      # Contractor profile and business info
 │   └── api/
 │       └── index.js          # Frontend API client (fetch wrapper for all endpoints)
-└── public/
 ```
 
 ## Data Model
@@ -344,11 +345,11 @@ GET /api/documents?projectId=abc123&$count=true
 ### Key UI Behaviors
 - **Client creation flow:** User fills in client form → Save creates the client (backend auto-creates default project) and redirects to the client record where the default project is visible under the Projects tab. Save & Close creates and redirects to the client list instead.
 - **Project form:** Rate and Working Hours Per Day fields show placeholder text "Inherited from client: £X/day" / "Inherited from client: Xh/day" when null. User can override by entering a value. Creating a new project auto-fills rate and working hours from the selected client.
-- **Timesheet list:** Default view shows current week. Period filter uses toggle buttons (This Week / This Month / All Time) for quick switching. Shows Days, Amount, and total summary row. Values are persisted — no on-the-fly recomputation.
+- **Timesheet list:** Default view shows current week. Period filter uses toggle buttons (This Week / This Month / All Time / Custom) for quick switching — Custom reveals start/end date inputs for arbitrary date ranges. Client and Project dropdown filters narrow results further. All filter selections are persisted to localStorage and restored on revisit. Shows Days, Amount, and total summary row. Values are persisted — no on-the-fly recomputation.
 - **Timesheet entry:** Date input (no future dates) + Project dropdown (grouped by client, with client name hint) + Hours (SpinButton 0.25–24, step 0.25, with project daily hours hint) + read-only Days and Amount fields + Markdown notes editor. Days and Amount are only computed when the user explicitly changes Hours or Project — not on form load. On edit, persisted values are shown as-is.
 - **Unsaved changes guard:** All forms (Settings, ClientForm, ProjectForm, TimesheetForm) use `useFormTracker` for dirty tracking and register a navigation guard via `UnsavedChangesContext`. Changed fields show a blue left-border indicator (Power Platform style). Navigating away from a dirty form (sidebar, breadcrumb, back button, browser back/refresh) triggers a Save/Discard/Cancel dialog. The `beforeunload` event shows the browser's native "Leave page?" dialog on refresh/close.
 - **Delete confirmations:** Always show a confirmation dialog before deleting
-- **Reports page:** Two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods are computed from actual timesheet dates (monthly or weekly). Generate button produces a PDF previewed via `<object>`. Download saves to disk via browser download. Save Document persists the PDF server-side, viewable from the project's Documents tab.
+- **Reports page:** Two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods are computed from actual timesheet dates (monthly or weekly). Generate button produces a PDF previewed via `<object>`. Download saves to disk via browser download. Save Document persists the PDF server-side, viewable from the project's Documents tab. Client, Project, and Granularity selections are persisted to localStorage and restored on revisit.
 - **Project Documents tab:** Shows saved documents for the project. Clicking a row opens the PDF in a new browser tab.
 
 ## Business Rules
@@ -366,7 +367,7 @@ GET /api/documents?projectId=abc123&$count=true
 5. Timesheet `days` and `amount` are computed and persisted at save time: `days = hours / effectiveWorkingHours`, `amount = days × effectiveRate`. Once saved, these are the source of truth — the API and UI display persisted values without recomputation. Reports (PDF) also read persisted values directly.
 6. Timesheet date must not be in the future.
 7. Hours must be between 0.25 and 24 in 0.25 increments.
-8. A client can only be deleted if all their timesheets are deleted first (or cascade delete with confirmation).
+8. Deleting a client cascade-deletes all its projects and timesheets (with confirmation dialog).
 
 ## Development Notes
 
@@ -412,7 +413,7 @@ The app is fully containerised via a multi-stage Dockerfile.
 
 ### Files
 - `Dockerfile` — Stage 1 builds the React frontend (`npm run build`), Stage 2 copies `dist/` + `server/` + production deps into a slim `node:20-alpine` image.
-- `.dockerignore` — excludes `node_modules`, `dist`, `data`, `.env`, `.git` from build context.
+- `.dockerignore` — excludes `node_modules`, `dist`, `data`, `.env`, `*.md`, `.git`, `.gitignore` from build context.
 - `docker-compose.yml` — configures port, volume mount, and restart policy.
 
 ### Configuration
@@ -421,7 +422,7 @@ Both `PORT` and `DATA_DIR` are configurable via environment variables (in `.env`
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3001` | Express server port (both container-internal and host mapping) |
-| `DATA_DIR` | `./data` | Host path for database files and PDF documents (mounted to `/app/data` inside the container) |
+| `DATA_DIR` | `./data` | Host path for database files and PDF documents (mounted to `/app/data` inside the container). Only controls the host-side volume mount — the container always uses `/app/data` internally. |
 
 ### Usage
 ```bash
@@ -440,7 +441,6 @@ The container stores no data — all `.db` files and PDFs live on the host at th
 
 ## Future Considerations (Out of Scope Now, But Keep in Mind)
 
-- **Custom date range picker:** Timesheet list currently supports week/month/all — add custom start/end date inputs for arbitrary date range filtering.
 - **Sidebar collapsibility:** Add a toggle button or responsive breakpoint to collapse the sidebar on small screens.
 - **Contractor name in top bar:** Fetch settings and display contractor name next to the settings button.
 - **Invoicing:** Generate invoices from timesheet data per client per period. The data model already supports this — client has currency, projects have rates, timesheets have hours.
