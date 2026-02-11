@@ -5,7 +5,7 @@ import {
   Toolbar,
   ToolbarDivider,
 } from '@fluentui/react-components';
-import { ArrowLeftRegular, SaveRegular, SaveArrowRightRegular } from '@fluentui/react-icons';
+import { ArrowLeftRegular, DeleteRegular, SaveRegular, SaveArrowRightRegular } from '@fluentui/react-icons';
 
 const useStyles = makeStyles({
   bar: {
@@ -21,7 +21,7 @@ const useStyles = makeStyles({
   },
 });
 
-export default function FormCommandBar({ onSave, onSaveAndClose, onBack, saveDisabled, saving }) {
+export default function FormCommandBar({ onSave, onSaveAndClose, onBack, onDelete, saveDisabled, saving }) {
   return (
     <div className={useStyles().bar}>
       <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={onBack} size="small">
@@ -47,6 +47,14 @@ export default function FormCommandBar({ onSave, onSaveAndClose, onBack, saveDis
         >
           {saving ? 'Saving...' : 'Save & Close'}
         </Button>
+      )}
+      {onDelete && (
+        <>
+          <ToolbarDivider />
+          <Button appearance="subtle" icon={<DeleteRegular />} onClick={onDelete} size="small">
+            Delete
+          </Button>
+        </>
       )}
     </div>
   );

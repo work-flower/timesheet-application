@@ -5,11 +5,12 @@ import {
   tokens,
   Text,
   ToggleButton,
+  Select,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
 import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
-import { timesheetsApi } from '../../api/index.js';
+import { timesheetsApi, clientsApi, projectsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
   page: {
@@ -103,6 +104,20 @@ export default function TimesheetList() {
   const [range, setRange] = useState('week');
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [allProjects, setAllProjects] = useState([]);
+  const [clientId, setClientId] = useState('');
+  const [projectId, setProjectId] = useState('');
+
+  const filteredProjects = useMemo(
+    () => clientId ? allProjects.filter((p) => p.clientId === clientId) : allProjects,
+    [allProjects, clientId],
+  );
+
+  useEffect(() => {
+    Promise.all([clientsApi.getAll(), projectsApi.getAll()])
+      .then(([c, p]) => { setClients(c); setAllProjects(p); });
+  }, []);
 
   const dateRange = useMemo(() => {
     if (range === 'week') return getWeekRange();
@@ -112,10 +127,13 @@ export default function TimesheetList() {
 
   useEffect(() => {
     setLoading(true);
-    timesheetsApi.getAll(dateRange)
+    const params = { ...dateRange };
+    if (clientId) params.clientId = clientId;
+    if (projectId) params.projectId = projectId;
+    timesheetsApi.getAll(params)
       .then(setEntries)
       .finally(() => setLoading(false));
-  }, [dateRange]);
+  }, [dateRange, clientId, projectId]);
 
   const totals = useMemo(() => {
     const totalHours = entries.reduce((sum, e) => sum + (e.hours || 0), 0);
@@ -151,6 +169,30 @@ export default function TimesheetList() {
         <ToggleButton size="small" checked={range === 'week'} onClick={() => setRange('week')}>This Week</ToggleButton>
         <ToggleButton size="small" checked={range === 'month'} onClick={() => setRange('month')}>This Month</ToggleButton>
         <ToggleButton size="small" checked={range === 'all'} onClick={() => setRange('all')}>All Time</ToggleButton>
+        <Text size={200} weight="semibold" style={{ marginLeft: 12 }}>Client:</Text>
+        <Select
+          size="small"
+          value={clientId}
+          onChange={(e, data) => { setClientId(data.value); setProjectId(''); }}
+          style={{ minWidth: 160 }}
+        >
+          <option value="">All Clients</option>
+          {clients.map((c) => (
+            <option key={c._id} value={c._id}>{c.companyName}</option>
+          ))}
+        </Select>
+        <Text size={200} weight="semibold">Project:</Text>
+        <Select
+          size="small"
+          value={projectId}
+          onChange={(e, data) => setProjectId(data.value)}
+          style={{ minWidth: 160 }}
+        >
+          <option value="">All Projects</option>
+          {filteredProjects.map((p) => (
+            <option key={p._id} value={p._id}>{p.name}</option>
+          ))}
+        </Select>
       </div>
       <EntityGrid
         columns={columns}

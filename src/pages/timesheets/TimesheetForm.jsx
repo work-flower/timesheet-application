@@ -19,6 +19,7 @@ import {
 import { timesheetsApi, projectsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
+import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
@@ -70,6 +71,7 @@ export default function TimesheetForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Helper to compute days/amount from project + hours
   const computeDaysAmount = (hours, projectId, projectList) => {
@@ -193,6 +195,15 @@ export default function TimesheetForm() {
     if (result.ok) navigate('/timesheets');
   };
 
+  const handleDelete = async () => {
+    try {
+      await timesheetsApi.delete(id);
+      navigate('/timesheets');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   useEffect(() => {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
@@ -205,6 +216,7 @@ export default function TimesheetForm() {
         onBack={() => guardedNavigate('/timesheets')}
         onSave={handleSave}
         onSaveAndClose={handleSaveAndClose}
+        onDelete={!isNew ? () => setDeleteOpen(true) : undefined}
         saveDisabled={!form.projectId || !form.date}
         saving={saving}
       />
@@ -299,6 +311,13 @@ export default function TimesheetForm() {
           </div>
         </FormField>
       </div>
+      <ConfirmDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title="Delete Timesheet Entry"
+        message="Are you sure you want to delete this timesheet entry? This action cannot be undone."
+      />
     </div>
   );
 }
