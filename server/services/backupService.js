@@ -17,9 +17,9 @@ import { clients, projects, timesheets, settings, documents } from '../db/index.
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const dataDir = process.env.DATA_DIR || join(__dirname, '..', '..', 'data');
-const backupPrefix = process.env.BACKUP_PREFIX || 'backups';
-const documentsDir = join(dataDir, 'documents');
+function getDataDir() { return process.env.DATA_DIR || join(__dirname, '..', '..', 'data'); }
+function getBackupPrefix() { return process.env.BACKUP_PREFIX || 'backups'; }
+function getDocumentsDir() { return join(getDataDir(), 'documents'); }
 
 let operationLock = false;
 
@@ -113,7 +113,7 @@ export async function createBackup() {
     const s3 = buildS3Client(config);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const folderName = `timesheet-backup-${timestamp}`;
-    const key = `${backupPrefix}/${folderName}.tar.gz`;
+    const key = `${getBackupPrefix()}/${folderName}.tar.gz`;
 
     // Export all collections
     const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs] = await Promise.all([
@@ -154,10 +154,11 @@ export async function createBackup() {
     archive.append(JSON.stringify(documentDocs, null, 2), { name: `${folderName}/documents.json` });
 
     // Add PDF documents directory
-    if (existsSync(documentsDir)) {
-      const files = readdirSync(documentsDir);
+    const docsDir = getDocumentsDir();
+    if (existsSync(docsDir)) {
+      const files = readdirSync(docsDir);
       for (const file of files) {
-        const filePath = join(documentsDir, file);
+        const filePath = join(docsDir, file);
         archive.file(filePath, { name: `${folderName}/documents/${file}` });
       }
     }
@@ -194,7 +195,7 @@ export async function listBackups() {
   const s3 = buildS3Client(config);
   const response = await s3.send(new ListObjectsV2Command({
     Bucket: config.bucketName,
-    Prefix: `${backupPrefix}/`,
+    Prefix: `${getBackupPrefix()}/`,
   }));
 
   if (!response.Contents) return [];
@@ -215,7 +216,7 @@ export async function restoreFromBackup(backupKey) {
   if (operationLock) throw new Error('Another backup or restore operation is in progress');
   operationLock = true;
 
-  const restoreDir = join(dataDir, '_restore_tmp');
+  const restoreDir = join(getDataDir(), '_restore_tmp');
 
   try {
     const config = await getRawConfig();
@@ -277,6 +278,7 @@ export async function restoreFromBackup(backupKey) {
     }
 
     // Restore PDF documents
+    const documentsDir = getDocumentsDir();
     const restoreDocsDir = join(extractDir, 'documents');
     if (existsSync(restoreDocsDir)) {
       // Clear existing documents directory
