@@ -1,4 +1,4 @@
-import { clients, projects, timesheets, settings } from './index.js';
+import { clients, projects, timesheets, settings, expenses } from './index.js';
 
 async function seed() {
   // Clear existing data
@@ -6,6 +6,7 @@ async function seed() {
   await projects.remove({}, { multi: true });
   await timesheets.remove({}, { multi: true });
   await settings.remove({}, { multi: true });
+  await expenses.remove({}, { multi: true });
 
   // Seed settings
   await settings.insert({
@@ -135,8 +136,78 @@ async function seed() {
     });
   }
 
+  // Seed expenses
+  const now = new Date().toISOString();
+  await expenses.insert({
+    projectId: proj2._id,
+    date: monday.toISOString().split('T')[0],
+    expenseType: 'Travel',
+    description: 'Train to Canary Wharf office',
+    amount: 45.60,
+    vatAmount: 0,
+    vatPercent: 0,
+    billable: true,
+    currency: 'GBP',
+    attachments: [],
+    notes: 'Return ticket Kings Cross to Canary Wharf',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await expenses.insert({
+    projectId: proj2._id,
+    date: monday.toISOString().split('T')[0],
+    expenseType: 'Mileage',
+    description: 'Drive to data centre',
+    amount: 32.40,
+    vatAmount: 0,
+    vatPercent: 0,
+    billable: true,
+    currency: 'GBP',
+    attachments: [],
+    notes: '72 miles at 45p/mile',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const tuesday = new Date(monday);
+  tuesday.setDate(monday.getDate() + 1);
+  if (tuesday <= today) {
+    await expenses.insert({
+      projectId: proj2._id,
+      date: tuesday.toISOString().split('T')[0],
+      expenseType: 'Equipment',
+      description: 'USB-C adapter for meeting room',
+      amount: 24.99,
+      vatAmount: 4.17,
+      vatPercent: 16.69,
+      billable: false,
+      currency: 'GBP',
+      attachments: [],
+      notes: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  await expenses.insert({
+    projectId: proj3._id,
+    date: lastWeekMon.toISOString().split('T')[0],
+    expenseType: 'Travel',
+    description: 'Train to HMRC Croydon office',
+    amount: 28.50,
+    vatAmount: 0,
+    vatPercent: 0,
+    billable: true,
+    currency: 'GBP',
+    attachments: [],
+    notes: 'Off-peak return',
+    createdAt: now,
+    updatedAt: now,
+  });
+
   console.log('Seed complete!');
-  console.log(`Created: 2 clients, 3 projects, ${5 + 3} timesheet entries`);
+  console.log(`Created: 2 clients, 3 projects, ${5 + 3} timesheet entries, 4 expenses`);
 }
 
 seed().catch(console.error);

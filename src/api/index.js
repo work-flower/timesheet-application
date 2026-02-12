@@ -89,6 +89,44 @@ export const documentsApi = {
   delete: (id) => request(`/documents/${id}`, { method: 'DELETE' }),
 };
 
+// Expenses
+export const expensesApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/expenses${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/expenses/${id}`),
+  getTypes: () => request('/expenses/types'),
+  create: (data) => request('/expenses', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/expenses/${id}`, { method: 'DELETE' }),
+  uploadAttachments: async (id, files) => {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    const res = await fetch(`${BASE}/expenses/${id}/attachments`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
+  deleteAttachment: (id, filename) =>
+    request(`/expenses/${id}/attachments/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+  getAttachmentUrl: (id, filename) =>
+    `${BASE}/expenses/${id}/attachments/${encodeURIComponent(filename)}`,
+  getThumbnailUrl: (id, filename) =>
+    `${BASE}/expenses/${id}/attachments/${encodeURIComponent(filename)}/thumbnail`,
+};
+
 // Backup
 export const backupApi = {
   getConfig: () => request('/backup/config'),

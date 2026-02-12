@@ -10,6 +10,8 @@ import ProjectList from './pages/projects/ProjectList.jsx';
 import ProjectForm from './pages/projects/ProjectForm.jsx';
 import TimesheetList from './pages/timesheets/TimesheetList.jsx';
 import TimesheetForm from './pages/timesheets/TimesheetForm.jsx';
+import ExpenseList from './pages/expenses/ExpenseList.jsx';
+import ExpenseForm from './pages/expenses/ExpenseForm.jsx';
 import Settings from './pages/settings/Settings.jsx';
 import ReportForm from './pages/reports/ReportForm.jsx';
 
@@ -30,6 +32,9 @@ export default function App() {
               <Route path="/timesheets" element={<TimesheetList />} />
               <Route path="/timesheets/new" element={<TimesheetForm />} />
               <Route path="/timesheets/:id" element={<TimesheetForm />} />
+              <Route path="/expenses" element={<ExpenseList />} />
+              <Route path="/expenses/new" element={<ExpenseForm />} />
+              <Route path="/expenses/:id" element={<ExpenseForm />} />
               <Route path="/reports" element={<ReportForm />} />
               <Route path="/settings" element={<Settings />} />
             </Route>

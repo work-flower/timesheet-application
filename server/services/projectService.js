@@ -1,5 +1,6 @@
-import { clients, projects, timesheets, documents } from '../db/index.js';
+import { clients, projects, timesheets, documents, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { removeAllAttachments } from './expenseAttachmentService.js';
 
 export async function getAll(query = {}) {
   const { results, totalCount } = await buildQuery(projects, query, { name: 1 });
@@ -28,6 +29,9 @@ export async function getAll(query = {}) {
       if (expands.includes('documents')) {
         item.documents = await documents.find({ projectId: item._id });
       }
+      if (expands.includes('expenses')) {
+        item.expenses = await expenses.find({ projectId: item._id });
+      }
     }
   }
 
@@ -43,6 +47,7 @@ export async function getById(id) {
   const effectiveRate = project.rate != null ? project.rate : (client?.defaultRate || 0);
 
   const projectTimesheets = await timesheets.find({ projectId: id }).sort({ date: -1 });
+  const projectExpenses = await expenses.find({ projectId: id }).sort({ date: -1 });
 
   const effectiveWorkingHours = project.workingHoursPerDay != null
     ? project.workingHoursPerDay : (client?.workingHoursPerDay || 8);
@@ -53,6 +58,7 @@ export async function getById(id) {
     effectiveRate,
     effectiveWorkingHours,
     timesheets: projectTimesheets,
+    expenses: projectExpenses,
   };
 }
 
@@ -119,7 +125,12 @@ export async function remove(id) {
     throw new Error('Cannot delete the default project');
   }
 
-  // Cascade: delete all timesheets for this project
+  // Cascade: delete all timesheets and expenses for this project
   await timesheets.remove({ projectId: id }, { multi: true });
+  const projectExpenses = await expenses.find({ projectId: id });
+  for (const exp of projectExpenses) {
+    await removeAllAttachments(exp._id);
+  }
+  await expenses.remove({ projectId: id }, { multi: true });
   return projects.remove({ _id: id });
 }

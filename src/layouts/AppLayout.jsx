@@ -12,6 +12,7 @@ import {
   PeopleRegular,
   FolderRegular,
   CalendarClockRegular,
+  ReceiptRegular,
   DocumentBulletListRegular,
   SettingsRegular,
 } from '@fluentui/react-icons';
@@ -95,6 +96,7 @@ const navItems = [
   { to: '/clients', label: 'Clients', icon: <PeopleRegular /> },
   { to: '/projects', label: 'Projects', icon: <FolderRegular /> },
   { to: '/timesheets', label: 'Timesheets', icon: <CalendarClockRegular /> },
+  { to: '/expenses', label: 'Expenses', icon: <ReceiptRegular /> },
   { to: '/reports', label: 'Reports', icon: <DocumentBulletListRegular /> },
 ];
 

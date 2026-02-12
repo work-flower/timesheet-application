@@ -1,5 +1,6 @@
-import { clients, projects, timesheets } from '../db/index.js';
+import { clients, projects, timesheets, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { removeAllAttachments } from './expenseAttachmentService.js';
 
 export async function getAll(query = {}) {
   const { results, totalCount } = await buildQuery(clients, query, { companyName: 1 });
@@ -15,6 +16,11 @@ export async function getAll(query = {}) {
         const clientProjects = item.projects || await projects.find({ clientId: item._id });
         const projectIds = clientProjects.map(p => p._id);
         item.timesheets = await timesheets.find({ projectId: { $in: projectIds } });
+      }
+      if (expands.includes('expenses')) {
+        const clientProjects = item.projects || await projects.find({ clientId: item._id });
+        const projectIds = clientProjects.map(p => p._id);
+        item.expenses = await expenses.find({ projectId: { $in: projectIds } });
       }
     }
   }
@@ -38,7 +44,14 @@ export async function getById(id) {
     projectName: projectMap[ts.projectId]?.name || 'Unknown',
   }));
 
-  return { ...client, projects: clientProjects, timesheets: enrichedTimesheets };
+  // Expenses for all client projects
+  const clientExpenses = await expenses.find({ projectId: { $in: projectIds } }).sort({ date: -1 });
+  const enrichedExpenses = clientExpenses.map((exp) => ({
+    ...exp,
+    projectName: projectMap[exp.projectId]?.name || 'Unknown',
+  }));
+
+  return { ...client, projects: clientProjects, timesheets: enrichedTimesheets, expenses: enrichedExpenses };
 }
 
 export async function create(data) {
@@ -90,6 +103,12 @@ export async function remove(id) {
 
   if (projectIds.length > 0) {
     await timesheets.remove({ projectId: { $in: projectIds } }, { multi: true });
+    // Cascade delete expenses + attachment files
+    const clientExpenses = await expenses.find({ projectId: { $in: projectIds } });
+    for (const exp of clientExpenses) {
+      await removeAllAttachments(exp._id);
+    }
+    await expenses.remove({ projectId: { $in: projectIds } }, { multi: true });
   }
   await projects.remove({ clientId: id }, { multi: true });
   return clients.remove({ _id: id });

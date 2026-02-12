@@ -9,6 +9,7 @@ import settingsRoutes from './routes/settings.js';
 import reportRoutes from './routes/reports.js';
 import documentRoutes from './routes/documents.js';
 import backupRoutes from './routes/backup.js';
+import expenseRoutes from './routes/expenses.js';
 import { initScheduler } from './services/backupScheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,6 +28,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/expenses', expenseRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

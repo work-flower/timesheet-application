@@ -67,6 +67,22 @@ const timesheetColumns = [
   { key: 'notes', label: 'Notes' },
 ];
 
+const expenseColumns = [
+  { key: 'date', label: 'Date' },
+  { key: 'projectName', label: 'Project' },
+  { key: 'expenseType', label: 'Type' },
+  {
+    key: 'amount',
+    label: 'Amount',
+    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0),
+  },
+  {
+    key: 'billable',
+    label: 'Billable',
+    render: (item) => item.billable ? 'Yes' : 'No',
+  },
+];
+
 export default function ClientForm() {
   const styles = useStyles();
   const { id } = useParams();
@@ -200,6 +216,7 @@ export default function ClientForm() {
             <Tab value="general">General</Tab>
             <Tab value="projects">Projects ({clientData?.projects?.length || 0})</Tab>
             <Tab value="timesheets">Timesheets ({clientData?.timesheets?.length || 0})</Tab>
+            <Tab value="expenses">Expenses ({clientData?.expenses?.length || 0})</Tab>
           </TabList>
         )}
 
@@ -302,6 +319,15 @@ export default function ClientForm() {
               items={clientData.timesheets || []}
               emptyMessage="No timesheet entries for this client."
               onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
+            />
+          )}
+
+          {tab === 'expenses' && clientData && (
+            <EntityGrid
+              columns={expenseColumns}
+              items={clientData.expenses || []}
+              emptyMessage="No expenses for this client."
+              onRowClick={(item) => guardedNavigate(`/expenses/${item._id}`)}
             />
           )}
         </div>

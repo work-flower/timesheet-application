@@ -58,6 +58,22 @@ const timesheetColumns = [
   { key: 'notes', label: 'Notes' },
 ];
 
+const expenseColumns = [
+  { key: 'date', label: 'Date' },
+  { key: 'expenseType', label: 'Type' },
+  { key: 'description', label: 'Description' },
+  {
+    key: 'amount',
+    label: 'Amount',
+    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0),
+  },
+  {
+    key: 'billable',
+    label: 'Billable',
+    render: (item) => item.billable ? 'Yes' : 'No',
+  },
+];
+
 const documentColumns = [
   { key: 'period', label: 'Period', render: (item) => `${item.periodStart} to ${item.periodEnd}` },
   { key: 'granularity', label: 'Type', render: (item) => item.granularity === 'weekly' ? 'Weekly' : 'Monthly' },
@@ -235,6 +251,7 @@ export default function ProjectForm() {
           <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
             <Tab value="general">General</Tab>
             <Tab value="timesheets">Timesheets ({projectData?.timesheets?.length || 0})</Tab>
+            <Tab value="expenses">Expenses ({projectData?.expenses?.length || 0})</Tab>
             <Tab value="documents">Documents ({documents.length})</Tab>
           </TabList>
         )}
@@ -327,6 +344,15 @@ export default function ProjectForm() {
               items={projectData.timesheets || []}
               emptyMessage="No timesheet entries for this project."
               onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
+            />
+          )}
+
+          {tab === 'expenses' && projectData && (
+            <EntityGrid
+              columns={expenseColumns}
+              items={projectData.expenses || []}
+              emptyMessage="No expenses for this project."
+              onRowClick={(item) => guardedNavigate(`/expenses/${item._id}`)}
             />
           )}
 
