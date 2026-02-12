@@ -22,6 +22,7 @@ A single-user desktop timesheet application for UK technology contractors. The a
 ### Environment Variables (`.env`)
 - `DATA_DIR` — path to the database/documents directory (default: `./data`)
 - `PORT` — Express server port (default: `3001`)
+- `BACKUP_PREFIX` — R2 key prefix for backups (default: `backups`). Useful to separate prod/dev backups in the same bucket (e.g. `backups/prod`, `backups/dev`).
 
 ### npm Scripts
 - `npm run dev` — runs Express (port 3001) + Vite dev server (port 5173) via `concurrently`

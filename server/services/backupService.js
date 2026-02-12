@@ -18,6 +18,7 @@ import { clients, projects, timesheets, settings, documents } from '../db/index.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const dataDir = process.env.DATA_DIR || join(__dirname, '..', '..', 'data');
+const backupPrefix = process.env.BACKUP_PREFIX || 'backups';
 const documentsDir = join(dataDir, 'documents');
 
 let operationLock = false;
@@ -112,7 +113,7 @@ export async function createBackup() {
     const s3 = buildS3Client(config);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const folderName = `timesheet-backup-${timestamp}`;
-    const key = `backups/${folderName}.tar.gz`;
+    const key = `${backupPrefix}/${folderName}.tar.gz`;
 
     // Export all collections
     const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs] = await Promise.all([
@@ -193,7 +194,7 @@ export async function listBackups() {
   const s3 = buildS3Client(config);
   const response = await s3.send(new ListObjectsV2Command({
     Bucket: config.bucketName,
-    Prefix: 'backups/',
+    Prefix: `${backupPrefix}/`,
   }));
 
   if (!response.Contents) return [];
