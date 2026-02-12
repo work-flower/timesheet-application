@@ -13,12 +13,15 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbButton,
+  Tab,
+  TabList,
 } from '@fluentui/react-components';
 import { settingsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import BackupSettings from './BackupSettings.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -39,6 +42,9 @@ const useStyles = makeStyles({
   message: {
     marginBottom: '16px',
   },
+  tabs: {
+    marginBottom: '16px',
+  },
 });
 
 export default function Settings() {
@@ -53,6 +59,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
+  const [tab, setTab] = useState('profile');
 
   useEffect(() => {
     settingsApi.get().then((data) => {
@@ -118,47 +125,63 @@ export default function Settings() {
         onSave={handleSave}
         onSaveAndClose={handleSaveAndClose}
         saving={saving}
+        saveDisabled={tab !== 'profile'}
       />
       <div className={styles.pageBody}>
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem><BreadcrumbButton>Settings</BreadcrumbButton></BreadcrumbItem>
           </Breadcrumb>
-          <Text className={styles.title}>Contractor Profile</Text>
+          <Text className={styles.title}>Settings</Text>
         </div>
 
-        {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-        {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Settings saved successfully.</MessageBarBody></MessageBar>}
+        <TabList
+          className={styles.tabs}
+          selectedValue={tab}
+          onTabSelect={(e, data) => setTab(data.value)}
+        >
+          <Tab value="profile">Profile</Tab>
+          <Tab value="backup">Backup</Tab>
+        </TabList>
 
-        <FormSection title="Personal Details">
-          <FormField changed={changedFields.has('name')}>
-            <Field label="Full Name"><Input value={form.name} onChange={handleChange('name')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('email')}>
-            <Field label="Email"><Input type="email" value={form.email} onChange={handleChange('email')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('phone')}>
-            <Field label="Phone"><Input value={form.phone} onChange={handleChange('phone')} /></Field>
-          </FormField>
-          <FormField fullWidth changed={changedFields.has('address')}>
-            <Field label="Address"><Textarea value={form.address} onChange={handleChange('address')} resize="vertical" /></Field>
-          </FormField>
-        </FormSection>
+        {tab === 'profile' && (
+          <>
+            {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+            {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Settings saved successfully.</MessageBarBody></MessageBar>}
 
-        <FormSection title="Business Details">
-          <FormField changed={changedFields.has('businessName')}>
-            <Field label="Business Name"><Input value={form.businessName} onChange={handleChange('businessName')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('utrNumber')}>
-            <Field label="UTR Number"><Input value={form.utrNumber} onChange={handleChange('utrNumber')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('vatNumber')}>
-            <Field label="VAT Number"><Input value={form.vatNumber} onChange={handleChange('vatNumber')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('companyRegistration')}>
-            <Field label="Company Registration"><Input value={form.companyRegistration} onChange={handleChange('companyRegistration')} /></Field>
-          </FormField>
-        </FormSection>
+            <FormSection title="Personal Details">
+              <FormField changed={changedFields.has('name')}>
+                <Field label="Full Name"><Input value={form.name} onChange={handleChange('name')} /></Field>
+              </FormField>
+              <FormField changed={changedFields.has('email')}>
+                <Field label="Email"><Input type="email" value={form.email} onChange={handleChange('email')} /></Field>
+              </FormField>
+              <FormField changed={changedFields.has('phone')}>
+                <Field label="Phone"><Input value={form.phone} onChange={handleChange('phone')} /></Field>
+              </FormField>
+              <FormField fullWidth changed={changedFields.has('address')}>
+                <Field label="Address"><Textarea value={form.address} onChange={handleChange('address')} resize="vertical" /></Field>
+              </FormField>
+            </FormSection>
+
+            <FormSection title="Business Details">
+              <FormField changed={changedFields.has('businessName')}>
+                <Field label="Business Name"><Input value={form.businessName} onChange={handleChange('businessName')} /></Field>
+              </FormField>
+              <FormField changed={changedFields.has('utrNumber')}>
+                <Field label="UTR Number"><Input value={form.utrNumber} onChange={handleChange('utrNumber')} /></Field>
+              </FormField>
+              <FormField changed={changedFields.has('vatNumber')}>
+                <Field label="VAT Number"><Input value={form.vatNumber} onChange={handleChange('vatNumber')} /></Field>
+              </FormField>
+              <FormField changed={changedFields.has('companyRegistration')}>
+                <Field label="Company Registration"><Input value={form.companyRegistration} onChange={handleChange('companyRegistration')} /></Field>
+              </FormField>
+            </FormSection>
+          </>
+        )}
+
+        {tab === 'backup' && <BackupSettings />}
       </div>
     </div>
   );

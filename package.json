@@ -9,17 +9,21 @@
     "seed": "node server/db/seed.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.988.0",
     "@fluentui/react-components": "^9.54.0",
     "@fluentui/react-datepicker-compat": "^0.4.0",
     "@fluentui/react-icons": "^2.0.245",
     "@uiw/react-md-editor": "^4.0.11",
+    "archiver": "^7.0.1",
     "dotenv": "^17.2.4",
     "express": "^4.21.0",
     "nedb-promises": "^6.2.3",
+    "node-cron": "^4.2.1",
     "pdfmake": "^0.3.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0"
+    "react-router-dom": "^6.26.0",
+    "tar": "^7.5.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

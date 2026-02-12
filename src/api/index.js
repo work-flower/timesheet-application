@@ -88,3 +88,14 @@ export const documentsApi = {
   save: (data) => request('/documents', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id) => request(`/documents/${id}`, { method: 'DELETE' }),
 };
+
+// Backup
+export const backupApi = {
+  getConfig: () => request('/backup/config'),
+  updateConfig: (data) => request('/backup/config', { method: 'PUT', body: JSON.stringify(data) }),
+  testConnection: (data) => request('/backup/test-connection', { method: 'POST', body: JSON.stringify(data) }),
+  create: () => request('/backup/create', { method: 'POST', body: JSON.stringify({}) }),
+  list: () => request('/backup/list'),
+  restore: (backupKey) => request('/backup/restore', { method: 'POST', body: JSON.stringify({ backupKey }) }),
+  delete: (key) => request(`/backup/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+};

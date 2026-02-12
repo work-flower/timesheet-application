@@ -13,6 +13,7 @@ A single-user desktop timesheet application for UK technology contractors. The a
 - **Backend:** Express.js (local server)
 - **Database:** NeDB (`nedb-promises` package) — embedded file-based database, MongoDB-like API, zero setup
 - **PDF Generation:** pdfmake (`pdfmake` package) — server-side PDF creation
+- **Cloud Backup:** `@aws-sdk/client-s3` (Cloudflare R2), `archiver` (create .tar.gz), `tar` (extract .tar.gz), `node-cron` (scheduled backups)
 - **Build Tool:** Vite
 - **Environment:** `dotenv` — loads `.env` file for configuration (e.g. `DATA_DIR`)
 
@@ -49,6 +50,7 @@ timesheet-app/
 │   ├── index.js              # Express server entry point (loads dotenv), serves API + static frontend
 │   ├── db/
 │   │   ├── index.js          # NeDB datastore initialization (uses DATA_DIR env var, defaults to ./data)
+│   │   ├── backupConfig.js   # Separate NeDB datastore for backup configuration (not included in backups)
 │   │   └── seed.js           # Optional: seed/init logic
 │   ├── odata.js              # Shared OData query parser/applier (parseFilter, parseOrderBy, buildQuery, applySelect, formatResponse)
 │   ├── services/
@@ -56,20 +58,24 @@ timesheet-app/
 │   │   ├── projectService.js # Project logic (rate inheritance)
 │   │   ├── timesheetService.js # Timesheet logic (filtering, grouping)
 │   │   ├── reportService.js  # PDF generation via pdfmake (supports per-project filtering)
-│   │   └── documentService.js # Document CRUD + PDF file storage on disk
+│   │   ├── documentService.js # Document CRUD + PDF file storage on disk
+│   │   ├── backupService.js  # R2 backup: config CRUD, test connection, create/list/restore/delete backups
+│   │   └── backupScheduler.js # node-cron lifecycle for scheduled backups (daily/weekly)
 │   └── routes/
 │       ├── clients.js
 │       ├── projects.js
 │       ├── timesheets.js
 │       ├── settings.js
 │       ├── reports.js        # PDF generation endpoint (returns PDF stream)
-│       └── documents.js      # Document CRUD + PDF file serving
+│       ├── documents.js      # Document CRUD + PDF file serving
+│       └── backup.js         # Backup config, test, create, list, restore, delete endpoints
 ├── data/                     # NeDB database files (auto-created at runtime, path configurable via DATA_DIR)
 │   ├── clients.db
 │   ├── projects.db
 │   ├── timesheets.db
 │   ├── settings.db
 │   ├── documents.db
+│   ├── backup-config.db      # Backup configuration (R2 credentials, schedule — not included in backups)
 │   └── documents/            # Saved PDF files on disk
 ├── src/
 │   ├── main.jsx              # React entry point
@@ -103,7 +109,8 @@ timesheet-app/
 │   │   ├── reports/
 │   │   │   └── ReportForm.jsx    # Two-column report page: parameter sidebar + PDF preview
 │   │   └── settings/
-│   │       └── Settings.jsx      # Contractor profile and business info
+│   │       ├── Settings.jsx      # Settings page with Profile and Backup tabs
+│   │       └── BackupSettings.jsx # Backup tab: R2 config, schedule, backup history with restore/delete
 │   └── api/
 │       └── index.js          # Frontend API client (fetch wrapper for all endpoints)
 ```
@@ -207,6 +214,24 @@ timesheet-app/
 
 PDF files are stored on disk in `data/documents/`. Each document record references its file via `filePath`.
 
+### backupConfig (single document — R2 backup configuration)
+
+```json
+{
+  "_id": "auto",
+  "accountId": "",
+  "accessKeyId": "",
+  "secretAccessKey": "",
+  "bucketName": "",
+  "endpoint": "https://<accountId>.r2.cloudflarestorage.com",
+  "schedule": "off | daily | weekly",
+  "createdAt": "ISO date",
+  "updatedAt": "ISO date"
+}
+```
+
+Stored in a separate `backup-config.db` file — **not** included in backup archives so credentials stay local. Secret key is masked on read (last 4 chars shown). On write, if incoming value contains `*`, the existing stored value is retained.
+
 ## API Endpoints
 
 All endpoints are prefixed with `/api`.
@@ -249,6 +274,15 @@ All endpoints are prefixed with `/api`.
 - `GET /api/documents/:id/file` — serve the actual PDF file
 - `POST /api/documents` — generate PDF server-side, save file + record (body: `clientId`, `projectId`, `startDate`, `endDate`, `granularity`)
 - `DELETE /api/documents/:id` — delete file from disk + remove record
+
+### Backup
+- `GET /api/backup/config` — get backup config (secret key masked)
+- `PUT /api/backup/config` — update config + restart cron scheduler
+- `POST /api/backup/test-connection` — test R2 credentials via `ListObjectsV2Command`
+- `POST /api/backup/create` — trigger manual backup (creates .tar.gz archive in R2)
+- `GET /api/backup/list` — list backups from R2 (sorted newest-first)
+- `POST /api/backup/restore` — restore from backup (body: `{ backupKey }`) — replaces all data
+- `DELETE /api/backup/:key(*)` — delete backup from R2
 
 ## API Response Enrichment
 
@@ -351,6 +385,7 @@ GET /api/documents?projectId=abc123&$count=true
 - **Delete confirmations:** Always show a confirmation dialog before deleting
 - **Reports page:** Two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods are computed from actual timesheet dates (monthly or weekly). Generate button produces a PDF previewed via `<object>`. Download saves to disk via browser download. Save Document persists the PDF server-side, viewable from the project's Documents tab. Client, Project, and Granularity selections are persisted to localStorage and restored on revisit.
 - **Project Documents tab:** Shows saved documents for the project. Clicking a row opens the PDF in a new browser tab.
+- **Settings page:** Two tabs — "Profile" (contractor profile form with dirty tracking / navigation guard) and "Backup" (self-contained R2 backup management). FormCommandBar save buttons are disabled on the Backup tab. The Backup tab has its own Save Configuration button, Test Connection, Backup Now, and a backup history grid with Restore/Delete actions per row. Restore shows a confirmation dialog and a reload banner on success.
 
 ## Business Rules
 
@@ -386,6 +421,8 @@ GET /api/documents?projectId=abc123&$count=true
 - **Form page layout pattern:** Form pages use a two-layer structure: outer `page` div (no padding, so FormCommandBar spans full width) → `FormCommandBar` (sticky, `position: sticky; top: 0; z-index: 10`) → inner `pageBody` div (`padding: 16px 24px`) containing breadcrumb, title, and form content.
 - **Navigation guard architecture:** Uses a context-based approach (`UnsavedChangesContext`) instead of React Router's `useBlocker` (which requires `createBrowserRouter`, not `BrowserRouter`). The provider wraps routes inside `BrowserRouter` in `App.jsx`. `AppLayout` intercepts sidebar NavLink clicks and the Settings button via `guardedNavigate`. Browser back/forward is handled via a popstate sentinel entry.
 - `npm run dev` does NOT auto-restart the backend server — restart manually after server-side file changes.
+- The `tar` npm package does not have a default ESM export — must use `import * as tar from 'tar'` (not `import tar from 'tar'`).
+- Backup scheduler (`backupScheduler.js`) is initialized on server boot via `initScheduler()` in `server/index.js`. Cron expressions: `daily` → `0 2 * * *`, `weekly` → `0 2 * * 1`.
 
 ## PDF Report Layout (pdfmake)
 

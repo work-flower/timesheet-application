@@ -8,6 +8,8 @@ import timesheetRoutes from './routes/timesheets.js';
 import settingsRoutes from './routes/settings.js';
 import reportRoutes from './routes/reports.js';
 import documentRoutes from './routes/documents.js';
+import backupRoutes from './routes/backup.js';
+import { initScheduler } from './services/backupScheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,6 +26,7 @@ app.use('/api/timesheets', timesheetRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/backup', backupRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -39,4 +42,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  initScheduler();
 });
