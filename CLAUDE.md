@@ -9,7 +9,9 @@ A single-user desktop timesheet application for UK technology contractors. The a
 - **Runtime:** Node.js
 - **Frontend:** React 18 + React Router v6
 - **UI Library:** Fluent UI v9 (`@fluentui/react-components`) — primary UI framework
-- **Markdown Editor:** `@uiw/react-md-editor` — used for all notes fields (clients, projects, timesheets)
+- **Markdown Editor:** `@uiw/react-md-editor` — used for all notes fields (clients, projects, timesheets, expenses)
+- **File Uploads:** `multer` — multipart form parsing for expense attachment uploads (memory storage)
+- **Image Processing:** `sharp` — server-side thumbnail generation (200px wide) for expense receipt images
 - **Backend:** Express.js (local server)
 - **Database:** NeDB (`nedb-promises` package) — embedded file-based database, MongoDB-like API, zero setup
 - **PDF Generation:** pdfmake (`pdfmake` package) — server-side PDF creation
@@ -58,6 +60,8 @@ timesheet-app/
 │   │   ├── clientService.js  # Client business logic (auto-create default project on client creation)
 │   │   ├── projectService.js # Project logic (rate inheritance)
 │   │   ├── timesheetService.js # Timesheet logic (filtering, grouping)
+│   │   ├── expenseService.js # Expense CRUD, filtering, enrichment, distinct types
+│   │   ├── expenseAttachmentService.js # Expense file storage, thumbnails via sharp, cleanup
 │   │   ├── reportService.js  # PDF generation via pdfmake (supports per-project filtering)
 │   │   ├── documentService.js # Document CRUD + PDF file storage on disk
 │   │   ├── backupService.js  # R2 backup: config CRUD, test connection, create/list/restore/delete backups
@@ -66,6 +70,7 @@ timesheet-app/
 │       ├── clients.js
 │       ├── projects.js
 │       ├── timesheets.js
+│       ├── expenses.js       # Expense CRUD + attachment upload/download/delete (multer)
 │       ├── settings.js
 │       ├── reports.js        # PDF generation endpoint (returns PDF stream)
 │       ├── documents.js      # Document CRUD + PDF file serving
@@ -76,8 +81,10 @@ timesheet-app/
 │   ├── timesheets.db
 │   ├── settings.db
 │   ├── documents.db
+│   ├── expenses.db
 │   ├── backup-config.db      # Backup configuration (R2 credentials, schedule — not included in backups)
-│   └── documents/            # Saved PDF files on disk
+│   ├── documents/            # Saved PDF files on disk
+│   └── expenses/             # Expense attachment files on disk (subdirectory per expense ID)
 ├── src/
 │   ├── main.jsx              # React entry point
 │   ├── App.jsx               # Root component with FluentProvider and Router
@@ -89,6 +96,7 @@ timesheet-app/
 │   ├── layouts/
 │   │   └── AppLayout.jsx     # Main layout: top bar + left nav sidebar + main content area
 │   ├── components/
+│   │   ├── AttachmentGallery.jsx # Reusable attachment grid: thumbnail cards, image lightbox, upload/delete
 │   │   ├── CommandBar.jsx    # Reusable top command bar for list views (New, Delete, Search)
 │   │   ├── ConfirmDialog.jsx # Reusable confirmation dialog (title + message props)
 │   │   ├── EntityGrid.jsx    # Reusable data grid for list views (uses createTableColumn)
@@ -97,16 +105,19 @@ timesheet-app/
 │   │   ├── MarkdownEditor.jsx # Markdown editor wrapper (@uiw/react-md-editor with Fluent UI styling)
 │   │   └── UnsavedChangesDialog.jsx # Save/Discard/Cancel dialog for unsaved changes
 │   ├── pages/
-│   │   ├── Dashboard.jsx     # Four summary cards (week/month hours, active projects, month earnings) + recent entries grid
+│   │   ├── Dashboard.jsx     # Five summary cards (week/month hours, active projects, month earnings, month expenses) + recent entries grid
 │   │   ├── clients/
 │   │   │   ├── ClientList.jsx    # DataGrid list of all clients
-│   │   │   └── ClientForm.jsx    # Client record form with tabs (General, Projects, Timesheets)
+│   │   │   └── ClientForm.jsx    # Client record form with tabs (General, Projects, Timesheets, Expenses)
 │   │   ├── projects/
 │   │   │   ├── ProjectList.jsx   # DataGrid list of all projects
-│   │   │   └── ProjectForm.jsx   # Project record form with tabs (General, Timesheets, Documents)
+│   │   │   └── ProjectForm.jsx   # Project record form with tabs (General, Timesheets, Expenses, Documents)
 │   │   ├── timesheets/
 │   │   │   ├── TimesheetList.jsx # DataGrid with period/client/project filters, localStorage-persisted
 │   │   │   └── TimesheetForm.jsx # Daily timesheet entry form
+│   │   ├── expenses/
+│   │   │   ├── ExpenseList.jsx   # DataGrid with period/client/project/type filters, localStorage-persisted
+│   │   │   └── ExpenseForm.jsx   # Expense entry form with attachments
 │   │   ├── reports/
 │   │   │   └── ReportForm.jsx    # Two-column report page: parameter sidebar + PDF preview
 │   │   └── settings/
@@ -197,6 +208,38 @@ timesheet-app/
 
 **Computed on save:** `days = hours / effectiveWorkingHours`, `amount = days × effectiveRate`. These are persisted at create/update time and treated as the source of truth. The API returns persisted values as-is — no fallback recomputation on read. Old records without these fields will show as null/empty until re-saved.
 
+### expenses
+
+```json
+{
+  "_id": "auto",
+  "projectId": "FK → projects._id",
+  "date": "YYYY-MM-DD",
+  "expenseType": "",
+  "description": "",
+  "amount": 0,
+  "vatAmount": 0,
+  "vatPercent": 0,
+  "billable": true,
+  "currency": "GBP",
+  "attachments": [
+    { "filename": "uuid-receipt.jpg", "originalName": "IMG_001.jpg", "mimeType": "image/jpeg" }
+  ],
+  "notes": "",
+  "createdAt": "ISO date",
+  "updatedAt": "ISO date"
+}
+```
+
+- `expenseType` — freetext with autocomplete from distinct values in the collection
+- `currency` — inherited from client on creation, stored per expense, read-only in the form
+- `amount` — gross amount (total paid including VAT)
+- `vatAmount` — VAT portion included in the amount
+- `vatPercent` — computed on save: `(vatAmount / amount) * 100`, read-only in the form
+- `attachments` — array embedded in the expense doc; files on disk at `data/expenses/{expenseId}/`, thumbnails prefixed with `thumb_`
+- `description` — client-facing (visible on invoices/reports)
+- `notes` — internal only (not visible to client)
+
 ### documents
 
 ```json
@@ -243,14 +286,14 @@ All endpoints are prefixed with `/api`.
 - `GET /api/clients/:id` — get client with related projects and timesheets
 - `POST /api/clients` — create client (auto-creates a default project)
 - `PUT /api/clients/:id` — update client
-- `DELETE /api/clients/:id` — delete client (cascade delete projects and timesheets)
+- `DELETE /api/clients/:id` — delete client (cascade delete projects, timesheets, and expenses + attachment files)
 
 ### Projects
 - `GET /api/projects` — list all projects, populate client name (supports OData query params)
 - `GET /api/projects/:id` — get project with related timesheets, compute effectiveRate
 - `POST /api/projects` — create project
 - `PUT /api/projects/:id` — update project
-- `DELETE /api/projects/:id` — delete project (cascade delete timesheets)
+- `DELETE /api/projects/:id` — delete project (cascade delete timesheets and expenses + attachment files)
 
 ### Timesheets
 - `GET /api/timesheets` — list timesheets (supports OData query params), also supports legacy query params:
@@ -262,6 +305,22 @@ All endpoints are prefixed with `/api`.
 - `POST /api/timesheets` — create entry
 - `PUT /api/timesheets/:id` — update entry
 - `DELETE /api/timesheets/:id` — delete entry
+
+### Expenses
+- `GET /api/expenses` — list expenses (supports OData query params), also supports legacy query params:
+  - `startDate` and `endDate` for date range filtering
+  - `projectId` for filtering by project
+  - `clientId` for filtering by client
+  - `expenseType` for filtering by type
+- `GET /api/expenses/types` — get distinct expense types (sorted alphabetically)
+- `GET /api/expenses/:id` — get single expense with enriched fields
+- `POST /api/expenses` — create expense (inherits currency from client)
+- `PUT /api/expenses/:id` — update expense (recomputes `vatPercent` when amount/vatAmount changes)
+- `DELETE /api/expenses/:id` — delete expense (cascade deletes attachment files)
+- `POST /api/expenses/:id/attachments` — upload files (multipart, field `files`, max 10)
+- `DELETE /api/expenses/:id/attachments/:filename` — delete single attachment
+- `GET /api/expenses/:id/attachments/:filename` — serve original file
+- `GET /api/expenses/:id/attachments/:filename/thumbnail` — serve thumbnail (images only)
 
 ### Settings
 - `GET /api/settings` — get contractor profile
@@ -294,7 +353,7 @@ Services manually join related data (NeDB has no populate). Key enriched fields:
 Each project includes: `clientName`, `effectiveRate`, `effectiveWorkingHours` — computed from the project's client.
 
 ### `GET /api/projects/:id` (detail)
-Same enriched fields as list, plus: `timesheets[]` — all timesheet entries for this project.
+Same enriched fields as list, plus: `timesheets[]` — all timesheet entries for this project, `expenses[]` — all expenses for this project.
 
 ### `GET /api/timesheets` (list)
 Each entry includes: `projectName`, `clientName`, `clientId` — joined from the project and its client. Supports `groupBy` which returns `{ period, totalHours, totalDays, totalAmount, entries[] }[]`.
@@ -302,12 +361,18 @@ Each entry includes: `projectName`, `clientName`, `clientId` — joined from the
 ### `GET /api/timesheets/:id` (detail)
 Same enriched fields as list, plus: `effectiveRate`, `effectiveWorkingHours` — for client-side display.
 
+### `GET /api/expenses` (list)
+Each entry includes: `projectName`, `clientName`, `clientId` — joined from the project and its client.
+
+### `GET /api/expenses/:id` (detail)
+Same enriched fields as list.
+
 ### `GET /api/clients/:id` (detail)
-Includes: `projects[]` — all projects for this client, `timesheets[]` — all timesheets across all client projects (enriched with `projectName`).
+Includes: `projects[]` — all projects for this client, `timesheets[]` — all timesheets across all client projects (enriched with `projectName`), `expenses[]` — all expenses across all client projects (enriched with `projectName`).
 
 ## OData Query Support
 
-All list endpoints (`GET /api/clients`, `GET /api/projects`, `GET /api/timesheets`, `GET /api/documents`) support OData-style query parameters via a shared utility (`server/odata.js`). Legacy custom params (e.g. `startDate`, `endDate`, `groupBy`, `clientId`, `projectId`) continue to work alongside OData — filters are merged additively.
+All list endpoints (`GET /api/clients`, `GET /api/projects`, `GET /api/timesheets`, `GET /api/expenses`, `GET /api/documents`) support OData-style query parameters via a shared utility (`server/odata.js`). Legacy custom params (e.g. `startDate`, `endDate`, `groupBy`, `clientId`, `projectId`) continue to work alongside OData — filters are merged additively.
 
 ### Supported Operations
 
@@ -335,9 +400,10 @@ All list endpoints (`GET /api/clients`, `GET /api/projects`, `GET /api/timesheet
 
 | Entity | Expandable | Source |
 |--------|-----------|--------|
-| clients | `projects`, `timesheets` | projects by clientId, timesheets via client's projects |
-| projects | `client`, `timesheets`, `documents` | client by clientId, timesheets by projectId, documents by projectId |
+| clients | `projects`, `timesheets`, `expenses` | projects by clientId, timesheets via client's projects, expenses via client's projects |
+| projects | `client`, `timesheets`, `expenses`, `documents` | client by clientId, timesheets by projectId, expenses by projectId, documents by projectId |
 | timesheets | `project`, `client` | project by projectId, client via project.clientId |
+| expenses | `project`, `client` | project by projectId, client via project.clientId |
 | documents | `client`, `project` | client by clientId, project by projectId |
 
 ### Examples
@@ -358,24 +424,27 @@ GET /api/documents?projectId=abc123&$count=true
 
 ### Layout Structure
 1. **Top Bar** (fixed, full width): App title "Timesheet Manager" on the left, settings button on the right. Use a subtle bottom border. Background: white.
-2. **Left Sidebar** (fixed, ~220px wide): Navigation links with icons — Dashboard, Clients, Projects, Timesheets, Reports. Grey background (`#F5F5F5`). Highlight active item with blue accent.
+2. **Left Sidebar** (fixed, ~220px wide): Navigation links with icons — Dashboard, Clients, Projects, Timesheets, Expenses, Reports. Grey background (`#F5F5F5`). Highlight active item with blue accent.
 3. **Main Content Area** (remaining space, scrollable):
    - **List Views:** Command bar on top (New button, search, filters) → DataGrid below with sortable columns, row click to open record
    - **Form Views:** Sticky FormCommandBar at top (Back, Save, Save & Close) → Breadcrumb → Form title → Tabbed sections (General, Related Records) → Form fields in 2-column layout where appropriate
-   - **Dashboard:** Four summary cards (Hours This Week, Hours This Month, Active Projects, Earnings This Month) in a responsive grid → "Recent Timesheet Entries" section with an EntityGrid showing the last 10 entries (Date, Client, Project, Hours, Amount columns)
+   - **Dashboard:** Five summary cards (Hours This Week, Hours This Month, Active Projects, Earnings This Month, Expenses This Month) in a responsive grid → "Recent Timesheet Entries" section with an EntityGrid showing the last 10 entries (Date, Client, Project, Hours, Amount columns). Expenses card shows billable total as the main value with total (billable + non-billable) as a hint below.
 
 ### Navigation (React Router)
 - `/` → Dashboard
 - `/clients` → Client list
 - `/clients/new` → Client create form
-- `/clients/:id` → Client record form (tabs: General, Projects, Timesheets)
+- `/clients/:id` → Client record form (tabs: General, Projects, Timesheets, Expenses)
 - `/projects` → Project list
 - `/projects/new` → Project create form
-- `/projects/:id` → Project record form (tabs: General, Timesheets, Documents)
+- `/projects/:id` → Project record form (tabs: General, Timesheets, Expenses, Documents)
 - `/reports` → Report generation page (two-column layout: parameters sidebar + PDF preview)
 - `/timesheets` → Timesheet list (with date range filter toolbar)
 - `/timesheets/new` → Timesheet entry form
 - `/timesheets/:id` → Timesheet edit form
+- `/expenses` → Expense list (with date range/client/project/type filter toolbar)
+- `/expenses/new` → Expense entry form
+- `/expenses/:id` → Expense edit form (with attachment gallery)
 - `/settings` → Contractor profile form
 
 ### Key UI Behaviors
@@ -383,7 +452,10 @@ GET /api/documents?projectId=abc123&$count=true
 - **Project form:** Rate and Working Hours Per Day fields show placeholder text "Inherited from client: £X/day" / "Inherited from client: Xh/day" when null. User can override by entering a value. Creating a new project auto-fills rate and working hours from the selected client.
 - **Timesheet list:** Default view shows current week. Period filter uses toggle buttons (This Week / This Month / All Time / Custom) for quick switching — Custom reveals start/end date inputs for arbitrary date ranges. Client and Project dropdown filters narrow results further. All filter selections are persisted to localStorage and restored on revisit. Shows Days, Amount, and total summary row. Values are persisted — no on-the-fly recomputation.
 - **Timesheet entry:** Date input (no future dates) + Project dropdown (grouped by client, with client name hint) + Hours (SpinButton 0.25–24, step 0.25, with project daily hours hint) + read-only Days and Amount fields + Markdown notes editor. Days and Amount are only computed when the user explicitly changes Hours or Project — not on form load. On edit, persisted values are shown as-is.
-- **Unsaved changes guard:** All forms (Settings, ClientForm, ProjectForm, TimesheetForm) use `useFormTracker` for dirty tracking and register a navigation guard via `UnsavedChangesContext`. Changed fields show a blue left-border indicator (Power Platform style). Navigating away from a dirty form (sidebar, breadcrumb, back button, browser back/refresh) triggers a Save/Discard/Cancel dialog. The `beforeunload` event shows the browser's native "Leave page?" dialog on refresh/close.
+- **Expense list:** Default view shows current month. Same filter bar pattern as timesheets: Period (This Week / This Month / All Time / Custom), Client, Project, plus Expense Type dropdown (populated from `GET /api/expenses/types`). All filters persisted to localStorage (`expenses.*` keys). Columns: Date, Client, Project, Type, Description, Amount, VAT, Billable, Attachments (count). Summary footer: Billable Total, Non-Billable Total, Entries count.
+- **Expense entry:** Form layout (2-column grid): Date | Amount (gross), Project (grouped by client) | VAT Amount, Expense Type (freeform Combobox with autocomplete from previous types) | VAT % (read-only, auto-computed), Billable checkbox | Currency (read-only, inherited from client), Description (full width, client-facing). Then Markdown notes (internal). Then Attachments section (visible on edit only — "Save the expense first to add attachments" on new). Amount is gross (total paid including VAT). VAT Amount is the VAT portion within that. VAT % is auto-calculated: `(vatAmount / amount) * 100`. Currency updates automatically when the project changes. `vatPercent` is excluded from dirty tracking (computed field).
+- **Expense attachments:** Uses `AttachmentGallery` component. Upload button triggers hidden file input (multiple). Thumbnail grid: images show `thumb_` thumbnails with fallback to original, non-images show file type icon. Click image → lightbox dialog (centered, shrink-wrapped to image). Click non-image → opens in new tab. Delete (X) button per thumbnail with confirmation dialog.
+- **Unsaved changes guard:** All forms (Settings, ClientForm, ProjectForm, TimesheetForm, ExpenseForm) use `useFormTracker` for dirty tracking and register a navigation guard via `UnsavedChangesContext`. Changed fields show a blue left-border indicator (Power Platform style). Navigating away from a dirty form (sidebar, breadcrumb, back button, browser back/refresh) triggers a Save/Discard/Cancel dialog. The `beforeunload` event shows the browser's native "Leave page?" dialog on refresh/close.
 - **Delete confirmations:** Always show a confirmation dialog before deleting
 - **Reports page:** Two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods are computed from actual timesheet dates (monthly or weekly). Generate button produces a PDF previewed via `<object>`. Download saves to disk via browser download. Save Document persists the PDF server-side, viewable from the project's Documents tab. Client, Project, and Granularity selections are persisted to localStorage and restored on revisit.
 - **Project Documents tab:** Shows saved documents for the project. Clicking a row opens the PDF in a new browser tab.
@@ -404,7 +476,12 @@ GET /api/documents?projectId=abc123&$count=true
 5. Timesheet `days` and `amount` are computed and persisted at save time: `days = hours / effectiveWorkingHours`, `amount = days × effectiveRate`. Once saved, these are the source of truth — the API and UI display persisted values without recomputation. Reports (PDF) also read persisted values directly.
 6. Timesheet date must not be in the future.
 7. Hours must be between 0.25 and 24 in 0.25 increments.
-8. Deleting a client cascade-deletes all its projects and timesheets (with confirmation dialog).
+8. Deleting a client cascade-deletes all its projects, timesheets, and expenses + attachment files (with confirmation dialog).
+9. Deleting a project cascade-deletes all its timesheets and expenses + attachment files.
+10. Expense `vatPercent` is computed and persisted at save time: `vatPercent = (vatAmount / amount) * 100` (0 if amount is 0). Read-only in the UI.
+11. Expense `currency` is inherited from the client on creation. Read-only in the form, updates when the project changes.
+12. Expense date must not be in the future.
+13. Expense attachments are stored on disk at `data/expenses/{expenseId}/`. Image thumbnails are generated via `sharp` (200px wide, `thumb_` prefix). Deleting an expense cascade-deletes its attachment directory.
 
 ## Development Notes
 
@@ -417,9 +494,9 @@ GET /api/documents?projectId=abc123&$count=true
 - All monetary values stored as numbers (not strings). Currency is always on the client record. Rates are per day.
 - Dates stored as `YYYY-MM-DD` strings for timesheets, ISO strings for timestamps.
 - DataGrid columns must use `createTableColumn()` from Fluent UI to avoid sort crashes — columns with a `compare` function are sortable, others are not.
-- All notes fields (clients, projects, timesheets) use `@uiw/react-md-editor` with Fluent UI token overrides for consistent styling.
+- All notes fields (clients, projects, timesheets, expenses) use `@uiw/react-md-editor` with Fluent UI token overrides for consistent styling.
 - Fluent UI v9 SpinButton must use uncontrolled mode (`defaultValue`, not `value`) — controlled mode breaks typing. In `onChange`, `data.value` is `null` during typing; always parse `data.displayValue` as fallback: `const val = data.value ?? parseFloat(data.displayValue); if (val != null && !isNaN(val)) ...`
-- **Form dirty tracking pattern:** All forms use `useFormTracker(initialState, { excludeFields })` instead of raw `useState`. Call `setBase(...)` after API load and after successful save to reset the baseline. Provide a `saveForm` callback that returns `{ ok: boolean, id?: string }` (no navigation) and register with `useEffect(() => registerGuard({ isDirty, onSave: saveForm }), [isDirty, saveForm, registerGuard])`. Button handlers decide navigation: `handleSave` calls `saveForm` then navigates to the record on create or shows a success message on edit; `handleSaveAndClose` calls `saveForm` then navigates to the list. The guard dialog calls `saveForm` directly and handles pending navigation. Use `guardedNavigate(to)` from `useUnsavedChanges()` for breadcrumbs, back buttons, and tab row clicks. The `excludeFields` option is only needed for TimesheetForm (`['days', 'amount']` — computed fields).
+- **Form dirty tracking pattern:** All forms use `useFormTracker(initialState, { excludeFields })` instead of raw `useState`. Call `setBase(...)` after API load and after successful save to reset the baseline. Provide a `saveForm` callback that returns `{ ok: boolean, id?: string }` (no navigation) and register with `useEffect(() => registerGuard({ isDirty, onSave: saveForm }), [isDirty, saveForm, registerGuard])`. Button handlers decide navigation: `handleSave` calls `saveForm` then navigates to the record on create or shows a success message on edit; `handleSaveAndClose` calls `saveForm` then navigates to the list. The guard dialog calls `saveForm` directly and handles pending navigation. Use `guardedNavigate(to)` from `useUnsavedChanges()` for breadcrumbs, back buttons, and tab row clicks. The `excludeFields` option is used for computed fields: TimesheetForm (`['days', 'amount']`), ExpenseForm (`['vatPercent']`).
 - **Form page layout pattern:** Form pages use a two-layer structure: outer `page` div (no padding, so FormCommandBar spans full width) → `FormCommandBar` (sticky, `position: sticky; top: 0; z-index: 10`) → inner `pageBody` div (`padding: 16px 24px`) containing breadcrumb, title, and form content.
 - **Navigation guard architecture:** Uses a context-based approach (`UnsavedChangesContext`) instead of React Router's `useBlocker` (which requires `createBrowserRouter`, not `BrowserRouter`). The provider wraps routes inside `BrowserRouter` in `App.jsx`. `AppLayout` intercepts sidebar NavLink clicks and the Settings button via `guardedNavigate`. Browser back/forward is handled via a popstate sentinel entry.
 - `npm run dev` does NOT auto-restart the backend server — restart manually after server-side file changes.
@@ -444,6 +521,7 @@ Clears all data and creates:
 - **Clients:** Barclays Bank (£650/day, 8h) + HMRC Digital (£600/day, 7.5h)
 - **Projects:** 3 total — Barclays Default Project (Outside IR35, inherits rate), Payment Platform Migration (Outside IR35, £700/day override), HMRC Default Project (Inside IR35, inherits rate)
 - **Timesheets:** Up to 5 entries for current week on Payment Platform Migration (8h/day, £700) + 3 entries for last week on HMRC (7.5h/day, £600). Only creates entries for dates that are not in the future.
+- **Expenses:** 4 total — Travel (£45.60, billable) and Mileage (£32.40, billable) on Payment Platform Migration this week, Equipment (£24.99 + £4.17 VAT, non-billable) on Payment Platform Migration, Travel (£28.50, billable) on HMRC last week.
 
 ## Docker
 
