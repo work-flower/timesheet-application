@@ -22,7 +22,7 @@ A single-user desktop timesheet application for UK technology contractors. The a
 ### Environment Variables (`.env`)
 - `DATA_DIR` — path to the database/documents directory (default: `./data`)
 - `PORT` — Express server port (default: `3001`)
-- `BACKUP_PREFIX` — R2 key prefix for backups (default: `backups`). Useful to separate prod/dev backups in the same bucket (e.g. `backups/prod`, `backups/dev`).
+
 
 ### npm Scripts
 - `npm run dev` — runs Express (port 3001) + Vite dev server (port 5173) via `concurrently`
@@ -224,6 +224,7 @@ PDF files are stored on disk in `data/documents/`. Each document record referenc
   "accessKeyId": "",
   "secretAccessKey": "",
   "bucketName": "",
+  "backupPath": "backups",
   "endpoint": "https://<accountId>.r2.cloudflarestorage.com",
   "schedule": "off | daily | weekly",
   "createdAt": "ISO date",
@@ -231,7 +232,7 @@ PDF files are stored on disk in `data/documents/`. Each document record referenc
 }
 ```
 
-Stored in a separate `backup-config.db` file — **not** included in backup archives so credentials stay local. Secret key is masked on read (last 4 chars shown). On write, if incoming value contains `*`, the existing stored value is retained.
+Stored in a separate `backup-config.db` file — **not** included in backup archives so credentials stay local. Secret key is masked on read. `backupPath` determines the R2 key prefix for backups — change it to browse/restore from another environment's backups.
 
 ## API Endpoints
 
@@ -423,7 +424,6 @@ GET /api/documents?projectId=abc123&$count=true
 - **Navigation guard architecture:** Uses a context-based approach (`UnsavedChangesContext`) instead of React Router's `useBlocker` (which requires `createBrowserRouter`, not `BrowserRouter`). The provider wraps routes inside `BrowserRouter` in `App.jsx`. `AppLayout` intercepts sidebar NavLink clicks and the Settings button via `guardedNavigate`. Browser back/forward is handled via a popstate sentinel entry.
 - `npm run dev` does NOT auto-restart the backend server — restart manually after server-side file changes.
 - The `tar` npm package does not have a default ESM export — must use `import * as tar from 'tar'` (not `import tar from 'tar'`).
-- Backup scheduler (`backupScheduler.js`) is initialized on server boot via `initScheduler()` in `server/index.js`. Cron expressions: `daily` → `0 2 * * *`, `weekly` → `0 2 * * 1`.
 
 ## PDF Report Layout (pdfmake)
 

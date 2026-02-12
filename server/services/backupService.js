@@ -18,8 +18,8 @@ import { clients, projects, timesheets, settings, documents } from '../db/index.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 function getDataDir() { return process.env.DATA_DIR || join(__dirname, '..', '..', 'data'); }
-function getBackupPrefix() { return process.env.BACKUP_PREFIX || 'backups'; }
 function getDocumentsDir() { return join(getDataDir(), 'documents'); }
+
 
 let operationLock = false;
 
@@ -113,7 +113,8 @@ export async function createBackup() {
     const s3 = buildS3Client(config);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const folderName = `timesheet-backup-${timestamp}`;
-    const key = `${getBackupPrefix()}/${folderName}.tar.gz`;
+    const prefix = (config.backupPath || 'backups').replace(/\/+$/, '');
+    const key = `${prefix}/${folderName}.tar.gz`;
 
     // Export all collections
     const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs] = await Promise.all([
@@ -193,15 +194,16 @@ export async function listBackups() {
   if (!config) return [];
 
   const s3 = buildS3Client(config);
+  const prefix = (config.backupPath || 'backups').replace(/\/+$/, '');
   const response = await s3.send(new ListObjectsV2Command({
     Bucket: config.bucketName,
-    Prefix: `${getBackupPrefix()}/`,
+    Prefix: `${prefix}/`,
+    Delimiter: '/',
   }));
 
   if (!response.Contents) return [];
 
   return response.Contents
-    .filter((obj) => obj.Key.endsWith('.tar.gz'))
     .map((obj) => ({
       key: obj.Key,
       size: obj.Size,

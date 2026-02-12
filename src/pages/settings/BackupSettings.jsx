@@ -67,6 +67,7 @@ export default function BackupSettings() {
     accessKeyId: '',
     secretAccessKey: '',
     bucketName: '',
+    backupPath: '',
     endpoint: '',
     schedule: 'off',
   });
@@ -96,6 +97,7 @@ export default function BackupSettings() {
             accessKeyId: data.accessKeyId || '',
             secretAccessKey: data.secretAccessKey || '',
             bucketName: data.bucketName || '',
+            backupPath: data.backupPath || '',
             endpoint: data.endpoint || '',
             schedule: data.schedule || 'off',
           });
@@ -146,6 +148,7 @@ export default function BackupSettings() {
           accessKeyId: saved.accessKeyId || '',
           secretAccessKey: saved.secretAccessKey || '',
           bucketName: saved.bucketName || '',
+          backupPath: saved.backupPath || '',
           endpoint: saved.endpoint || '',
           schedule: saved.schedule || 'off',
         });
@@ -223,7 +226,7 @@ export default function BackupSettings() {
       key: 'name',
       label: 'Name',
       compare: (a, b) => a.key.localeCompare(b.key),
-      render: (item) => item.key.replace('backups/', ''),
+      render: (item) => item.key.replace(/^.*\//, ''),
     },
     {
       key: 'size',
@@ -296,6 +299,11 @@ export default function BackupSettings() {
         <FormField>
           <Field label="Bucket Name">
             <Input value={config.bucketName} onChange={handleChange('bucketName')} />
+          </Field>
+        </FormField>
+        <FormField>
+          <Field label="Backup Path" hint="e.g. backups/dev">
+            <Input value={config.backupPath} onChange={handleChange('backupPath')} placeholder="backups" />
           </Field>
         </FormField>
         <FormField fullWidth>
