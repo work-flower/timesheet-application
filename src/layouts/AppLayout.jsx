@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useUnsavedChanges } from '../contexts/UnsavedChangesContext.jsx';
 import {
@@ -5,7 +6,7 @@ import {
   tokens,
   Text,
   Button,
-  Divider,
+  Tooltip,
 } from '@fluentui/react-components';
 import {
   BoardRegular,
@@ -15,7 +16,11 @@ import {
   ReceiptRegular,
   DocumentBulletListRegular,
   SettingsRegular,
+  NavigationRegular,
 } from '@fluentui/react-icons';
+
+const SIDEBAR_WIDTH = '220px';
+const SIDEBAR_COLLAPSED = '49px';
 
 const useStyles = makeStyles({
   root: {
@@ -35,6 +40,11 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground1,
     flexShrink: 0,
   },
+  topBarLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
   topBarTitle: {
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase400,
@@ -46,13 +56,16 @@ const useStyles = makeStyles({
     overflow: 'hidden',
   },
   sidebar: {
-    width: '220px',
     backgroundColor: '#F5F5F5',
     borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
     paddingTop: '8px',
     flexShrink: 0,
     display: 'flex',
     flexDirection: 'column',
+    transitionProperty: 'width',
+    transitionDuration: '150ms',
+    transitionTimingFunction: 'ease',
+    overflowX: 'hidden',
   },
   navItem: {
     display: 'flex',
@@ -64,6 +77,7 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase300,
     borderLeft: '3px solid transparent',
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
     '&:hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
@@ -80,9 +94,16 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground1,
     fontWeight: tokens.fontWeightSemibold,
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
     '&:hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
+  },
+  navIcon: {
+    flexShrink: 0,
+    fontSize: '20px',
+    display: 'flex',
+    alignItems: 'center',
   },
   content: {
     flex: 1,
@@ -104,6 +125,7 @@ export default function AppLayout() {
   const styles = useStyles();
   const location = useLocation();
   const { guardedNavigate } = useUnsavedChanges();
+  const [collapsed, setCollapsed] = useState(false);
 
   function isActive(item) {
     if (item.exact) return location.pathname === item.to;
@@ -113,24 +135,43 @@ export default function AppLayout() {
   return (
     <div className={styles.root}>
       <div className={styles.topBar}>
-        <Text className={styles.topBarTitle}>Timesheet Manager</Text>
+        <div className={styles.topBarLeft}>
+          <Button
+            appearance="subtle"
+            icon={<NavigationRegular />}
+            onClick={() => setCollapsed((c) => !c)}
+            size="small"
+          />
+          <Text className={styles.topBarTitle}>Timesheet Manager</Text>
+        </div>
         <Button appearance="subtle" icon={<SettingsRegular />} onClick={() => guardedNavigate('/settings')}>
           Settings
         </Button>
       </div>
       <div className={styles.body}>
-        <nav className={styles.sidebar}>
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={isActive(item) ? styles.navItemActive : styles.navItem}
-              onClick={(e) => { e.preventDefault(); guardedNavigate(item.to); }}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+        <nav
+          className={styles.sidebar}
+          style={{ width: collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_WIDTH }}
+        >
+          {navItems.map((item) => {
+            const link = (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={isActive(item) ? styles.navItemActive : styles.navItem}
+                onClick={(e) => { e.preventDefault(); guardedNavigate(item.to); }}
+              >
+                <span className={styles.navIcon}>{item.icon}</span>
+                {!collapsed && <span>{item.label}</span>}
+              </NavLink>
+            );
+
+            return collapsed ? (
+              <Tooltip key={item.to} content={item.label} relationship="label" positioning="after">
+                {link}
+              </Tooltip>
+            ) : link;
+          })}
         </nav>
         <main className={styles.content}>
           <Outlet />
