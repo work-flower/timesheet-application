@@ -1,5 +1,11 @@
 import { clients, projects, expenses, settings } from '../db/index.js';
 
+const NAVY = '#1B2A4A';
+const GREY_TEXT = '#555555';
+const LIGHT_GREY = '#F7F7F7';
+
+const fmtGBP = (v) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(v || 0);
+
 export async function buildExpensePdf(clientId, startDate, endDate, projectId = null, { ids } = {}) {
   const [settingsDoc, client] = await Promise.all([
     settings.findOne({}),
@@ -39,11 +45,11 @@ export async function buildExpensePdf(clientId, startDate, endDate, projectId = 
   const projectMap = Object.fromEntries(clientProjects.map((p) => [p._id, p]));
 
   let periodLabel;
-  if (ids && ids.length > 0 && entries.length > 0) {
+  if (startDate && endDate) {
+    periodLabel = formatPeriodLabel(startDate, endDate);
+  } else if (ids && ids.length > 0 && entries.length > 0) {
     const dates = entries.map(e => e.date).sort();
     periodLabel = formatPeriodLabel(dates[0], dates[dates.length - 1]);
-  } else if (startDate && endDate) {
-    periodLabel = formatPeriodLabel(startDate, endDate);
   } else {
     periodLabel = 'N/A';
   }
@@ -61,25 +67,24 @@ export async function buildExpensePdf(clientId, startDate, endDate, projectId = 
 
     // Contractor header
     const businessName = settingsDoc?.businessName || settingsDoc?.name || '';
-    content.push({
-      columns: [
-        { text: businessName, style: 'contractorName', width: '*' },
-        { text: 'EXPENSE REPORT', style: 'reportLabel', width: 'auto', alignment: 'right' },
-      ],
-      margin: [0, 0, 0, 2],
-    });
-    const contactParts = [
-      settingsDoc?.address,
-      settingsDoc?.email,
+    const addressParts = [
+      ...(settingsDoc?.address || '').split('\n').filter(Boolean),
       settingsDoc?.phone,
     ].filter(Boolean);
-    if (contactParts.length > 0) {
-      content.push({
-        text: contactParts.join('  |  '),
-        style: 'contactDetails',
-        margin: [0, 0, 0, 16],
-      });
-    }
+
+    content.push({
+      columns: [
+        {
+          width: '*',
+          stack: [
+            { text: businessName, style: 'contractorName' },
+            ...addressParts.map(line => ({ text: line, style: 'contactDetails' })),
+          ],
+        },
+        { text: 'EXPENSE REPORT', style: 'reportLabel', width: 'auto', alignment: 'right' },
+      ],
+      margin: [8, 0, 8, 24],
+    });
 
     // Client / project info
     content.push({
@@ -101,55 +106,44 @@ export async function buildExpensePdf(clientId, startDate, endDate, projectId = 
         { text: 'Date', style: 'tableHeader' },
         { text: 'Type', style: 'tableHeader' },
         { text: 'Description', style: 'tableHeader' },
-        { text: 'Billable', style: 'tableHeader' },
         { text: 'Amount', style: 'tableHeader', alignment: 'right' },
-        { text: 'VAT', style: 'tableHeader', alignment: 'right' },
-        { text: 'Net', style: 'tableHeader', alignment: 'right' },
       ],
     ];
 
     let totalAmount = 0;
-    let totalVat = 0;
-    let totalNet = 0;
+    let rowIndex = 0;
 
     for (const entry of projectEntries) {
       const amount = entry.amount || 0;
-      const vat = entry.vatAmount || 0;
-      const net = amount - vat;
       totalAmount += amount;
-      totalVat += vat;
-      totalNet += net;
+      const fill = rowIndex % 2 === 1 ? LIGHT_GREY : null;
 
       tableBody.push([
-        { text: formatDate(entry.date), style: 'tableCell' },
-        { text: entry.expenseType || '', style: 'tableCell' },
-        { text: entry.description || '', style: 'tableCell' },
-        { text: entry.billable ? 'Yes' : 'No', style: 'tableCell' },
-        { text: `£${amount.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
-        { text: `£${vat.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
-        { text: `£${net.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
+        { text: formatDate(entry.date), style: 'tableCell', fillColor: fill },
+        { text: entry.expenseType || '', style: 'tableCell', fillColor: fill },
+        { text: entry.description || '', style: 'tableCell', fillColor: fill },
+        { text: fmtGBP(amount), style: 'tableCell', alignment: 'right', fillColor: fill },
       ]);
+      rowIndex++;
     }
 
     // Totals row
     tableBody.push([
-      { text: 'TOTAL', style: 'totalCell', colSpan: 4 },
-      '', '', '',
-      { text: `£${totalAmount.toFixed(2)}`, style: 'totalCell', alignment: 'right' },
-      { text: `£${totalVat.toFixed(2)}`, style: 'totalCell', alignment: 'right' },
-      { text: `£${totalNet.toFixed(2)}`, style: 'totalCell', alignment: 'right' },
+      { text: 'TOTAL', style: 'totalCell', colSpan: 3 },
+      '', '',
+      { text: fmtGBP(totalAmount), style: 'totalCell', alignment: 'right' },
     ]);
 
     content.push({
       table: {
         headerRows: 1,
-        widths: [65, 55, '*', 40, 55, 50, 55],
+        widths: [65, 55, '*', 65],
         body: tableBody,
       },
       layout: {
         hLineWidth: (i, node) => (i === 0 || i === 1 || i === node.table.body.length) ? 1 : 0.5,
         vLineWidth: () => 0,
-        hLineColor: (i, node) => (i === 0 || i === 1 || i === node.table.body.length) ? '#333333' : '#CCCCCC',
+        hLineColor: (i, node) => (i === 0 || i === 1 || i === node.table.body.length) ? NAVY : '#CCCCCC',
         paddingTop: () => 4,
         paddingBottom: () => 4,
         paddingLeft: () => 6,
@@ -173,14 +167,14 @@ export async function buildExpensePdf(clientId, startDate, endDate, projectId = 
       margin: [0, 0, 0, 0],
     }),
     styles: {
-      contractorName: { fontSize: 14, bold: true, color: '#333333' },
-      reportLabel: { fontSize: 18, bold: true, color: '#0078D4' },
-      contactDetails: { fontSize: 9, color: '#666666' },
-      infoLabel: { fontSize: 10, bold: true, color: '#555555', margin: [0, 1, 8, 1] },
+      contractorName: { fontSize: 16, bold: true, color: NAVY, margin: [0, 0, 0, 4] },
+      reportLabel: { fontSize: 18, bold: true, color: NAVY },
+      contactDetails: { fontSize: 9, color: GREY_TEXT, margin: [0, 4, 0, 0] },
+      infoLabel: { fontSize: 10, bold: true, color: GREY_TEXT, margin: [0, 1, 8, 1] },
       infoValue: { fontSize: 10, color: '#333333', margin: [0, 1, 0, 1] },
-      tableHeader: { fontSize: 9, bold: true, color: '#FFFFFF', fillColor: '#0078D4', margin: [0, 2, 0, 2] },
+      tableHeader: { fontSize: 9, bold: true, color: '#FFFFFF', fillColor: NAVY, margin: [0, 2, 0, 2] },
       tableCell: { fontSize: 9, color: '#333333' },
-      totalCell: { fontSize: 9, bold: true, color: '#333333', fillColor: '#F0F0F0' },
+      totalCell: { fontSize: 9, bold: true, color: '#333333', fillColor: LIGHT_GREY },
       footer: { fontSize: 8, color: '#999999' },
       emptyMessage: { fontSize: 11, color: '#666666', italics: true },
     },

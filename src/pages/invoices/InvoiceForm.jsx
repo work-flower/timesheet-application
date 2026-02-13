@@ -730,14 +730,14 @@ export default function InvoiceForm() {
         if (form.includeTimesheetReport) {
           const tsIds = form.lines.filter(l => l.type === 'timesheet' && l.sourceId).map(l => l.sourceId);
           if (tsIds.length > 0) {
-            reports.push({ type: 'timesheet', params: { clientId: form.clientId, ids: tsIds } });
+            reports.push({ type: 'timesheet', params: { clientId: form.clientId, ids: tsIds, startDate: form.servicePeriodStart, endDate: form.servicePeriodEnd } });
           }
         }
 
         if (form.includeExpenseReport) {
           const expIds = form.lines.filter(l => l.type === 'expense' && l.sourceId).map(l => l.sourceId);
           if (expIds.length > 0) {
-            reports.push({ type: 'expense', params: { clientId: form.clientId, ids: expIds } });
+            reports.push({ type: 'expense', params: { clientId: form.clientId, ids: expIds, startDate: form.servicePeriodStart, endDate: form.servicePeriodEnd } });
           }
         }
 
@@ -749,7 +749,7 @@ export default function InvoiceForm() {
     } finally {
       setPdfLoading(false);
     }
-  }, [id, invoiceData?.pdfPath, form.includeTimesheetReport, form.includeExpenseReport, form.lines, form.clientId]);
+  }, [id, invoiceData?.pdfPath, form.includeTimesheetReport, form.includeExpenseReport, form.lines, form.clientId, form.servicePeriodStart, form.servicePeriodEnd]);
 
   useEffect(() => {
     if (tab === 'pdf' && id) loadPdfPreview();

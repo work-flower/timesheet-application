@@ -253,7 +253,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 ### Layout
 
 1. **Top Bar:** App title "Timesheet Manager" on the left with hamburger menu toggle, Settings button on the right
-2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Dashboard, Clients, Projects, Timesheets, Expenses, Invoices, Reports. Active item highlighted with blue accent border.
+2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Dashboard, Clients, Projects, Timesheets, Expenses, Invoices, Reports (expandable parent with Timesheet and Expenses children). Active item highlighted with blue accent border.
 3. **Main Content Area** (scrollable): List views, form views, or dashboard
 
 ### Navigation
@@ -276,7 +276,8 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/invoices` | Invoice list |
 | `/invoices/new` | Invoice create form |
 | `/invoices/:id` | Invoice form (tabs: Invoice, PDF Preview) |
-| `/reports` | Report generation page |
+| `/reports/timesheets` | Timesheet report generation page |
+| `/reports/expenses` | Expense report generation page |
 | `/settings` | Settings (tabs: Profile, Invoicing, Backup) |
 
 ### List Views
@@ -329,7 +330,8 @@ Below cards: "Recent Timesheet Entries" grid showing last 10 entries (Date, Clie
 **Invoice form:**
 - Invoice tab: Client (locked after creation), Invoice Number (read-only), dates, service period, additional notes
 - Unified "Line Sources" section with buttons: Add Timesheets, Add Expenses, Add Line (write-in)
-  - Timesheet/expense picker dialogs for selecting source records
+  - Timesheet picker dialog with "Include entries outside service period" filter toggle
+  - Expense picker dialog with Billable column and "Include non-billable expenses" filter toggle; non-billable expenses generate a warning when added
   - Write-in lines editable inline (description, quantity, unit, unit price, VAT %)
   - Lines grid shows all types sorted by type, with error/warning indicators per line
   - Live totals (Sub Total, Total VAT, Total Due) computed from lines
@@ -339,9 +341,9 @@ Below cards: "Recent Timesheet Entries" grid showing last 10 entries (Date, Clie
 - **PDF Preview tab:** Toggle switches for "Include Timesheet Report" and "Include Expense Report" (auto-save on toggle; disabled when locked). Uses saved PDF file for confirmed/posted invoices (no regeneration). Falls back to on-the-fly combined PDF generation for drafts.
 - **Payment section** (posted only): Payment Status dropdown (unpaid/paid/overdue), Paid Date field
 
-### Reports Page
+### Reports Pages
 
-Two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods computed from actual timesheet dates (monthly or weekly). Actions: Generate (preview), Download (browser save), Save Document (persists server-side, viewable from project's Documents tab). Selections persisted to localStorage.
+Two report pages (Timesheet and Expense) sharing the same two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods computed from actual entry dates (monthly or weekly). Actions: Generate (preview), Download (browser save). Timesheet report also has Save Document (persists server-side, viewable from project's Documents tab). Selections persisted to localStorage (separate keys per report type).
 
 ### Settings Page
 
@@ -354,35 +356,35 @@ Three tabs:
 
 ## PDF Reports
 
+All PDF reports use navy (#1B2A4A) accent colour, alternating row striping, and UK currency formatting (thousands separators).
+
 ### Timesheet Report
 
 One page per project. Structure:
-1. Contractor header: business name + contact details
+1. Contractor header: business name + address lines + "TIMESHEET REPORT" label
 2. Info table: Client, Project, Period, IR35 Status, Rate
-3. Timesheet table: Date, Hours, Days, Notes, Rate, Amount — blue header row, light grey totals row, horizontal lines only
+3. Timesheet table: Date, Hours, Days, Notes, Rate, Amount — navy header row, alternating rows, light grey totals row
 4. Page footer: "Page X of Y"
 
-Supports filtering by date range or by specific timesheet IDs (for invoice inclusion).
+Supports filtering by date range or by specific timesheet IDs (for invoice inclusion). When both IDs and date range provided, IDs drive the query and dates drive the period label.
 
 ### Expense Report
 
-Same structure as timesheet report but with expense table: Date, Type, Description, Billable, Amount, VAT, Net. One page per project. Supports filtering by date range or by specific expense IDs.
+Same header structure as timesheet report with "EXPENSE REPORT" label. Expense table: Date, Type, Description, Amount (gross). One page per project. Same ID/date range behaviour as timesheet report.
 
 ### Invoice PDF
 
 Structure:
-1. Header: business name + "INVOICE" label
-2. Two-column: "From" (contractor details) | "To" (client invoicing entity)
-3. Invoice meta: number, invoice date, due date, service period
-4. Lines table grouped by VAT rate (highest first, exempt last): aggregated timesheet lines by (VAT%, project), then expense lines by (project, VAT%), then write-in lines
-5. Totals: Sub Total, VAT breakdown per rate, Grand Total
-6. Bank details section
-7. Company registration/VAT footer
-8. Additional notes (if provided)
+1. Header: business name + address + "INVOICE" label (navy)
+2. Billing block: "To" section (left) + invoice meta with grey background (right) — invoice date, number, due date
+3. Service period line
+4. Line items table in navy-bordered rectangle: Description, Qty, Unit, Unit Price, VAT %, Amount (net), VAT, Total — grouped by VAT rate, alternating rows
+5. Totals block (right-aligned, below table): Sub Total, Total VAT, Total Due
+6. Page footer: "Thank you" message, company number, three-column layout (Registered Address, Contact Information, Payment Details)
 
 ### Combined PDF
 
-Invoice PDF + optional timesheet report pages + optional expense report pages merged into a single file. Generated and saved to disk on invoice confirm. Served from disk for confirmed/posted invoices (no regeneration). Deleted on unconfirm.
+Invoice PDF + optional timesheet report pages + optional expense report pages merged into a single file. When included in a combined PDF, timesheet/expense reports use the invoice's service period for the period label. Generated and saved to disk on invoice confirm. Served from disk for confirmed/posted invoices (no regeneration). Deleted on unconfirm.
 
 ---
 

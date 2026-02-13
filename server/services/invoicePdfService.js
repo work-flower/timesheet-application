@@ -1,5 +1,11 @@
 import { clients, invoices, settings } from '../db/index.js';
 
+const NAVY = '#1B2A4A';
+const GREY_TEXT = '#555555';
+const LIGHT_GREY = '#F7F7F7';
+
+const fmtGBP = (v) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(v || 0);
+
 export async function buildInvoicePdf(invoiceId) {
   const invoice = await invoices.findOne({ _id: invoiceId });
   if (!invoice) throw new Error('Invoice not found');
@@ -10,91 +16,71 @@ export async function buildInvoicePdf(invoiceId) {
   ]);
   if (!client) throw new Error('Client not found');
 
-  // Build line items from stored lines (no source record fetching needed)
   const lineItems = buildLineItems(invoice.lines || []);
+
+  const businessName = settingsDoc?.businessName || settingsDoc?.name || '';
+  const addressParts = [
+    ...(settingsDoc?.address || '').split('\n').filter(Boolean),
+    settingsDoc?.phone,
+  ].filter(Boolean);
+
+  const billToName = client.invoicingEntityName || client.companyName;
+  const billToLines = (client.invoicingEntityAddress || '').split('\n').filter(Boolean);
 
   const content = [];
 
-  // Header: Business name + INVOICE
-  const businessName = settingsDoc?.businessName || settingsDoc?.name || '';
+  // ── Header: Company name + INVOICE ──
   content.push({
     columns: [
-      { text: businessName, style: 'businessName', width: '*' },
+      {
+        width: '*',
+        stack: [
+          { text: businessName, style: 'businessName' },
+          ...addressParts.map(line => ({ text: line, style: 'businessDetail' })),
+        ],
+      },
       { text: 'INVOICE', style: 'invoiceLabel', width: 'auto', alignment: 'right' },
     ],
-    margin: [0, 0, 0, 16],
+    margin: [8, 0, 8, 24],
   });
 
-  // From / To columns
-  const fromLines = [];
-  if (settingsDoc?.address) fromLines.push(settingsDoc.address);
-  if (settingsDoc?.email) fromLines.push(settingsDoc.email);
-  if (settingsDoc?.phone) fromLines.push(settingsDoc.phone);
-  if (settingsDoc?.vatNumber) fromLines.push(`VAT: ${settingsDoc.vatNumber}`);
-
-  const billToName = client.invoicingEntityName || client.companyName;
-  const billToAddress = client.invoicingEntityAddress || '';
-
-  content.push({
-    columns: [
-      {
-        width: '*',
-        stack: [
-          { text: 'From:', style: 'sectionLabel', margin: [0, 0, 0, 4] },
-          { text: businessName, style: 'infoText', bold: true },
-          ...fromLines.map(line => ({ text: line, style: 'infoText' })),
-        ],
-      },
-      {
-        width: '*',
-        stack: [
-          { text: 'Bill To:', style: 'sectionLabel', margin: [0, 0, 0, 4] },
-          { text: billToName, style: 'infoText', bold: true },
-          ...(billToAddress ? billToAddress.split('\n').map(line => ({ text: line, style: 'infoText' })) : []),
-        ],
-      },
-    ],
-    margin: [0, 0, 0, 16],
-  });
-
-  // Invoice meta box
-  const metaRows = [];
+  // ── Billing block: To (left) + Invoice meta (right) ──
+  const metaLines = [];
+  metaLines.push({ text: '', margin: [0, 0, 0, 0] });
+  metaLines.push({ text: `Invoice Date: ${formatDate(invoice.invoiceDate)}`, style: 'metaLabel', alignment: 'right' });
   if (invoice.invoiceNumber) {
-    metaRows.push(['Invoice Number:', invoice.invoiceNumber]);
+    metaLines.push({ text: `Invoice Number: ${invoice.invoiceNumber}`, style: 'metaLabel', alignment: 'right' });
   }
-  metaRows.push(['Invoice Date:', formatDate(invoice.invoiceDate)]);
-  metaRows.push(['Due Date:', formatDate(invoice.dueDate)]);
+  metaLines.push({ text: `DUE DATE: ${formatDate(invoice.dueDate)}`, style: 'metaLabelBold', alignment: 'right' });
+
+  const toStack = [
+    { text: 'To:', style: 'sectionLabel', margin: [0, 0, 0, 4] },
+    { text: billToName, style: 'billToName' },
+    ...billToLines.map(line => ({ text: line, style: 'billToAddress' })),
+  ];
 
   content.push({
     table: {
-      widths: ['auto', 'auto'],
-      body: metaRows.map(([label, value]) => [
-        { text: label, style: 'metaLabel', alignment: 'right' },
-        { text: value, style: 'metaValue' },
-      ]),
+      widths: ['*', '*'],
+      body: [[
+        { stack: toStack, margin: [8, 8, 8, 8] },
+        { stack: metaLines, fillColor: LIGHT_GREY, margin: [8, 8, 8, 8], alignment: 'right' },
+      ]],
     },
     layout: 'noBorders',
-    alignment: 'right',
-    margin: [0, 0, 0, 12],
+    margin: [0, 0, 0, 16],
   });
 
-  // Additional information
-  const infoParts = [];
+  // ── Service period line ──
   if (invoice.servicePeriodStart && invoice.servicePeriodEnd) {
-    infoParts.push(`Service Period: ${formatDate(invoice.servicePeriodStart)} – ${formatDate(invoice.servicePeriodEnd)}`);
-  }
-  if (invoice.additionalNotes) {
-    infoParts.push(invoice.additionalNotes);
-  }
-  if (infoParts.length > 0) {
     content.push({
-      text: infoParts.join('\n'),
-      style: 'additionalInfo',
-      margin: [0, 0, 0, 12],
+      text: `Service Period: ${formatPeriodLabel(invoice.servicePeriodStart, invoice.servicePeriodEnd)}`,
+      style: 'servicePeriod',
+      margin: [0, 0, 0, 16],
     });
   }
 
-  // Line items table
+  // ── Line items table ──
   const tableBody = [
     [
       { text: 'Description', style: 'tableHeader' },
@@ -102,154 +88,237 @@ export async function buildInvoicePdf(invoiceId) {
       { text: 'Unit', style: 'tableHeader' },
       { text: 'Unit Price', style: 'tableHeader', alignment: 'right' },
       { text: 'VAT %', style: 'tableHeader', alignment: 'right' },
+      { text: 'Amount', style: 'tableHeader', alignment: 'right' },
       { text: 'VAT', style: 'tableHeader', alignment: 'right' },
       { text: 'Total', style: 'tableHeader', alignment: 'right' },
     ],
   ];
 
+  let rowIndex = 0;
   let isFirstGroup = true;
   for (const group of lineItems) {
     if (!isFirstGroup) {
       tableBody.push([
-        { text: '', colSpan: 7, margin: [0, 6, 0, 6] },
-        '', '', '', '', '', '',
+        { text: '', colSpan: 8, margin: [0, 4, 0, 4] },
+        '', '', '', '', '', '', '',
       ]);
+      rowIndex++;
     }
     isFirstGroup = false;
 
     for (const line of group.lines) {
-      const vatDisplay = line.vatPercent != null ? `${line.vatPercent}%` : 'N/A';
-      const vatAmount = line.vatPercent != null ? `£${line.vatAmount.toFixed(2)}` : '—';
+      const vatDisplay = line.vatPercent != null ? `${line.vatPercent}%` : 'Exempt';
+      const vatAmount = line.vatPercent != null ? fmtGBP(line.vatAmount) : '—';
+      const fill = rowIndex % 2 === 1 ? LIGHT_GREY : null;
+
+      const netAmount = round2(line.total - (line.vatAmount || 0));
 
       tableBody.push([
-        { text: line.description, style: 'tableCell', bold: true },
-        { text: line.qty, style: 'tableCell', alignment: 'right' },
-        { text: line.unit, style: 'tableCell' },
-        { text: `£${line.unitPrice.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
-        { text: vatDisplay, style: 'tableCell', alignment: 'right' },
-        { text: vatAmount, style: 'tableCell', alignment: 'right' },
-        { text: `£${line.total.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
+        { text: line.description, style: 'tableCell', bold: true, fillColor: fill },
+        { text: line.qty, style: 'tableCell', alignment: 'right', fillColor: fill },
+        { text: line.unit, style: 'tableCell', fillColor: fill },
+        { text: fmtGBP(line.unitPrice), style: 'tableCell', alignment: 'right', fillColor: fill },
+        { text: vatDisplay, style: 'tableCell', alignment: 'right', fillColor: fill },
+        { text: fmtGBP(netAmount), style: 'tableCell', alignment: 'right', fillColor: fill },
+        { text: vatAmount, style: 'tableCell', alignment: 'right', fillColor: fill },
+        { text: fmtGBP(line.total), style: 'tableCell', alignment: 'right', fillColor: fill },
       ]);
+      rowIndex++;
 
       if (line.detail) {
         tableBody.push([
-          { text: `  ${line.detail}`, colSpan: 7, style: 'detailLine' },
-          '', '', '', '', '', '',
+          { text: `  ${line.detail}`, colSpan: 8, style: 'detailLine', fillColor: fill },
+          '', '', '', '', '', '', '',
         ]);
       }
     }
   }
 
-  // Totals rows
-  const blankCols = (n) => Array(n).fill('');
-  tableBody.push([
-    ...blankCols(5),
-    { text: 'Sub Total:', style: 'totalLabel', alignment: 'right' },
-    { text: `£${invoice.subtotal.toFixed(2)}`, style: 'totalValue', alignment: 'right' },
-  ]);
-  tableBody.push([
-    ...blankCols(5),
-    { text: 'Total VAT:', style: 'totalLabel', alignment: 'right' },
-    { text: `£${invoice.totalVat.toFixed(2)}`, style: 'totalValue', alignment: 'right' },
-  ]);
-  tableBody.push([
-    ...blankCols(5),
-    { text: 'Total Due:', style: 'grandTotalLabel', alignment: 'right' },
-    { text: `£${invoice.total.toFixed(2)}`, style: 'grandTotalValue', alignment: 'right' },
-  ]);
-
+  // Wrap line items table in a bordered rectangle (single-cell outer table)
   content.push({
     table: {
-      headerRows: 1,
-      widths: ['*', 40, 35, 60, 35, 55, 65],
-      body: tableBody,
+      widths: ['*'],
+      heights: [265],
+      body: [[
+        {
+          table: {
+            headerRows: 1,
+            widths: ['*', 25, 28, 48, 28, 48, 42, 52],
+            body: tableBody,
+          },
+          layout: {
+            hLineWidth: (i, node) => (i === 0 || i === 1) ? 1 : 0,
+            vLineWidth: () => 0,
+            hLineColor: () => NAVY,
+            paddingTop: () => 4,
+            paddingBottom: () => 4,
+            paddingLeft: () => 6,
+            paddingRight: () => 6,
+          },
+          margin: [0, 0, 0, 20],
+        },
+      ]],
     },
     layout: {
-      hLineWidth: (i, node) => {
-        if (i === 0 || i === 1) return 1;
-        if (i === node.table.body.length) return 1;
-        if (i >= node.table.body.length - 3) return 0.5;
-        return 0;
-      },
-      vLineWidth: () => 0,
-      hLineColor: (i) => {
-        if (i === 0 || i === 1) return '#333333';
-        return '#CCCCCC';
-      },
-      paddingTop: () => 3,
-      paddingBottom: () => 3,
-      paddingLeft: () => 4,
-      paddingRight: () => 4,
+      hLineWidth: () => 1,
+      vLineWidth: () => 1,
+      hLineColor: () => NAVY,
+      vLineColor: () => NAVY,
+      paddingTop: () => 0,
+      paddingBottom: () => 0,
+      paddingLeft: () => 0,
+      paddingRight: () => 0,
     },
-    margin: [0, 0, 0, 24],
+    margin: [0, 0, 0, 0],
   });
 
-  // Bank details footer
-  const footerParts = [];
-  if (settingsDoc?.companyRegistration) footerParts.push(`Company No: ${settingsDoc.companyRegistration}`);
-  if (settingsDoc?.address) footerParts.push(settingsDoc.address);
-  if (settingsDoc?.email) footerParts.push(settingsDoc.email);
+  // ── Totals block (right-aligned, below the bordered rectangle) ──
+  const totalsBody = [
+    [
+      { text: 'Sub Total:', style: 'totalLabel', alignment: 'right' },
+      { text: fmtGBP(invoice.subtotal), style: 'totalValue', alignment: 'right' },
+    ],
+    [
+      { text: 'Total VAT:', style: 'totalLabel', alignment: 'right' },
+      { text: fmtGBP(invoice.totalVat), style: 'totalValue', alignment: 'right' },
+    ],
+    [
+      { text: 'Total Due:', style: 'grandTotalLabel', alignment: 'right' },
+      { text: fmtGBP(invoice.total), style: 'grandTotalValue', alignment: 'right' },
+    ],
+  ];
 
-  const bankParts = [];
-  if (settingsDoc?.bankName) bankParts.push(settingsDoc.bankName);
-  if (settingsDoc?.bankSortCode) bankParts.push(`Sort Code: ${settingsDoc.bankSortCode}`);
-  if (settingsDoc?.bankAccountNumber) bankParts.push(`Account: ${settingsDoc.bankAccountNumber}`);
-  if (settingsDoc?.bankAccountOwner) bankParts.push(`Name: ${settingsDoc.bankAccountOwner}`);
+  content.push({
+    columns: [
+      { text: '', width: '*' },
+      {
+        width: 'auto',
+        table: {
+          widths: ['auto', 'auto'],
+          body: totalsBody,
+        },
+        layout: {
+          hLineWidth: (i, node) => (i === node.table.body.length - 1) ? 1 : 0,
+          vLineWidth: () => 0,
+          hLineColor: () => NAVY,
+          paddingTop: () => 3,
+          paddingBottom: () => 3,
+          paddingLeft: () => 8,
+          paddingRight: () => 0,
+        },
+      },
+    ],
+    margin: [0, 12, 0, 24],
+  });
 
-  if (bankParts.length > 0) {
-    content.push({
-      text: 'Bank Details',
-      style: 'bankHeader',
-      margin: [0, 0, 0, 4],
-    });
-    content.push({
-      text: bankParts.join('  |  '),
-      style: 'bankDetails',
-      margin: [0, 0, 0, 8],
+  // ── Build page footer (pinned to bottom of every page) ──
+  const regAddressParts = [settingsDoc?.address].filter(Boolean);
+  if (settingsDoc?.vatNumber) regAddressParts.push(`VAT No. ${settingsDoc.vatNumber}`);
+  const contactLines = [settingsDoc?.name, settingsDoc?.phone, settingsDoc?.email].filter(Boolean);
+  const bankRows = [];
+  if (settingsDoc?.bankName) bankRows.push(['Bank Name', settingsDoc.bankName]);
+  if (settingsDoc?.bankSortCode) bankRows.push(['Sort-Code', settingsDoc.bankSortCode]);
+  if (settingsDoc?.bankAccountNumber) bankRows.push(['Account No.', settingsDoc.bankAccountNumber]);
+  if (settingsDoc?.bankAccountOwner) bankRows.push(['Acc. Owner', settingsDoc.bankAccountOwner]);
+
+  const footerStack = [];
+
+  // "Thank you" text
+  footerStack.push({
+    text: 'Thank you for your business!',
+    fontSize: 10, italics: true, color: GREY_TEXT,
+    alignment: 'center',
+    margin: [40, 0, 40, 10],
+  });
+
+  // Horizontal line below "Thank you"
+  footerStack.push({
+    canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#CCCCCC' }],
+    margin: [40, 0, 40, 8],
+  });
+
+  // Company number — bold
+  if (settingsDoc?.companyRegistration) {
+    footerStack.push({
+      text: `Company Number: ${settingsDoc.companyRegistration}`,
+      fontSize: 8, bold: true, color: '#333333',
+      margin: [40, 0, 40, 10],
     });
   }
 
-  if (settingsDoc?.invoiceFooterText) {
-    content.push({
-      text: settingsDoc.invoiceFooterText,
-      style: 'footerText',
-      margin: [0, 8, 0, 0],
-    });
-  }
-
-  if (footerParts.length > 0) {
-    content.push({
-      text: footerParts.join('  |  '),
-      style: 'companyFooter',
-      margin: [0, 8, 0, 0],
-    });
-  }
+  // Three-column layout
+  footerStack.push({
+    columns: [
+      {
+        width: '*',
+        stack: [
+          { text: 'Registered Address:', fontSize: 8, bold: true, color: '#333333', margin: [0, 0, 0, 2] },
+          {
+            table: {
+              widths: ['*'],
+              body: regAddressParts.map(line => [{ text: line, fontSize: 7, color: GREY_TEXT }]),
+            },
+            layout: 'noBorders',
+          },
+        ],
+      },
+      {
+        width: '*',
+        stack: [
+          { text: 'Contact Information', fontSize: 8, bold: true, color: '#333333', margin: [0, 0, 0, 2] },
+          {
+            table: {
+              widths: ['*'],
+              body: contactLines.map(line => [{ text: line, fontSize: 7, color: GREY_TEXT }]),
+            },
+            layout: 'noBorders',
+          },
+        ],
+      },
+      {
+        width: '*',
+        stack: [
+          { text: 'Payment Details', fontSize: 8, bold: true, color: '#333333', margin: [0, 0, 0, 2] },
+          {
+            table: {
+              widths: ['auto', 'auto'],
+              body: bankRows.map(([label, value]) => [
+                { text: label, fontSize: 7, color: GREY_TEXT },
+                { text: value, fontSize: 7, color: GREY_TEXT },
+              ]),
+            },
+            layout: 'noBorders',
+          },
+        ],
+      },
+    ],
+    margin: [40, 0, 40, 0],
+  });
 
   return {
     content,
+    footer: { stack: footerStack },
     styles: {
-      businessName: { fontSize: 16, bold: true, color: '#333333' },
-      invoiceLabel: { fontSize: 18, bold: true, color: '#0078D4' },
-      sectionLabel: { fontSize: 9, bold: true, color: '#555555' },
-      infoText: { fontSize: 9, color: '#333333' },
-      metaLabel: { fontSize: 9, bold: true, color: '#555555', margin: [0, 1, 8, 1] },
-      metaValue: { fontSize: 9, color: '#333333', margin: [0, 1, 0, 1] },
-      additionalInfo: { fontSize: 9, color: '#555555', italics: true },
-      tableHeader: { fontSize: 8, bold: true, color: '#FFFFFF', fillColor: '#0078D4', margin: [0, 2, 0, 2] },
+      businessName: { fontSize: 16, bold: true, color: NAVY, margin: [0, 0, 0, 4] },
+      businessDetail: { fontSize: 9, color: GREY_TEXT, margin: [0, 4, 0, 0] },
+      invoiceLabel: { fontSize: 20, bold: true, color: NAVY },
+      sectionLabel: { fontSize: 9, bold: true, color: GREY_TEXT },
+      billToName: { fontSize: 10, bold: true, color: '#333333', margin: [0, 4, 0, 0] },
+      billToAddress: { fontSize: 9, color: '#333333', margin: [0, 4, 0, 0] },
+      metaLabel: { fontSize: 9, color: GREY_TEXT, margin: [0, 4, 0, 0] },
+      metaLabelBold: { fontSize: 9, bold: true, color: NAVY, margin: [0, 4, 0, 0] },
+      servicePeriod: { fontSize: 9, color: GREY_TEXT, margin: [0, 4, 0, 0] },
+      tableHeader: { fontSize: 8, bold: true, color: '#FFFFFF', fillColor: NAVY, margin: [0, 2, 0, 2] },
       tableCell: { fontSize: 8, color: '#333333' },
       detailLine: { fontSize: 7, color: '#888888', italics: true },
-      totalLabel: { fontSize: 9, bold: true, color: '#333333' },
-      totalValue: { fontSize: 9, color: '#333333' },
-      grandTotalLabel: { fontSize: 10, bold: true, color: '#333333' },
-      grandTotalValue: { fontSize: 10, bold: true, color: '#333333' },
-      bankHeader: { fontSize: 9, bold: true, color: '#333333' },
-      bankDetails: { fontSize: 8, color: '#555555' },
-      footerText: { fontSize: 8, color: '#666666', italics: true },
-      companyFooter: { fontSize: 7, color: '#999999' },
+      totalLabel: { fontSize: 9, color: '#333333', margin: [0, 1, 0, 1] },
+      totalValue: { fontSize: 9, color: '#333333', margin: [0, 1, 0, 1] },
+      grandTotalLabel: { fontSize: 10, bold: true, color: NAVY, margin: [0, 2, 0, 2] },
+      grandTotalValue: { fontSize: 10, bold: true, color: NAVY, margin: [0, 2, 0, 2] },
     },
     defaultStyle: { font: 'Roboto' },
     pageSize: 'A4',
-    pageMargins: [40, 40, 40, 40],
+    pageMargins: [40, 40, 40, 140],
   };
 }
 
@@ -308,7 +377,7 @@ function buildLineItems(lines) {
       vatPercent: agg.vatPercent,
       vatAmount: round2(agg.totalVat),
       total: round2(agg.totalGross),
-      detail: `timesheets: ${agg.totalDays.toFixed(2)} days × £${agg.unitPrice.toFixed(2)} = £${agg.totalNet.toFixed(2)}`,
+      detail: `timesheets: ${agg.totalDays.toFixed(2)} days × ${fmtGBP(agg.unitPrice)} = ${fmtGBP(agg.totalNet)}`,
     });
   }
 
@@ -339,7 +408,7 @@ function buildLineItems(lines) {
       typeCounts[t] = (typeCounts[t] || 0) + 1;
     }
     const typeSummary = Object.entries(typeCounts).map(([t, c]) => `${c}×${t}`).join(', ');
-    const detailVat = totalVat > 0 ? `, VAT (inclusive) = £${totalVat.toFixed(2)}` : '';
+    const detailVat = totalVat > 0 ? `, VAT (inclusive) = ${fmtGBP(totalVat)}` : '';
 
     group.lines.push({
       description: `${Object.keys(typeCounts)[0] || 'Expenses'}${count > 1 ? ' expenses' : ''}`,
@@ -349,7 +418,7 @@ function buildLineItems(lines) {
       vatPercent: bucket.vatPercent,
       vatAmount: round2(totalVat),
       total: round2(totalGross),
-      detail: `expenses: ${typeSummary} = £${totalGross.toFixed(2)}${detailVat}`,
+      detail: `expenses: ${typeSummary} = ${fmtGBP(totalGross)}${detailVat}`,
     });
   }
 
@@ -388,4 +457,19 @@ function formatDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatPeriodLabel(startDate, endDate) {
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+
+  // Same month+year: "01 - 31 January 2026"
+  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+    const day1 = String(start.getDate()).padStart(2, '0');
+    const day2 = String(end.getDate()).padStart(2, '0');
+    const monthYear = end.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    return `${day1} - ${day2} ${monthYear}`;
+  }
+
+  return `${formatDate(startDate)} – ${formatDate(endDate)}`;
 }

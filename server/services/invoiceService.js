@@ -200,12 +200,12 @@ export async function confirm(id) {
     const buffers = [await renderToBuffer(invoiceDocDef)];
 
     if (invoice.includeTimesheetReport && tsIds.length) {
-      const tsDef = await buildTimesheetPdf(invoice.clientId, null, null, null, { ids: tsIds });
+      const tsDef = await buildTimesheetPdf(invoice.clientId, invoice.servicePeriodStart, invoice.servicePeriodEnd, null, { ids: tsIds });
       buffers.push(await renderToBuffer(tsDef));
     }
 
     if (invoice.includeExpenseReport && expIds.length) {
-      const expDef = await buildExpensePdf(invoice.clientId, null, null, null, { ids: expIds });
+      const expDef = await buildExpensePdf(invoice.clientId, invoice.servicePeriodStart, invoice.servicePeriodEnd, null, { ids: expIds });
       buffers.push(await renderToBuffer(expDef));
     }
 
