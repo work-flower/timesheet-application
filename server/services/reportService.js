@@ -67,13 +67,14 @@ export async function buildTimesheetPdf(clientId, startDate, endDate, projectId 
     }
 
     // Contractor header
-    if (settingsDoc?.businessName || settingsDoc?.name) {
-      content.push({
-        text: settingsDoc.businessName || settingsDoc.name,
-        style: 'contractorName',
-        margin: [0, 0, 0, 2],
-      });
-    }
+    const businessName = settingsDoc?.businessName || settingsDoc?.name || '';
+    content.push({
+      columns: [
+        { text: businessName, style: 'contractorName', width: '*' },
+        { text: 'TIMESHEET REPORT', style: 'reportLabel', width: 'auto', alignment: 'right' },
+      ],
+      margin: [0, 0, 0, 2],
+    });
     const contactParts = [
       settingsDoc?.address,
       settingsDoc?.email,
@@ -180,6 +181,7 @@ export async function buildTimesheetPdf(clientId, startDate, endDate, projectId 
     }),
     styles: {
       contractorName: { fontSize: 14, bold: true, color: '#333333' },
+      reportLabel: { fontSize: 18, bold: true, color: '#0078D4' },
       contactDetails: { fontSize: 9, color: '#666666' },
       infoLabel: { fontSize: 10, bold: true, color: '#555555', margin: [0, 1, 8, 1] },
       infoValue: { fontSize: 10, color: '#333333', margin: [0, 1, 0, 1] },
