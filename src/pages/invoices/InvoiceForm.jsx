@@ -150,6 +150,7 @@ const expensePickerColumns = [
   { key: 'date', label: 'Date' },
   { key: 'projectName', label: 'Project' },
   { key: 'expenseType', label: 'Type' },
+  { key: 'billable', label: 'Billable', render: (item) => item.billable ? 'Yes' : 'No' },
   {
     key: 'amount', label: 'Amount',
     render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0),
@@ -631,6 +632,7 @@ export default function InvoiceForm() {
         description: [exp.expenseType, exp.description].filter(Boolean).join(' - '),
         date: exp.date,
         expenseType: exp.expenseType,
+        billable: exp.billable !== false,
         quantity: 1,
         unit: 'item',
         unitPrice: netAmount,
@@ -826,6 +828,10 @@ export default function InvoiceForm() {
         }
         if (line.date && periodEnd && line.date > periodEnd) {
           warnings.push({ lineId: line.id, message: `Expense ${line.date} is after service period end (${periodEnd})` });
+        }
+        // Warning: non-billable expense
+        if (exp.billable === false || line.billable === false) {
+          warnings.push({ lineId: line.id, message: `Expense ${line.date || 'unknown date'}: this expense is marked as non-billable` });
         }
       }
     }
