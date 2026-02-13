@@ -247,7 +247,7 @@ export default function ClientForm() {
 
         <div className={styles.tabContent}>
           {(isNew || tab === 'general') && (
-            <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0 }}>
+            <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
               <FormSection title="Company Information">
                 <FormField changed={changedFields.has('companyName')}>
                   <Field label="Company Name" required>

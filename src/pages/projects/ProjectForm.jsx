@@ -287,7 +287,7 @@ export default function ProjectForm() {
 
         <div className={styles.tabContent}>
           {(isNew || tab === 'general') && (
-            <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0 }}>
+            <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
               <FormSection title="Project Details">
                 <FormField changed={changedFields.has('name')}>
                   <Field label="Project Name" required>

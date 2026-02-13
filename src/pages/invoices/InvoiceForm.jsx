@@ -886,7 +886,7 @@ export default function InvoiceForm() {
           Back
         </Button>
         <ToolbarDivider />
-        {!isPosted && (
+        {!isReadOnly && (
           <>
             <Button appearance="primary" icon={<SaveRegular />} onClick={handleSave} disabled={saving} size="small">
               {saving ? 'Saving...' : 'Save'}
@@ -898,7 +898,7 @@ export default function InvoiceForm() {
         )}
         {!isNew && (
           <>
-            {!isPosted && (
+            {!isReadOnly && (
               <>
                 <ToolbarDivider />
                 <Button appearance="subtle" icon={<ShieldCheckmarkRegular />} onClick={handleConsistencyCheck} size="small">
@@ -993,47 +993,104 @@ export default function InvoiceForm() {
           {/* Invoice tab (or new form) — all lines managed here */}
           {(isNew || tab === 'invoice') && (
             <>
-              <FormSection title="Invoice Details">
-                <FormField changed={changedFields.has('clientId')}>
-                  <Field label="Client" required>
-                    <Select
-                      value={form.clientId}
-                      onChange={handleChange('clientId')}
-                      disabled={!isNew}
-                    >
-                      <option value="">Select client...</option>
-                      {allClients.map((c) => (
-                        <option key={c._id} value={c._id}>{c.companyName}</option>
-                      ))}
-                    </Select>
+              <fieldset disabled={!!isReadOnly} style={{ border: 'none', padding: 0, margin: 0, ...(isReadOnly ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
+                <FormSection title="Invoice Details">
+                  <FormField changed={changedFields.has('clientId')}>
+                    <Field label="Client" required>
+                      <Select
+                        value={form.clientId}
+                        onChange={handleChange('clientId')}
+                        disabled={!isNew}
+                      >
+                        <option value="">Select client...</option>
+                        {allClients.map((c) => (
+                          <option key={c._id} value={c._id}>{c.companyName}</option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </FormField>
+                  <FormField>
+                    <Field label="Invoice Number">
+                      <Input value={form.invoiceNumber || '—'} disabled />
+                    </Field>
+                  </FormField>
+                  <FormField changed={changedFields.has('invoiceDate')}>
+                    <Field label="Invoice Date">
+                      <Input type="date" value={form.invoiceDate} onChange={handleChange('invoiceDate')} />
+                    </Field>
+                  </FormField>
+                  <FormField changed={changedFields.has('servicePeriodStart')}>
+                    <Field label="Service Period Start">
+                      <Input type="date" value={form.servicePeriodStart} onChange={handleChange('servicePeriodStart')} />
+                    </Field>
+                  </FormField>
+                  <FormField changed={changedFields.has('dueDate')}>
+                    <Field label="Due Date">
+                      <Input type="date" value={form.dueDate} onChange={handleChange('dueDate')} />
+                    </Field>
+                  </FormField>
+                  <FormField changed={changedFields.has('servicePeriodEnd')}>
+                    <Field label="Service Period End">
+                      <Input type="date" value={form.servicePeriodEnd} onChange={handleChange('servicePeriodEnd')} />
+                    </Field>
+                  </FormField>
+                </FormSection>
+
+                <FormField fullWidth changed={changedFields.has('additionalNotes')}>
+                  <Field label="Additional Notes" style={{ marginTop: '8px' }}>
+                    <Textarea
+                      value={form.additionalNotes}
+                      onChange={handleChange('additionalNotes')}
+                      resize="vertical"
+                      rows={2}
+                    />
                   </Field>
                 </FormField>
-                <FormField>
-                  <Field label="Invoice Number">
-                    <Input value={form.invoiceNumber || '—'} disabled />
-                  </Field>
-                </FormField>
-                <FormField changed={changedFields.has('invoiceDate')}>
-                  <Field label="Invoice Date">
-                    <Input type="date" value={form.invoiceDate} onChange={handleChange('invoiceDate')} disabled={isReadOnly} />
-                  </Field>
-                </FormField>
-                <FormField changed={changedFields.has('servicePeriodStart')}>
-                  <Field label="Service Period Start">
-                    <Input type="date" value={form.servicePeriodStart} onChange={handleChange('servicePeriodStart')} disabled={isReadOnly} />
-                  </Field>
-                </FormField>
-                <FormField changed={changedFields.has('dueDate')}>
-                  <Field label="Due Date">
-                    <Input type="date" value={form.dueDate} onChange={handleChange('dueDate')} disabled={isReadOnly} />
-                  </Field>
-                </FormField>
-                <FormField changed={changedFields.has('servicePeriodEnd')}>
-                  <Field label="Service Period End">
-                    <Input type="date" value={form.servicePeriodEnd} onChange={handleChange('servicePeriodEnd')} disabled={isReadOnly} />
-                  </Field>
-                </FormField>
-              </FormSection>
+
+                {/* Invoice Lines — unified view */}
+                <div style={{ marginTop: '24px' }}>
+                  <div className={styles.sectionHeader}>
+                    <Text style={{ fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase400 }}>
+                      Line Sources ({form.lines.length})
+                    </Text>
+                    {!isReadOnly && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={openTimesheetPicker} disabled={!form.clientId}>
+                          Add Timesheets
+                        </Button>
+                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={openExpensePicker} disabled={!form.clientId}>
+                          Add Expenses
+                        </Button>
+                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={addWriteInLine}>
+                          Add Line
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <EntityGrid
+                    columns={makeUnifiedColumns(!isReadOnly ? removeLine : null, updateWriteInLine, isReadOnly, errorMap, warningMap)}
+                    items={sortedLines}
+                    emptyMessage="No lines added to this invoice."
+                    getRowId={(item) => item.id}
+                  />
+                </div>
+
+                {/* Totals — computed live from form.lines */}
+                <div className={styles.totalsSection}>
+                  <div className={styles.totalRow}>
+                    <Text className={styles.totalLabel}>Sub Total:</Text>
+                    <Text className={styles.totalValue}>{fmt.format(liveTotals.subtotal)}</Text>
+                  </div>
+                  <div className={styles.totalRow}>
+                    <Text className={styles.totalLabel}>Total VAT:</Text>
+                    <Text className={styles.totalValue}>{fmt.format(liveTotals.totalVat)}</Text>
+                  </div>
+                  <div className={styles.totalRow}>
+                    <Text className={`${styles.totalLabel} ${styles.grandTotal}`}>Total Due:</Text>
+                    <Text className={`${styles.totalValue} ${styles.grandTotal}`}>{fmt.format(liveTotals.total)}</Text>
+                  </div>
+                </div>
+              </fieldset>
 
               {isPosted && (
                 <FormSection title="Payment">
@@ -1062,80 +1119,26 @@ export default function InvoiceForm() {
                   )}
                 </FormSection>
               )}
-
-              <FormField fullWidth changed={changedFields.has('additionalNotes')}>
-                <Field label="Additional Notes" style={{ marginTop: '8px' }}>
-                  <Textarea
-                    value={form.additionalNotes}
-                    onChange={handleChange('additionalNotes')}
-                    resize="vertical"
-                    rows={2}
-                    disabled={isReadOnly}
-                  />
-                </Field>
-              </FormField>
-
-              {/* Invoice Lines — unified view */}
-              <div style={{ marginTop: '24px' }}>
-                <div className={styles.sectionHeader}>
-                  <Text style={{ fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase400 }}>
-                    Line Sources ({form.lines.length})
-                  </Text>
-                  {!isPosted && (
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <Button appearance="outline" icon={<AddRegular />} size="small" onClick={openTimesheetPicker} disabled={!form.clientId}>
-                        Add Timesheets
-                      </Button>
-                      <Button appearance="outline" icon={<AddRegular />} size="small" onClick={openExpensePicker} disabled={!form.clientId}>
-                        Add Expenses
-                      </Button>
-                      <Button appearance="outline" icon={<AddRegular />} size="small" onClick={addWriteInLine}>
-                        Add Line
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                <EntityGrid
-                  columns={makeUnifiedColumns(!isPosted ? removeLine : null, updateWriteInLine, isReadOnly, errorMap, warningMap)}
-                  items={sortedLines}
-                  emptyMessage="No lines added to this invoice."
-                  getRowId={(item) => item.id}
-                />
-              </div>
-
-              {/* Totals — computed live from form.lines */}
-              <div className={styles.totalsSection}>
-                <div className={styles.totalRow}>
-                  <Text className={styles.totalLabel}>Sub Total:</Text>
-                  <Text className={styles.totalValue}>{fmt.format(liveTotals.subtotal)}</Text>
-                </div>
-                <div className={styles.totalRow}>
-                  <Text className={styles.totalLabel}>Total VAT:</Text>
-                  <Text className={styles.totalValue}>{fmt.format(liveTotals.totalVat)}</Text>
-                </div>
-                <div className={styles.totalRow}>
-                  <Text className={`${styles.totalLabel} ${styles.grandTotal}`}>Total Due:</Text>
-                  <Text className={`${styles.totalValue} ${styles.grandTotal}`}>{fmt.format(liveTotals.total)}</Text>
-                </div>
-              </div>
             </>
           )}
 
           {/* PDF Preview tab */}
           {tab === 'pdf' && (
             <>
-              <div style={{ display: 'flex', gap: '24px', marginBottom: '12px' }}>
-                <Switch
-                  checked={form.includeTimesheetReport}
-                  onChange={(e, data) => { pendingToggleSave.current = true; setForm(prev => ({ ...prev, includeTimesheetReport: data.checked })); }}
-                  label="Include Timesheet Report"
-                />
-                <Switch
-                  checked={form.includeExpenseReport}
-                  onChange={(e, data) => { pendingToggleSave.current = true; setForm(prev => ({ ...prev, includeExpenseReport: data.checked })); }}
-                  label="Include Expense Report"
-                />
-              </div>
+              <fieldset disabled={!!isReadOnly} style={{ border: 'none', padding: 0, margin: 0, ...(isReadOnly ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
+                <div style={{ display: 'flex', gap: '24px', marginBottom: '12px' }}>
+                  <Switch
+                    checked={form.includeTimesheetReport}
+                    onChange={(e, data) => { pendingToggleSave.current = true; setForm(prev => ({ ...prev, includeTimesheetReport: data.checked })); }}
+                    label="Include Timesheet Report"
+                  />
+                  <Switch
+                    checked={form.includeExpenseReport}
+                    onChange={(e, data) => { pendingToggleSave.current = true; setForm(prev => ({ ...prev, includeExpenseReport: data.checked })); }}
+                    label="Include Expense Report"
+                  />
+                </div>
+              </fieldset>
               {pdfLoading ? (
                 <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Generating PDF..." /></div>
               ) : pdfUrl ? (

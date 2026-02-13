@@ -244,7 +244,7 @@ export default function TimesheetForm() {
         {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Timesheet entry saved successfully.</MessageBarBody></MessageBar>}
         {isLocked && <MessageBar intent="warning" className={styles.message}><MessageBarBody>{lockReason || 'This record is locked.'}</MessageBarBody></MessageBar>}
 
-        <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0 }}>
+        <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
           <FormSection title="Entry Details">
             <FormField changed={changedFields.has('date')}>
               <Field label="Date" required>
