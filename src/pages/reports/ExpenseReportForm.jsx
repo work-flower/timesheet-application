@@ -15,10 +15,9 @@ import {
 } from '@fluentui/react-components';
 import {
   ArrowDownloadRegular,
-  SaveRegular,
   DocumentSearchRegular,
 } from '@fluentui/react-icons';
-import { clientsApi, projectsApi, timesheetsApi, reportsApi, documentsApi } from '../../api/index.js';
+import { clientsApi, projectsApi, expensesApi, reportsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
   page: {
@@ -110,12 +109,12 @@ const useStyles = makeStyles({
   },
 });
 
-function computePeriods(timesheetDates, granularity) {
-  if (!timesheetDates.length) return [];
+function computePeriods(dates, granularity) {
+  if (!dates.length) return [];
 
   if (granularity === 'monthly') {
     const monthSet = new Set();
-    for (const date of timesheetDates) {
+    for (const date of dates) {
       monthSet.add(date.substring(0, 7));
     }
     return [...monthSet]
@@ -132,7 +131,7 @@ function computePeriods(timesheetDates, granularity) {
 
   // Weekly
   const weekSet = new Set();
-  for (const date of timesheetDates) {
+  for (const date of dates) {
     const d = new Date(date + 'T00:00:00');
     const dayOfWeek = d.getDay() || 7;
     const monday = new Date(d);
@@ -151,36 +150,33 @@ function computePeriods(timesheetDates, granularity) {
     });
 }
 
-export default function ReportForm() {
+export default function ExpenseReportForm() {
   const styles = useStyles();
 
   // Data
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [timesheetDates, setTimesheetDates] = useState([]);
+  const [expenseDates, setExpenseDates] = useState([]);
 
   // Selections (restore from localStorage)
-  const [selectedClientId, setSelectedClientId] = useState(() => localStorage.getItem('report.clientId') || '');
-  const [selectedProjectId, setSelectedProjectId] = useState(() => localStorage.getItem('report.projectId') || '');
-  const [granularity, setGranularity] = useState(() => localStorage.getItem('report.granularity') || 'monthly');
+  const [selectedClientId, setSelectedClientId] = useState(() => localStorage.getItem('expenseReport.clientId') || '');
+  const [selectedProjectId, setSelectedProjectId] = useState(() => localStorage.getItem('expenseReport.projectId') || '');
+  const [granularity, setGranularity] = useState(() => localStorage.getItem('expenseReport.granularity') || 'monthly');
   const [selectedPeriod, setSelectedPeriod] = useState('');
 
   // Preview
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
-  const [pdfBlob, setPdfBlob] = useState(null);
 
   // UI state
   const [generating, setGenerating] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingDates, setLoadingDates] = useState(false);
 
   // Persist selections to localStorage
-  useEffect(() => { localStorage.setItem('report.clientId', selectedClientId); }, [selectedClientId]);
-  useEffect(() => { localStorage.setItem('report.projectId', selectedProjectId); }, [selectedProjectId]);
-  useEffect(() => { localStorage.setItem('report.granularity', granularity); }, [granularity]);
+  useEffect(() => { localStorage.setItem('expenseReport.clientId', selectedClientId); }, [selectedClientId]);
+  useEffect(() => { localStorage.setItem('expenseReport.projectId', selectedProjectId); }, [selectedProjectId]);
+  useEffect(() => { localStorage.setItem('expenseReport.granularity', granularity); }, [granularity]);
 
   // Load clients on mount
   useEffect(() => {
@@ -199,7 +195,7 @@ export default function ReportForm() {
     setLoadingProjects(true);
     if (!isInitialMount.client) {
       setSelectedProjectId('');
-      setTimesheetDates([]);
+      setExpenseDates([]);
       setSelectedPeriod('');
       clearPreview();
     }
@@ -211,10 +207,10 @@ export default function ReportForm() {
       .finally(() => setLoadingProjects(false));
   }, [selectedClientId]);
 
-  // Load timesheet dates when project changes
+  // Load expense dates when project changes
   useEffect(() => {
     if (!selectedProjectId) {
-      setTimesheetDates([]);
+      setExpenseDates([]);
       return;
     }
     setLoadingDates(true);
@@ -224,8 +220,8 @@ export default function ReportForm() {
     }
     isInitialMount.project = false;
 
-    timesheetsApi.getAll({ projectId: selectedProjectId })
-      .then((entries) => setTimesheetDates(entries.map((e) => e.date).filter(Boolean).sort()))
+    expensesApi.getAll({ projectId: selectedProjectId })
+      .then((entries) => setExpenseDates(entries.map((e) => e.date).filter(Boolean).sort()))
       .catch((err) => setError(err.message))
       .finally(() => setLoadingDates(false));
   }, [selectedProjectId]);
@@ -247,28 +243,24 @@ export default function ReportForm() {
   }, [pdfBlobUrl]);
 
   const periods = useMemo(
-    () => computePeriods(timesheetDates, granularity),
-    [timesheetDates, granularity],
+    () => computePeriods(expenseDates, granularity),
+    [expenseDates, granularity],
   );
 
   function clearPreview() {
     if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
     setPdfBlobUrl(null);
-    setPdfBlob(null);
-    setSuccess(null);
   }
 
   const handleGenerate = async () => {
     if (!selectedPeriod) return;
     setGenerating(true);
     setError(null);
-    setSuccess(null);
     clearPreview();
     try {
       const [startDate, endDate] = selectedPeriod.split('|');
-      const blob = await reportsApi.getTimesheetPdfBlob(selectedClientId, selectedProjectId, startDate, endDate);
+      const blob = await reportsApi.getExpensePdfBlob(selectedClientId, selectedProjectId, startDate, endDate);
       const url = URL.createObjectURL(blob);
-      setPdfBlob(blob);
       setPdfBlobUrl(url);
     } catch (err) {
       setError(err.message);
@@ -282,33 +274,10 @@ export default function ReportForm() {
     const [startDate, endDate] = selectedPeriod.split('|');
     const a = document.createElement('a');
     a.href = pdfBlobUrl;
-    a.download = `timesheet-${startDate}-to-${endDate}.pdf`;
+    a.download = `expenses-${startDate}-to-${endDate}.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-  };
-
-  const handleSave = async () => {
-    if (!selectedPeriod) return;
-    setSaving(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      const [startDate, endDate] = selectedPeriod.split('|');
-      await documentsApi.save({
-        clientId: selectedClientId,
-        projectId: selectedProjectId,
-        startDate,
-        endDate,
-        granularity,
-      });
-      setSuccess('Document saved successfully.');
-      setTimeout(() => setSuccess(null), 5000);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
   };
 
   const canGenerate = selectedClientId && selectedProjectId && selectedPeriod && !generating;
@@ -321,14 +290,13 @@ export default function ReportForm() {
             <BreadcrumbButton>Reports</BreadcrumbButton>
           </BreadcrumbItem>
           <BreadcrumbItem>
-            <BreadcrumbButton current>Timesheet</BreadcrumbButton>
+            <BreadcrumbButton current>Expenses</BreadcrumbButton>
           </BreadcrumbItem>
         </Breadcrumb>
-        <Text className={styles.title}>Timesheet Report</Text>
+        <Text className={styles.title}>Expense Report</Text>
       </div>
 
       {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-      {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>{success}</MessageBarBody></MessageBar>}
 
       <div className={styles.body}>
         {/* Left sidebar — parameters */}
@@ -384,7 +352,7 @@ export default function ReportForm() {
                   : !selectedProjectId
                     ? 'Select a project first'
                     : periods.length === 0
-                      ? 'No timesheet data'
+                      ? 'No expense data'
                       : 'Select period...'}
               </option>
               {periods.map((p) => (
@@ -418,15 +386,6 @@ export default function ReportForm() {
                     size="small"
                   >
                     Download
-                  </Button>
-                  <Button
-                    appearance="primary"
-                    icon={saving ? <Spinner size="tiny" /> : <SaveRegular />}
-                    onClick={handleSave}
-                    disabled={saving}
-                    size="small"
-                  >
-                    {saving ? 'Saving...' : 'Save Document'}
                   </Button>
                 </div>
               </div>

@@ -72,6 +72,15 @@ export const reportsApi = {
     }
     return res.blob();
   },
+  getExpensePdfBlob: async (clientId, projectId, startDate, endDate) => {
+    const params = new URLSearchParams({ clientId, startDate, endDate, projectId });
+    const res = await fetch(`${BASE}/reports/expense-pdf?${params}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+    }
+    return res.blob();
+  },
   getCombinedPdfBlob: async (reports) => {
     const res = await fetch(`${BASE}/reports/combined-pdf`, {
       method: 'POST',

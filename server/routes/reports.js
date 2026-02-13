@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { buildTimesheetPdf } from '../services/reportService.js';
 import { buildExpensePdf } from '../services/expenseReportService.js';
 import { combinePdfs } from '../services/pdfCombineService.js';
-import { createPrinter, renderToBuffer } from '../services/pdfRenderer.js';
+import { renderToBuffer } from '../services/pdfRenderer.js';
 
 const router = Router();
 
@@ -15,14 +15,11 @@ router.get('/timesheet-pdf', async (req, res) => {
     }
 
     const docDefinition = await buildTimesheetPdf(clientId, startDate, endDate, projectId || null);
-    const printer = createPrinter();
-    const pdfDoc = printer.createPdfKitDocument(docDefinition);
+    const buffer = await renderToBuffer(docDefinition);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="timesheet-${startDate}-to-${endDate}.pdf"`);
-
-    pdfDoc.pipe(res);
-    pdfDoc.end();
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -37,14 +34,11 @@ router.get('/expense-pdf', async (req, res) => {
     }
 
     const docDefinition = await buildExpensePdf(clientId, startDate, endDate, projectId || null);
-    const printer = createPrinter();
-    const pdfDoc = printer.createPdfKitDocument(docDefinition);
+    const buffer = await renderToBuffer(docDefinition);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="expenses-${startDate}-to-${endDate}.pdf"`);
-
-    pdfDoc.pipe(res);
-    pdfDoc.end();
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,5 +1,5 @@
 import { FluentProvider } from '@fluentui/react-components';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { theme } from './theme.js';
 import { UnsavedChangesProvider } from './contexts/UnsavedChangesContext.jsx';
 import AppLayout from './layouts/AppLayout.jsx';
@@ -16,6 +16,7 @@ import InvoiceList from './pages/invoices/InvoiceList.jsx';
 import InvoiceForm from './pages/invoices/InvoiceForm.jsx';
 import Settings from './pages/settings/Settings.jsx';
 import ReportForm from './pages/reports/ReportForm.jsx';
+import ExpenseReportForm from './pages/reports/ExpenseReportForm.jsx';
 
 export default function App() {
   return (
@@ -40,7 +41,9 @@ export default function App() {
               <Route path="/invoices" element={<InvoiceList />} />
               <Route path="/invoices/new" element={<InvoiceForm />} />
               <Route path="/invoices/:id" element={<InvoiceForm />} />
-              <Route path="/reports" element={<ReportForm />} />
+              <Route path="/reports" element={<Navigate to="/reports/timesheets" replace />} />
+              <Route path="/reports/timesheets" element={<ReportForm />} />
+              <Route path="/reports/expenses" element={<ExpenseReportForm />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Routes>
