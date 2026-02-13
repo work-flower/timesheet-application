@@ -16,7 +16,11 @@ import {
 const useStyles = makeStyles({
   container: {
     flex: 1,
-    overflow: 'auto',
+    overflow: 'hidden',
+    width: '100%',
+  },
+  grid: {
+    width: '100%',
   },
   empty: {
     display: 'flex',
@@ -79,13 +83,23 @@ export default function EntityGrid({
     })
   );
 
+  // Build columnSizingOptions from columns that declare idealWidth
+  const sizingCols = columns.filter(c => c.idealWidth != null);
+  const hasSizing = sizingCols.length > 0;
+  const columnSizingOptions = hasSizing
+    ? Object.fromEntries(sizingCols.map(c => [c.key, { idealWidth: c.idealWidth, minWidth: c.idealWidth }]))
+    : undefined;
+
   return (
     <div className={styles.container}>
       <DataGrid
+        className={styles.grid}
         items={items}
         columns={gridColumns}
         sortable={sortable}
         getRowId={getRowId}
+        resizableColumns={hasSizing || undefined}
+        columnSizingOptions={columnSizingOptions}
         selectionMode={onSelectionChange ? 'multiselect' : undefined}
         selectedItems={selectedIds}
         onSelectionChange={onSelectionChange ? (e, data) => onSelectionChange(data.selectedItems) : undefined}

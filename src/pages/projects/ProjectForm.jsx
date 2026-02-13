@@ -17,7 +17,7 @@ import {
   BreadcrumbDivider,
   BreadcrumbButton,
 } from '@fluentui/react-components';
-import { projectsApi, clientsApi, documentsApi } from '../../api/index.js';
+import { projectsApi, clientsApi, documentsApi, invoicesApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import EntityGrid from '../../components/EntityGrid.jsx';
@@ -74,6 +74,17 @@ const expenseColumns = [
   },
 ];
 
+const invoiceColumns = [
+  { key: 'invoiceNumber', label: 'Invoice #', render: (item) => item.invoiceNumber || 'Draft' },
+  { key: 'invoiceDate', label: 'Date' },
+  { key: 'status', label: 'Status', render: (item) => item.status?.charAt(0).toUpperCase() + item.status?.slice(1) },
+  {
+    key: 'total',
+    label: 'Amount',
+    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0),
+  },
+];
+
 const documentColumns = [
   { key: 'period', label: 'Period', render: (item) => `${item.periodStart} to ${item.periodEnd}` },
   { key: 'granularity', label: 'Type', render: (item) => item.granularity === 'weekly' ? 'Weekly' : 'Monthly' },
@@ -89,7 +100,7 @@ export default function ProjectForm() {
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', clientId: '', endClientId: '', ir35Status: 'OUTSIDE_IR35',
-    rate: '', workingHoursPerDay: '', status: 'active', notes: '',
+    rate: '', workingHoursPerDay: '', vatPercent: '', status: 'active', notes: '',
   });
   const [projectData, setProjectData] = useState(null);
   const [allClients, setAllClients] = useState([]);
@@ -99,6 +110,7 @@ export default function ProjectForm() {
   const [success, setSuccess] = useState(false);
   const [tab, setTab] = useState('general');
   const [documents, setDocuments] = useState([]);
+  const [projectInvoices, setProjectInvoices] = useState([]);
 
   useEffect(() => {
     const init = async () => {
@@ -113,6 +125,13 @@ export default function ProjectForm() {
           ]);
           setDocuments(docs);
           setProjectData(data);
+          // Fetch invoices for this project's client
+          if (data.clientId) {
+            try {
+              const invs = await invoicesApi.getAll({ clientId: data.clientId });
+              setProjectInvoices(invs);
+            } catch {}
+          }
           setBase({
             name: data.name || '',
             clientId: data.clientId || '',
@@ -120,6 +139,7 @@ export default function ProjectForm() {
             ir35Status: data.ir35Status || 'OUTSIDE_IR35',
             rate: data.rate != null ? String(data.rate) : '',
             workingHoursPerDay: data.workingHoursPerDay != null ? String(data.workingHoursPerDay) : '',
+            vatPercent: data.vatPercent != null ? String(data.vatPercent) : '',
             status: data.status || 'active',
             notes: data.notes || '',
           });
@@ -129,6 +149,7 @@ export default function ProjectForm() {
             name: '', clientId: firstClient._id, endClientId: '', ir35Status: 'OUTSIDE_IR35',
             rate: firstClient.defaultRate != null ? String(firstClient.defaultRate) : '',
             workingHoursPerDay: firstClient.workingHoursPerDay != null ? String(firstClient.workingHoursPerDay) : '',
+            vatPercent: '20',
             status: 'active', notes: '',
           });
         }
@@ -166,6 +187,7 @@ export default function ProjectForm() {
         ...form,
         rate: form.rate !== '' ? Number(form.rate) : null,
         workingHoursPerDay: form.workingHoursPerDay !== '' ? Number(form.workingHoursPerDay) : null,
+        vatPercent: form.vatPercent !== '' ? Number(form.vatPercent) : null,
       };
       if (isNew) {
         const created = await projectsApi.create(payload);
@@ -180,6 +202,7 @@ export default function ProjectForm() {
           ir35Status: updated.ir35Status || 'OUTSIDE_IR35',
           rate: updated.rate != null ? String(updated.rate) : '',
           workingHoursPerDay: updated.workingHoursPerDay != null ? String(updated.workingHoursPerDay) : '',
+          vatPercent: updated.vatPercent != null ? String(updated.vatPercent) : '',
           status: updated.status || 'active',
           notes: updated.notes || '',
         });
@@ -253,6 +276,7 @@ export default function ProjectForm() {
             <Tab value="timesheets">Timesheets ({projectData?.timesheets?.length || 0})</Tab>
             <Tab value="expenses">Expenses ({projectData?.expenses?.length || 0})</Tab>
             <Tab value="documents">Documents ({documents.length})</Tab>
+            <Tab value="invoices">Invoices ({projectInvoices.length})</Tab>
           </TabList>
         )}
 
@@ -314,6 +338,16 @@ export default function ProjectForm() {
                     />
                   </Field>
                 </FormField>
+                <FormField changed={changedFields.has('vatPercent')}>
+                  <Field label="VAT Rate (%)" hint={form.vatPercent === '' ? 'Leave empty for no VAT (exempt)' : undefined}>
+                    <Input
+                      type="number"
+                      value={form.vatPercent}
+                      onChange={handleChange('vatPercent')}
+                      placeholder="Leave empty for no VAT"
+                    />
+                  </Field>
+                </FormField>
                 <FormField changed={changedFields.has('status')}>
                   <Field label="Status">
                     <Select value={form.status} onChange={handleChange('status')}>
@@ -362,6 +396,15 @@ export default function ProjectForm() {
               items={documents}
               emptyMessage="No saved documents for this project."
               onRowClick={(item) => window.open(documentsApi.getFileUrl(item._id), '_blank')}
+            />
+          )}
+
+          {tab === 'invoices' && (
+            <EntityGrid
+              columns={invoiceColumns}
+              items={projectInvoices}
+              emptyMessage="No invoices for this project's client."
+              onRowClick={(item) => guardedNavigate(`/invoices/${item._id}`)}
             />
           )}
         </div>

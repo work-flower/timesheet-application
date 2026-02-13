@@ -22,6 +22,7 @@ import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import BackupSettings from './BackupSettings.jsx';
+import InvoicingSettings from './InvoicingSettings.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -141,6 +142,7 @@ export default function Settings() {
           onTabSelect={(e, data) => setTab(data.value)}
         >
           <Tab value="profile">Profile</Tab>
+          <Tab value="invoicing">Invoicing</Tab>
           <Tab value="backup">Backup</Tab>
         </TabList>
 
@@ -181,6 +183,7 @@ export default function Settings() {
           </>
         )}
 
+        {tab === 'invoicing' && <InvoicingSettings />}
         {tab === 'backup' && <BackupSettings />}
       </div>
     </div>

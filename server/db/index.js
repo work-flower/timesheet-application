@@ -18,5 +18,6 @@ const timesheets = Datastore.create({ filename: join(dataDir, 'timesheets.db'), 
 const settings = Datastore.create({ filename: join(dataDir, 'settings.db'), autoload: true });
 const documents = Datastore.create({ filename: join(dataDir, 'documents.db'), autoload: true });
 const expenses = Datastore.create({ filename: join(dataDir, 'expenses.db'), autoload: true });
+const invoices = Datastore.create({ filename: join(dataDir, 'invoices.db'), autoload: true });
 
-export { clients, projects, timesheets, settings, documents, expenses };
+export { clients, projects, timesheets, settings, documents, expenses, invoices };

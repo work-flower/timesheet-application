@@ -62,6 +62,8 @@ timesheet-app/
 │   │   ├── timesheetService.js # Timesheet logic (filtering, grouping)
 │   │   ├── expenseService.js # Expense CRUD, filtering, enrichment, distinct types
 │   │   ├── expenseAttachmentService.js # Expense file storage, thumbnails via sharp, cleanup
+│   │   ├── invoiceService.js  # Invoice CRUD, lifecycle (confirm/post/unconfirm), consistency checks, totals
+│   │   ├── invoicePdfService.js # Invoice PDF generation via pdfmake (VAT grouping, bank details)
 │   │   ├── reportService.js  # PDF generation via pdfmake (supports per-project filtering)
 │   │   ├── documentService.js # Document CRUD + PDF file storage on disk
 │   │   ├── backupService.js  # R2 backup: config CRUD, test connection, create/list/restore/delete backups
@@ -72,6 +74,7 @@ timesheet-app/
 │       ├── timesheets.js
 │       ├── expenses.js       # Expense CRUD + attachment upload/download/delete (multer)
 │       ├── settings.js
+│       ├── invoices.js       # Invoice CRUD + lifecycle + PDF generation endpoints
 │       ├── reports.js        # PDF generation endpoint (returns PDF stream)
 │       ├── documents.js      # Document CRUD + PDF file serving
 │       └── backup.js         # Backup config, test, create, list, restore, delete endpoints
@@ -82,6 +85,7 @@ timesheet-app/
 │   ├── settings.db
 │   ├── documents.db
 │   ├── expenses.db
+│   ├── invoices.db
 │   ├── backup-config.db      # Backup configuration (R2 credentials, schedule — not included in backups)
 │   ├── documents/            # Saved PDF files on disk
 │   └── expenses/             # Expense attachment files on disk (subdirectory per expense ID)
@@ -103,6 +107,7 @@ timesheet-app/
 │   │   ├── FormCommandBar.jsx # Sticky form command bar (Back, Save, Save & Close, optional Delete) — used on all form pages
 │   │   ├── FormSection.jsx   # Reusable form section wrapper (2-column grid, changed field indicator)
 │   │   ├── MarkdownEditor.jsx # Markdown editor wrapper (@uiw/react-md-editor with Fluent UI styling)
+│   │   ├── ItemPickerDialog.jsx # Reusable dialog for selecting timesheets/expenses to add to invoices
 │   │   └── UnsavedChangesDialog.jsx # Save/Discard/Cancel dialog for unsaved changes
 │   ├── pages/
 │   │   ├── Dashboard.jsx     # Five summary cards (week/month hours, active projects, month earnings, month expenses) + recent entries grid
@@ -118,10 +123,14 @@ timesheet-app/
 │   │   ├── expenses/
 │   │   │   ├── ExpenseList.jsx   # DataGrid with period/client/project/type filters, localStorage-persisted
 │   │   │   └── ExpenseForm.jsx   # Expense entry form with attachments
+│   │   ├── invoices/
+│   │   │   ├── InvoiceList.jsx   # DataGrid with status/client/payment filters, localStorage-persisted
+│   │   │   └── InvoiceForm.jsx   # Invoice form with 4 tabs: Invoice, Timesheets, Expenses, PDF Preview
 │   │   ├── reports/
 │   │   │   └── ReportForm.jsx    # Two-column report page: parameter sidebar + PDF preview
 │   │   └── settings/
-│   │       ├── Settings.jsx      # Settings page with Profile and Backup tabs
+│   │       ├── Settings.jsx      # Settings page with Profile, Invoicing, and Backup tabs
+│   │       ├── InvoicingSettings.jsx # Invoicing tab: bank details, invoice seed, VAT rate, payment terms
 │   │       └── BackupSettings.jsx # Backup tab: R2 config, schedule, backup history with restore/delete
 │   └── api/
 │       └── index.js          # Frontend API client (fetch wrapper for all endpoints)
@@ -142,6 +151,14 @@ timesheet-app/
   "utrNumber": "",
   "vatNumber": "",
   "companyRegistration": "",
+  "invoiceNumberSeed": 0,
+  "defaultPaymentTermDays": 10,
+  "defaultVatRate": 20,
+  "invoiceFooterText": "",
+  "bankName": "",
+  "bankSortCode": "",
+  "bankAccountNumber": "",
+  "bankAccountOwner": "",
   "createdAt": "ISO date",
   "updatedAt": "ISO date"
 }
@@ -159,6 +176,8 @@ timesheet-app/
   "defaultRate": 0,
   "currency": "GBP",
   "workingHoursPerDay": 8,
+  "invoicingEntityName": "",
+  "invoicingEntityAddress": "",
   "notes": "",
   "createdAt": "ISO date",
   "updatedAt": "ISO date"
@@ -176,6 +195,7 @@ timesheet-app/
   "ir35Status": "INSIDE_IR35 | OUTSIDE_IR35 | FIXED_TERM",
   "rate": null,
   "workingHoursPerDay": null,
+  "vatPercent": 20,
   "isDefault": false,
   "status": "active | archived",
   "notes": "",
@@ -239,6 +259,56 @@ timesheet-app/
 - `attachments` — array embedded in the expense doc; files on disk at `data/expenses/{expenseId}/`, thumbnails prefixed with `thumb_`
 - `description` — client-facing (visible on invoices/reports)
 - `notes` — internal only (not visible to client)
+
+### invoices
+
+```json
+{
+  "_id": "auto",
+  "clientId": "FK → clients._id",
+  "status": "draft | confirmed | posted",
+  "invoiceNumber": "JBL00001 | null",
+  "invoiceDate": "YYYY-MM-DD",
+  "dueDate": "YYYY-MM-DD",
+  "servicePeriodStart": "YYYY-MM-DD",
+  "servicePeriodEnd": "YYYY-MM-DD",
+  "additionalNotes": "",
+  "lines": [
+    {
+      "id": "uuid",
+      "type": "timesheet | expense | write-in",
+      "sourceId": "FK → timesheets._id or expenses._id or null",
+      "projectId": "FK → projects._id or null",
+      "description": "",
+      "date": "YYYY-MM-DD (display, from source)",
+      "hours": 0,
+      "expenseType": "",
+      "quantity": 1,
+      "unit": "days | item",
+      "unitPrice": 0,
+      "vatPercent": 20,
+      "netAmount": 0,
+      "vatAmount": 0,
+      "grossAmount": 0
+    }
+  ],
+  "paymentStatus": "unpaid | paid | overdue",
+  "paidDate": null,
+  "subtotal": 0,
+  "totalVat": 0,
+  "total": 0,
+  "createdAt": "ISO date",
+  "updatedAt": "ISO date"
+}
+```
+
+**Invoice lifecycle:** Draft → Confirmed → Posted. Draft invoices are fully editable. Confirming assigns an invoice number (auto-increment from settings seed) and locks referenced timesheets/expenses by setting `invoiceId` on each. Posted invoices are immutable except for payment tracking. Unconfirming reverts to draft and unlocks items.
+
+**Invoice lines model:** Each timesheet/expense added to an invoice generates a persistent invoice line with snapshotted values (amount, rate, VAT). Write-in lines are regular lines with `type: 'write-in'`. Lines store all computed values (`netAmount`, `vatAmount`, `grossAmount`) so the form and PDF can render without re-fetching source records.
+
+**VAT computation:** Timesheet VAT is exclusive (added on top of net amount using `project.vatPercent`). Expense VAT is inclusive (persisted `vatAmount`). Write-in line VAT is exclusive (user-specified rate). `project.vatPercent: null` means no VAT (exempt), `0` means zero-rated.
+
+**Item locking:** On confirm, each referenced timesheet/expense (derived from `lines[].sourceId`) gets `invoiceId` set. Consistency checks verify: (1) items aren't locked to other invoices, (2) line values match current source data (amount drift, rate changes, VAT changes). Recalculate realigns stored line values to current source data.
 
 ### documents
 
@@ -322,9 +392,23 @@ All endpoints are prefixed with `/api`.
 - `GET /api/expenses/:id/attachments/:filename` — serve original file
 - `GET /api/expenses/:id/attachments/:filename/thumbnail` — serve thumbnail (images only)
 
+### Invoices
+- `GET /api/invoices` — list invoices (OData + legacy `clientId`, `status`, `startDate`, `endDate` filters)
+- `GET /api/invoices/:id` — get invoice with enriched timesheets, expenses, client info
+- `POST /api/invoices` — create draft invoice
+- `PUT /api/invoices/:id` — update invoice (draft/confirmed only)
+- `DELETE /api/invoices/:id` — delete draft invoice only
+- `POST /api/invoices/:id/confirm` — confirm invoice (assign number, lock items)
+- `POST /api/invoices/:id/post` — post invoice (seal)
+- `POST /api/invoices/:id/unconfirm` — revert confirmed to draft (unlock items)
+- `POST /api/invoices/:id/recalculate` — recompute totals from current items
+- `POST /api/invoices/:id/consistency-check` — check for item conflicts
+- `PUT /api/invoices/:id/payment` — update payment status (posted only)
+- `GET /api/invoices/:id/pdf` — generate and stream invoice PDF
+
 ### Settings
-- `GET /api/settings` — get contractor profile
-- `PUT /api/settings` — update contractor profile
+- `GET /api/settings` — get contractor profile (includes invoicing fields)
+- `PUT /api/settings` — update contractor profile (includes invoicing fields)
 
 ### Reports
 - `GET /api/reports/timesheet-pdf` — generate PDF, supports query params: `clientId`, `startDate`, `endDate`, optional `projectId` (filters to single project)
@@ -445,7 +529,10 @@ GET /api/documents?projectId=abc123&$count=true
 - `/expenses` → Expense list (with date range/client/project/type filter toolbar)
 - `/expenses/new` → Expense entry form
 - `/expenses/:id` → Expense edit form (with attachment gallery)
-- `/settings` → Contractor profile form
+- `/invoices` → Invoice list (with status/client/payment filters)
+- `/invoices/new` → Invoice create form
+- `/invoices/:id` → Invoice form (tabs: Invoice, Timesheets, Expenses, PDF Preview)
+- `/settings` → Contractor profile form (tabs: Profile, Invoicing, Backup)
 
 ### Key UI Behaviors
 - **Client creation flow:** User fills in client form → Save creates the client (backend auto-creates default project) and redirects to the client record where the default project is visible under the Projects tab. Save & Close creates and redirects to the client list instead.
@@ -482,6 +569,11 @@ GET /api/documents?projectId=abc123&$count=true
 11. Expense `currency` is inherited from the client on creation. Read-only in the form, updates when the project changes.
 12. Expense date must not be in the future.
 13. Expense attachments are stored on disk at `data/expenses/{expenseId}/`. Image thumbnails are generated via `sharp` (200px wide, `thumb_` prefix). Deleting an expense cascade-deletes its attachment directory.
+14. Invoice lifecycle: Draft → Confirmed → Posted. Only drafts can be deleted. Confirmation runs consistency check (must pass), assigns an invoice number (`JBL{5-digit padded}`), and locks referenced timesheets/expenses (sets `invoiceId` on each). Posting seals the invoice. Unconfirming reverts to draft and unlocks items.
+15. Invoice lines: Each timesheet/expense added to an invoice generates a persistent line with snapshotted values. Write-in lines are regular lines with `type: 'write-in'`. Totals (`subtotal`, `totalVat`, `total`) are computed from lines and persisted on save. Consistency check detects value drift between lines and source records. Recalculate realigns lines to current source data.
+16. `project.vatPercent`: `20` = standard VAT, `0` = zero-rated, `null` = no VAT (exempt). These are distinct groups on the invoice PDF.
+17. Deleting a client cascade-deletes its invoices (and unlocks any locked items). Deleting an invoice NEVER deletes timesheets or expenses.
+18. Invoice number seed is stored in settings (`invoiceNumberSeed`). Incremented atomically on confirmation.
 
 ## Development Notes
 
@@ -501,6 +593,7 @@ GET /api/documents?projectId=abc123&$count=true
 - **Navigation guard architecture:** Uses a context-based approach (`UnsavedChangesContext`) instead of React Router's `useBlocker` (which requires `createBrowserRouter`, not `BrowserRouter`). The provider wraps routes inside `BrowserRouter` in `App.jsx`. `AppLayout` intercepts sidebar NavLink clicks and the Settings button via `guardedNavigate`. Browser back/forward is handled via a popstate sentinel entry.
 - `npm run dev` does NOT auto-restart the backend server — restart manually after server-side file changes.
 - The `tar` npm package does not have a default ESM export — must use `import * as tar from 'tar'` (not `import tar from 'tar'`).
+- **Service update pattern (spread):** All service `update()` methods use the spread approach — `const updateData = { ...data, updatedAt: now }` — then delete protected fields (`_id`, `createdAt`, plus entity-specific fields like `status`, `invoiceNumber`, `attachments`). Do NOT use field-by-field whitelists. This ensures new fields are automatically persisted without requiring service changes. Type coercion and computed field recomputation happen after the spread.
 
 ## PDF Report Layout (pdfmake)
 

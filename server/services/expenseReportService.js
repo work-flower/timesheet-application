@@ -1,6 +1,6 @@
-import { clients, projects, timesheets, settings } from '../db/index.js';
+import { clients, projects, expenses, settings } from '../db/index.js';
 
-export async function buildTimesheetPdf(clientId, startDate, endDate, projectId = null, { ids } = {}) {
+export async function buildExpensePdf(clientId, startDate, endDate, projectId = null, { ids } = {}) {
   const [settingsDoc, client] = await Promise.all([
     settings.findOne({}),
     clients.findOne({ _id: clientId }),
@@ -19,11 +19,9 @@ export async function buildTimesheetPdf(clientId, startDate, endDate, projectId 
 
   let entries;
   if (ids && ids.length > 0) {
-    // IDs mode: fetch specific timesheets by ID
-    entries = await timesheets.find({ _id: { $in: ids } }).sort({ date: 1 });
+    entries = await expenses.find({ _id: { $in: ids } }).sort({ date: 1 });
   } else {
-    // Date range mode: fetch by project + date range
-    entries = await timesheets.find({
+    entries = await expenses.find({
       projectId: { $in: projectIds },
       date: { $gte: startDate, $lte: endDate },
     }).sort({ date: 1 });
@@ -38,10 +36,8 @@ export async function buildTimesheetPdf(clientId, startDate, endDate, projectId 
     entriesByProject[entry.projectId].push(entry);
   }
 
-  // Build project map
   const projectMap = Object.fromEntries(clientProjects.map((p) => [p._id, p]));
 
-  // Format period label — derive from entries when using IDs mode
   let periodLabel;
   if (ids && ids.length > 0 && entries.length > 0) {
     const dates = entries.map(e => e.date).sort();
@@ -52,15 +48,12 @@ export async function buildTimesheetPdf(clientId, startDate, endDate, projectId 
     periodLabel = 'N/A';
   }
 
-  // Build pages — one per project with entries
   const content = [];
   let pageIndex = 0;
 
-  for (const [projectId, projectEntries] of Object.entries(entriesByProject)) {
-    const project = projectMap[projectId];
+  for (const [projId, projectEntries] of Object.entries(entriesByProject)) {
+    const project = projectMap[projId];
     if (!project) continue;
-
-    const effectiveRate = project.rate != null ? project.rate : (client.defaultRate || 0);
 
     if (pageIndex > 0) {
       content.push({ text: '', pageBreak: 'before' });
@@ -95,61 +88,61 @@ export async function buildTimesheetPdf(clientId, startDate, endDate, projectId 
           [{ text: 'Client:', style: 'infoLabel' }, { text: client.companyName, style: 'infoValue' }],
           [{ text: 'Project:', style: 'infoLabel' }, { text: project.name, style: 'infoValue' }],
           [{ text: 'Period:', style: 'infoLabel' }, { text: periodLabel, style: 'infoValue' }],
-          [{ text: 'IR35 Status:', style: 'infoLabel' }, { text: formatIR35(project.ir35Status), style: 'infoValue' }],
-          [{ text: 'Rate:', style: 'infoLabel' }, { text: `£${effectiveRate.toFixed(2)}/day`, style: 'infoValue' }],
         ],
       },
       layout: 'noBorders',
       margin: [0, 0, 0, 16],
     });
 
-    // Timesheet table
+    // Expense table
     const tableBody = [
       [
         { text: 'Date', style: 'tableHeader' },
-        { text: 'Hours', style: 'tableHeader', alignment: 'right' },
-        { text: 'Days', style: 'tableHeader', alignment: 'right' },
-        { text: 'Notes', style: 'tableHeader' },
-        { text: 'Rate', style: 'tableHeader', alignment: 'right' },
+        { text: 'Type', style: 'tableHeader' },
+        { text: 'Description', style: 'tableHeader' },
+        { text: 'Billable', style: 'tableHeader' },
         { text: 'Amount', style: 'tableHeader', alignment: 'right' },
+        { text: 'VAT', style: 'tableHeader', alignment: 'right' },
+        { text: 'Net', style: 'tableHeader', alignment: 'right' },
       ],
     ];
 
-    let totalHours = 0;
-    let totalDays = 0;
     let totalAmount = 0;
+    let totalVat = 0;
+    let totalNet = 0;
 
     for (const entry of projectEntries) {
-      const days = entry.days ?? 0;
-      const amount = entry.amount ?? 0;
-      totalHours += entry.hours;
-      totalDays += days;
+      const amount = entry.amount || 0;
+      const vat = entry.vatAmount || 0;
+      const net = amount - vat;
       totalAmount += amount;
+      totalVat += vat;
+      totalNet += net;
 
       tableBody.push([
         { text: formatDate(entry.date), style: 'tableCell' },
-        { text: entry.hours.toFixed(2), style: 'tableCell', alignment: 'right' },
-        { text: days.toFixed(2), style: 'tableCell', alignment: 'right' },
-        { text: entry.notes || '', style: 'tableCell' },
-        { text: `£${effectiveRate.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
+        { text: entry.expenseType || '', style: 'tableCell' },
+        { text: entry.description || '', style: 'tableCell' },
+        { text: entry.billable ? 'Yes' : 'No', style: 'tableCell' },
         { text: `£${amount.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
+        { text: `£${vat.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
+        { text: `£${net.toFixed(2)}`, style: 'tableCell', alignment: 'right' },
       ]);
     }
 
     // Totals row
     tableBody.push([
-      { text: 'TOTAL', style: 'totalCell', colSpan: 1 },
-      { text: totalHours.toFixed(2), style: 'totalCell', alignment: 'right' },
-      { text: totalDays.toFixed(2), style: 'totalCell', alignment: 'right' },
-      { text: '', style: 'totalCell' },
-      { text: '', style: 'totalCell' },
+      { text: 'TOTAL', style: 'totalCell', colSpan: 4 },
+      '', '', '',
       { text: `£${totalAmount.toFixed(2)}`, style: 'totalCell', alignment: 'right' },
+      { text: `£${totalVat.toFixed(2)}`, style: 'totalCell', alignment: 'right' },
+      { text: `£${totalNet.toFixed(2)}`, style: 'totalCell', alignment: 'right' },
     ]);
 
     content.push({
       table: {
         headerRows: 1,
-        widths: [65, 45, 40, '*', 55, 65],
+        widths: [65, 55, '*', 40, 55, 50, 55],
         body: tableBody,
       },
       layout: {
@@ -167,7 +160,7 @@ export async function buildTimesheetPdf(clientId, startDate, endDate, projectId 
   }
 
   if (content.length === 0) {
-    content.push({ text: 'No timesheet entries found for this period.', style: 'emptyMessage' });
+    content.push({ text: 'No expense entries found for this period.', style: 'emptyMessage' });
   }
 
   return {
@@ -200,16 +193,10 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function formatIR35(status) {
-  if (!status) return 'N/A';
-  return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function formatPeriodLabel(startDate, endDate) {
   const start = new Date(startDate + 'T00:00:00');
   const end = new Date(endDate + 'T00:00:00');
 
-  // Check if it's a full month
   if (start.getDate() === 1) {
     const lastOfMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0);
     if (end.getDate() === lastOfMonth.getDate() && start.getMonth() === end.getMonth()) {

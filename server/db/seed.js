@@ -1,4 +1,4 @@
-import { clients, projects, timesheets, settings, expenses } from './index.js';
+import { clients, projects, timesheets, settings, expenses, invoices } from './index.js';
 
 async function seed() {
   // Clear existing data
@@ -7,6 +7,7 @@ async function seed() {
   await timesheets.remove({}, { multi: true });
   await settings.remove({}, { multi: true });
   await expenses.remove({}, { multi: true });
+  await invoices.remove({}, { multi: true });
 
   // Seed settings
   await settings.insert({
@@ -18,6 +19,14 @@ async function seed() {
     utrNumber: '1234567890',
     vatNumber: 'GB123456789',
     companyRegistration: '12345678',
+    invoiceNumberSeed: 0,
+    defaultPaymentTermDays: 10,
+    defaultVatRate: 20,
+    invoiceFooterText: '',
+    bankName: 'Barclays',
+    bankSortCode: '20-00-00',
+    bankAccountNumber: '12345678',
+    bankAccountOwner: 'Smith Consulting Ltd',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -31,6 +40,8 @@ async function seed() {
     defaultRate: 650,
     currency: 'GBP',
     workingHoursPerDay: 8,
+    invoicingEntityName: 'Barclays Bank UK PLC',
+    invoicingEntityAddress: '1 Churchill Place\nCanary Wharf\nLondon E14 5HP',
     notes: 'Main banking client',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -44,6 +55,8 @@ async function seed() {
     defaultRate: 600,
     currency: 'GBP',
     workingHoursPerDay: 7.5,
+    invoicingEntityName: 'HMRC Digital',
+    invoicingEntityAddress: '100 Parliament Street\nLondon SW1A 2BQ',
     notes: 'Government contract via agency',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -57,6 +70,7 @@ async function seed() {
     ir35Status: 'OUTSIDE_IR35',
     rate: null,
     workingHoursPerDay: null,
+    vatPercent: 20,
     isDefault: true,
     status: 'active',
     notes: '',
@@ -71,6 +85,7 @@ async function seed() {
     ir35Status: 'OUTSIDE_IR35',
     rate: 700,
     workingHoursPerDay: null,
+    vatPercent: 20,
     isDefault: false,
     status: 'active',
     notes: 'Migrating legacy payment system to microservices',
@@ -85,6 +100,7 @@ async function seed() {
     ir35Status: 'INSIDE_IR35',
     rate: null,
     workingHoursPerDay: null,
+    vatPercent: null,
     isDefault: true,
     status: 'active',
     notes: '',
@@ -206,8 +222,28 @@ async function seed() {
     updatedAt: now,
   });
 
+  // Seed sample invoices — draft invoice for Barclays with empty lines
+  await invoices.insert({
+    clientId: client1._id,
+    status: 'draft',
+    invoiceNumber: null,
+    invoiceDate: new Date().toISOString().split('T')[0],
+    dueDate: new Date(Date.now() + 10 * 86400000).toISOString().split('T')[0],
+    servicePeriodStart: monday.toISOString().split('T')[0],
+    servicePeriodEnd: new Date(monday.getTime() + 4 * 86400000).toISOString().split('T')[0],
+    additionalNotes: '',
+    lines: [],
+    paymentStatus: 'unpaid',
+    paidDate: null,
+    subtotal: 0,
+    totalVat: 0,
+    total: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+
   console.log('Seed complete!');
-  console.log(`Created: 2 clients, 3 projects, ${5 + 3} timesheet entries, 4 expenses`);
+  console.log(`Created: 2 clients, 3 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice`);
 }
 
 seed().catch(console.error);

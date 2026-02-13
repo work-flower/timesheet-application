@@ -14,6 +14,7 @@ import {
   FolderRegular,
   CalendarClockRegular,
   ReceiptRegular,
+  MoneyRegular,
   DocumentBulletListRegular,
   SettingsRegular,
   NavigationRegular,
@@ -118,6 +119,7 @@ const navItems = [
   { to: '/projects', label: 'Projects', icon: <FolderRegular /> },
   { to: '/timesheets', label: 'Timesheets', icon: <CalendarClockRegular /> },
   { to: '/expenses', label: 'Expenses', icon: <ReceiptRegular /> },
+  { to: '/invoices', label: 'Invoices', icon: <MoneyRegular /> },
   { to: '/reports', label: 'Reports', icon: <DocumentBulletListRegular /> },
 ];
 

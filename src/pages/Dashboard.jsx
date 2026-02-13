@@ -14,8 +14,9 @@ import {
   FolderRegular,
   MoneyRegular,
   ReceiptRegular,
+  DocumentTextRegular,
 } from '@fluentui/react-icons';
-import { timesheetsApi, projectsApi, expensesApi } from '../api/index.js';
+import { timesheetsApi, projectsApi, expensesApi, invoicesApi } from '../api/index.js';
 import EntityGrid from '../components/EntityGrid.jsx';
 
 const useStyles = makeStyles({
@@ -102,23 +103,26 @@ export default function Dashboard() {
   const [activeProjects, setActiveProjects] = useState(0);
   const [recentEntries, setRecentEntries] = useState([]);
   const [monthExpenses, setMonthExpenses] = useState([]);
+  const [unpaidInvoices, setUnpaidInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const init = async () => {
       try {
-        const [week, month, projects, recent, monthExp] = await Promise.all([
+        const [week, month, projects, recent, monthExp, allInvoices] = await Promise.all([
           timesheetsApi.getAll(getWeekRange()),
           timesheetsApi.getAll(getMonthRange()),
           projectsApi.getAll(),
           timesheetsApi.getAll({}),
           expensesApi.getAll(getMonthRange()),
+          invoicesApi.getAll({ status: 'posted' }),
         ]);
         setWeekEntries(week);
         setMonthEntries(month);
         setActiveProjects(projects.filter((p) => p.status === 'active').length);
         setRecentEntries(recent.slice(0, 10));
         setMonthExpenses(monthExp);
+        setUnpaidInvoices(allInvoices.filter(inv => inv.paymentStatus !== 'paid'));
       } catch (err) {
         console.error(err);
       } finally {
@@ -133,6 +137,7 @@ export default function Dashboard() {
   const monthEarnings = monthEntries.reduce((s, e) => s + (e.amount || 0), 0);
   const billableExpenses = monthExpenses.filter((e) => e.billable).reduce((s, e) => s + (e.amount || 0), 0);
   const totalExpenses = monthExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const unpaidTotal = unpaidInvoices.reduce((s, inv) => s + (inv.total || 0), 0);
   const fmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading dashboard..." /></div>;
@@ -169,6 +174,16 @@ export default function Dashboard() {
           {totalExpenses > 0 && (
             <Text style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 }}>
               Total: {fmt.format(totalExpenses)}
+            </Text>
+          )}
+        </Card>
+        <Card className={styles.card}>
+          <div className={styles.cardIcon}><DocumentTextRegular /></div>
+          <Text className={styles.cardValue}>{fmt.format(unpaidTotal)}</Text>
+          <Text className={styles.cardLabel}>Unpaid Invoices</Text>
+          {unpaidInvoices.length > 0 && (
+            <Text style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 }}>
+              {unpaidInvoices.length} invoice{unpaidInvoices.length !== 1 ? 's' : ''}
             </Text>
           )}
         </Card>

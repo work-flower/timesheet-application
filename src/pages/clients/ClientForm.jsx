@@ -5,6 +5,7 @@ import {
   tokens,
   Text,
   Input,
+  Textarea,
   Field,
   Spinner,
   SpinButton,
@@ -83,6 +84,19 @@ const expenseColumns = [
   },
 ];
 
+const invoiceColumns = [
+  { key: 'invoiceNumber', label: 'Invoice #', render: (item) => item.invoiceNumber || 'Draft' },
+  { key: 'invoiceDate', label: 'Date' },
+  { key: 'period', label: 'Period', render: (item) => item.servicePeriodStart && item.servicePeriodEnd ? `${item.servicePeriodStart} to ${item.servicePeriodEnd}` : '—' },
+  { key: 'status', label: 'Status', render: (item) => item.status?.charAt(0).toUpperCase() + item.status?.slice(1) },
+  {
+    key: 'total',
+    label: 'Amount',
+    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0),
+  },
+  { key: 'paymentStatus', label: 'Payment', render: (item) => item.paymentStatus?.charAt(0).toUpperCase() + item.paymentStatus?.slice(1) },
+];
+
 export default function ClientForm() {
   const styles = useStyles();
   const { id } = useParams();
@@ -93,6 +107,7 @@ export default function ClientForm() {
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     companyName: '', primaryContactName: '', primaryContactEmail: '',
     primaryContactPhone: '', defaultRate: 0, currency: 'GBP', workingHoursPerDay: 8,
+    invoicingEntityName: '', invoicingEntityAddress: '',
     notes: '', ir35Status: 'OUTSIDE_IR35',
   });
   const [clientData, setClientData] = useState(null);
@@ -115,6 +130,8 @@ export default function ClientForm() {
             defaultRate: data.defaultRate || 0,
             currency: data.currency || 'GBP',
             workingHoursPerDay: data.workingHoursPerDay ?? 8,
+            invoicingEntityName: data.invoicingEntityName || '',
+            invoicingEntityAddress: data.invoicingEntityAddress || '',
             notes: data.notes || '',
             ir35Status: 'OUTSIDE_IR35',
           });
@@ -149,6 +166,8 @@ export default function ClientForm() {
           defaultRate: data.defaultRate || 0,
           currency: data.currency || 'GBP',
           workingHoursPerDay: data.workingHoursPerDay ?? 8,
+          invoicingEntityName: data.invoicingEntityName || '',
+          invoicingEntityAddress: data.invoicingEntityAddress || '',
           notes: data.notes || '',
           ir35Status: 'OUTSIDE_IR35',
         });
@@ -217,6 +236,7 @@ export default function ClientForm() {
             <Tab value="projects">Projects ({clientData?.projects?.length || 0})</Tab>
             <Tab value="timesheets">Timesheets ({clientData?.timesheets?.length || 0})</Tab>
             <Tab value="expenses">Expenses ({clientData?.expenses?.length || 0})</Tab>
+            <Tab value="invoices">Invoices ({clientData?.invoices?.length || 0})</Tab>
           </TabList>
         )}
 
@@ -278,6 +298,19 @@ export default function ClientForm() {
                 )}
               </FormSection>
 
+              <FormSection title="Invoicing">
+                <FormField changed={changedFields.has('invoicingEntityName')}>
+                  <Field label="Invoicing Entity Name" hint="Used in the Bill To section of invoices. Falls back to company name.">
+                    <Input value={form.invoicingEntityName} onChange={handleChange('invoicingEntityName')} />
+                  </Field>
+                </FormField>
+                <FormField fullWidth changed={changedFields.has('invoicingEntityAddress')}>
+                  <Field label="Invoicing Entity Address">
+                    <Textarea value={form.invoicingEntityAddress} onChange={handleChange('invoicingEntityAddress')} resize="vertical" rows={3} />
+                  </Field>
+                </FormField>
+              </FormSection>
+
               <FormSection title="Primary Contact">
                 <FormField changed={changedFields.has('primaryContactName')}>
                   <Field label="Contact Name"><Input value={form.primaryContactName} onChange={handleChange('primaryContactName')} /></Field>
@@ -328,6 +361,15 @@ export default function ClientForm() {
               items={clientData.expenses || []}
               emptyMessage="No expenses for this client."
               onRowClick={(item) => guardedNavigate(`/expenses/${item._id}`)}
+            />
+          )}
+
+          {tab === 'invoices' && clientData && (
+            <EntityGrid
+              columns={invoiceColumns}
+              items={clientData.invoices || []}
+              emptyMessage="No invoices for this client."
+              onRowClick={(item) => guardedNavigate(`/invoices/${item._id}`)}
             />
           )}
         </div>

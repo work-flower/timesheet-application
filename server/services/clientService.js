@@ -1,6 +1,7 @@
-import { clients, projects, timesheets, expenses } from '../db/index.js';
+import { clients, projects, timesheets, expenses, invoices } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
+import { removeByClientId as removeInvoicesByClientId } from './invoiceService.js';
 
 export async function getAll(query = {}) {
   const { results, totalCount } = await buildQuery(clients, query, { companyName: 1 });
@@ -21,6 +22,9 @@ export async function getAll(query = {}) {
         const clientProjects = item.projects || await projects.find({ clientId: item._id });
         const projectIds = clientProjects.map(p => p._id);
         item.expenses = await expenses.find({ projectId: { $in: projectIds } });
+      }
+      if (expands.includes('invoices')) {
+        item.invoices = await invoices.find({ clientId: item._id });
       }
     }
   }
@@ -51,7 +55,10 @@ export async function getById(id) {
     projectName: projectMap[exp.projectId]?.name || 'Unknown',
   }));
 
-  return { ...client, projects: clientProjects, timesheets: enrichedTimesheets, expenses: enrichedExpenses };
+  // Invoices for this client
+  const clientInvoices = await invoices.find({ clientId: id }).sort({ createdAt: -1 });
+
+  return { ...client, projects: clientProjects, timesheets: enrichedTimesheets, expenses: enrichedExpenses, invoices: clientInvoices };
 }
 
 export async function create(data) {
@@ -64,6 +71,8 @@ export async function create(data) {
     defaultRate: data.defaultRate || 0,
     currency: data.currency || 'GBP',
     workingHoursPerDay: data.workingHoursPerDay ?? 8,
+    invoicingEntityName: data.invoicingEntityName || '',
+    invoicingEntityAddress: data.invoicingEntityAddress || '',
     notes: data.notes || '',
     createdAt: now,
     updatedAt: now,
@@ -77,6 +86,7 @@ export async function create(data) {
     ir35Status: data.ir35Status || 'OUTSIDE_IR35',
     rate: null,
     workingHoursPerDay: null,
+    vatPercent: data.vatPercent != null ? Number(data.vatPercent) : 20,
     isDefault: true,
     status: 'active',
     notes: '',
@@ -111,5 +121,7 @@ export async function remove(id) {
     await expenses.remove({ projectId: { $in: projectIds } }, { multi: true });
   }
   await projects.remove({ clientId: id }, { multi: true });
+  // Cascade delete invoices (unlocks any locked items first)
+  await removeInvoicesByClientId(id);
   return clients.remove({ _id: id });
 }

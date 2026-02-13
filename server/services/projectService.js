@@ -85,6 +85,7 @@ export async function create(data) {
     rate: data.rate != null && data.rate !== '' ? Number(data.rate) : null,
     workingHoursPerDay: data.workingHoursPerDay != null && data.workingHoursPerDay !== ''
       ? Number(data.workingHoursPerDay) : null,
+    vatPercent: data.vatPercent != null && data.vatPercent !== '' ? Number(data.vatPercent) : null,
     isDefault: false,
     status: data.status || 'active',
     notes: data.notes || '',
@@ -111,6 +112,13 @@ export async function update(id, data) {
     updateData.workingHoursPerDay = null;
   } else if (updateData.workingHoursPerDay != null) {
     updateData.workingHoursPerDay = Number(updateData.workingHoursPerDay);
+  }
+
+  // Handle vatPercent — null means no VAT (exempt)
+  if (updateData.vatPercent === '' || updateData.vatPercent === undefined) {
+    updateData.vatPercent = null;
+  } else if (updateData.vatPercent != null) {
+    updateData.vatPercent = Number(updateData.vatPercent);
   }
 
   await projects.update({ _id: id }, { $set: updateData });

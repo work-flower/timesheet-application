@@ -72,6 +72,18 @@ export const reportsApi = {
     }
     return res.blob();
   },
+  getCombinedPdfBlob: async (reports) => {
+    const res = await fetch(`${BASE}/reports/combined-pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reports }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Combined PDF generation failed: ${res.status}`);
+    }
+    return res.blob();
+  },
 };
 
 // Documents
@@ -125,6 +137,29 @@ export const expensesApi = {
     `${BASE}/expenses/${id}/attachments/${encodeURIComponent(filename)}`,
   getThumbnailUrl: (id, filename) =>
     `${BASE}/expenses/${id}/attachments/${encodeURIComponent(filename)}/thumbnail`,
+};
+
+// Invoices
+export const invoicesApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/invoices${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/invoices/${id}`),
+  create: (data) => request('/invoices', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/invoices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/invoices/${id}`, { method: 'DELETE' }),
+  confirm: (id) => request(`/invoices/${id}/confirm`, { method: 'POST', body: '{}' }),
+  post: (id) => request(`/invoices/${id}/post`, { method: 'POST', body: '{}' }),
+  unconfirm: (id) => request(`/invoices/${id}/unconfirm`, { method: 'POST', body: '{}' }),
+  recalculate: (id) => request(`/invoices/${id}/recalculate`, { method: 'POST', body: '{}' }),
+  consistencyCheck: (id) => request(`/invoices/${id}/consistency-check`, { method: 'POST', body: '{}' }),
+  updatePayment: (id, data) => request(`/invoices/${id}/payment`, { method: 'PUT', body: JSON.stringify(data) }),
+  getPdfUrl: (id) => `${BASE}/invoices/${id}/pdf`,
 };
 
 // Backup

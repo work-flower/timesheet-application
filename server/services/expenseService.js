@@ -115,17 +115,22 @@ export async function create(data) {
 
 export async function update(id, data) {
   const now = new Date().toISOString();
+  const updateData = { ...data, updatedAt: now };
+  delete updateData._id;
+  delete updateData.createdAt;
+  delete updateData.attachments;
 
-  const updateData = { updatedAt: now };
-  if (data.projectId !== undefined) updateData.projectId = data.projectId;
-  if (data.date !== undefined) updateData.date = data.date;
-  if (data.expenseType !== undefined) updateData.expenseType = data.expenseType;
-  if (data.description !== undefined) updateData.description = data.description;
-  if (data.amount !== undefined) updateData.amount = Number(data.amount);
-  if (data.vatAmount !== undefined) updateData.vatAmount = Number(data.vatAmount);
-  if (data.billable !== undefined) updateData.billable = data.billable;
-  if (data.currency !== undefined) updateData.currency = data.currency;
-  if (data.notes !== undefined) updateData.notes = data.notes;
+  // Type coercion
+  if (updateData.amount !== undefined) updateData.amount = Number(updateData.amount);
+  if (updateData.vatAmount !== undefined) updateData.vatAmount = Number(updateData.vatAmount);
+
+  // Validation
+  if (updateData.date) {
+    const today = new Date().toISOString().split('T')[0];
+    if (updateData.date > today) {
+      throw new Error('Expense date cannot be in the future');
+    }
+  }
 
   // Recompute vatPercent when amount or vatAmount changes
   if (updateData.amount !== undefined || updateData.vatAmount !== undefined) {
@@ -133,13 +138,6 @@ export async function update(id, data) {
     const finalAmount = updateData.amount ?? existing.amount ?? 0;
     const finalVat = updateData.vatAmount ?? existing.vatAmount ?? 0;
     updateData.vatPercent = finalAmount > 0 ? Math.round((finalVat / finalAmount) * 10000) / 100 : 0;
-  }
-
-  if (updateData.date) {
-    const today = new Date().toISOString().split('T')[0];
-    if (updateData.date > today) {
-      throw new Error('Expense date cannot be in the future');
-    }
   }
 
   await expenses.update({ _id: id }, { $set: updateData });

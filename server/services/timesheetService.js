@@ -164,14 +164,14 @@ export async function create(data) {
 
 export async function update(id, data) {
   const now = new Date().toISOString();
+  const updateData = { ...data, updatedAt: now };
+  delete updateData._id;
+  delete updateData.createdAt;
 
-  // Only persist known timesheet fields
-  const updateData = { updatedAt: now };
-  if (data.projectId !== undefined) updateData.projectId = data.projectId;
-  if (data.date !== undefined) updateData.date = data.date;
-  if (data.hours !== undefined) updateData.hours = Number(data.hours);
-  if (data.notes !== undefined) updateData.notes = data.notes;
+  // Type coercion
+  if (updateData.hours !== undefined) updateData.hours = Number(updateData.hours);
 
+  // Validation
   if (updateData.date) {
     const today = new Date().toISOString().split('T')[0];
     if (updateData.date > today) {
