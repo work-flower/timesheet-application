@@ -1,21 +1,9 @@
 import { Router } from 'express';
-import { createRequire } from 'module';
 import * as invoiceService from '../services/invoiceService.js';
 import { buildInvoicePdf } from '../services/invoicePdfService.js';
-
-const require = createRequire(import.meta.url);
-const PdfPrinter = require('pdfmake/js/Printer').default;
+import { createPrinter } from '../services/pdfRenderer.js';
 
 const router = Router();
-
-const fonts = {
-  Roboto: {
-    normal: 'Helvetica',
-    bold: 'Helvetica-Bold',
-    italics: 'Helvetica-Oblique',
-    bolditalics: 'Helvetica-BoldOblique',
-  },
-};
 
 router.get('/', async (req, res) => {
   try {
@@ -118,10 +106,22 @@ router.put('/:id/payment', async (req, res) => {
   }
 });
 
+router.get('/:id/file', async (req, res) => {
+  try {
+    const invoice = await invoiceService.getById(req.params.id);
+    if (!invoice?.pdfPath) return res.status(404).json({ error: 'No saved PDF for this invoice' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${invoice.invoiceNumber || 'invoice'}.pdf"`);
+    res.sendFile(invoice.pdfPath);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id/pdf', async (req, res) => {
   try {
     const docDefinition = await buildInvoicePdf(req.params.id);
-    const printer = new PdfPrinter(fonts);
+    const printer = createPrinter();
     const pdfDoc = await printer.createPdfKitDocument(docDefinition);
 
     res.setHeader('Content-Type', 'application/pdf');

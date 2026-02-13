@@ -160,6 +160,7 @@ export const invoicesApi = {
   consistencyCheck: (id) => request(`/invoices/${id}/consistency-check`, { method: 'POST', body: '{}' }),
   updatePayment: (id, data) => request(`/invoices/${id}/payment`, { method: 'PUT', body: JSON.stringify(data) }),
   getPdfUrl: (id) => `${BASE}/invoices/${id}/pdf`,
+  getFileUrl: (id) => `${BASE}/invoices/${id}/file`,
 };
 
 // Backup

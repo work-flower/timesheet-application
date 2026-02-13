@@ -695,7 +695,7 @@ export default function InvoiceForm() {
     }));
   };
 
-  // PDF preview — always uses combined-pdf endpoint; invoice is mandatory, others based on toggles
+  // PDF preview — uses saved file for confirmed/posted invoices, on-the-fly generation for drafts
   const loadPdfPreview = useCallback(async () => {
     if (!id) return;
     // Revoke previous blob URL
@@ -703,30 +703,36 @@ export default function InvoiceForm() {
 
     setPdfLoading(true);
     try {
-      const reports = [{ type: 'invoice', params: { id } }];
+      // Use saved PDF if available (confirmed/posted)
+      if (invoiceData?.pdfPath) {
+        setPdfUrl(invoicesApi.getFileUrl(id));
+      } else {
+        // Generate on-the-fly for draft invoices
+        const reports = [{ type: 'invoice', params: { id } }];
 
-      if (form.includeTimesheetReport) {
-        const tsIds = form.lines.filter(l => l.type === 'timesheet' && l.sourceId).map(l => l.sourceId);
-        if (tsIds.length > 0) {
-          reports.push({ type: 'timesheet', params: { clientId: form.clientId, ids: tsIds } });
+        if (form.includeTimesheetReport) {
+          const tsIds = form.lines.filter(l => l.type === 'timesheet' && l.sourceId).map(l => l.sourceId);
+          if (tsIds.length > 0) {
+            reports.push({ type: 'timesheet', params: { clientId: form.clientId, ids: tsIds } });
+          }
         }
-      }
 
-      if (form.includeExpenseReport) {
-        const expIds = form.lines.filter(l => l.type === 'expense' && l.sourceId).map(l => l.sourceId);
-        if (expIds.length > 0) {
-          reports.push({ type: 'expense', params: { clientId: form.clientId, ids: expIds } });
+        if (form.includeExpenseReport) {
+          const expIds = form.lines.filter(l => l.type === 'expense' && l.sourceId).map(l => l.sourceId);
+          if (expIds.length > 0) {
+            reports.push({ type: 'expense', params: { clientId: form.clientId, ids: expIds } });
+          }
         }
-      }
 
-      const blob = await reportsApi.getCombinedPdfBlob(reports);
-      setPdfUrl(URL.createObjectURL(blob));
+        const blob = await reportsApi.getCombinedPdfBlob(reports);
+        setPdfUrl(URL.createObjectURL(blob));
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setPdfLoading(false);
     }
-  }, [id, form.includeTimesheetReport, form.includeExpenseReport, form.lines, form.clientId]);
+  }, [id, invoiceData?.pdfPath, form.includeTimesheetReport, form.includeExpenseReport, form.lines, form.clientId]);
 
   useEffect(() => {
     if (tab === 'pdf' && id) loadPdfPreview();

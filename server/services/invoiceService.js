@@ -1,6 +1,13 @@
+import fs from 'fs/promises';
+import path from 'path';
 import { clients, projects, timesheets, expenses, invoices, settings } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { assertNotLocked } from './lockCheck.js';
+import { buildInvoicePdf } from './invoicePdfService.js';
+import { buildTimesheetPdf } from './reportService.js';
+import { buildExpensePdf } from './expenseReportService.js';
+import { combinePdfs } from './pdfCombineService.js';
+import { renderToBuffer } from './pdfRenderer.js';
 
 export async function getAll(query = {}) {
   const baseFilter = {};
@@ -114,6 +121,7 @@ export async function update(id, data) {
   delete updateData.paidDate;
   delete updateData.isLocked;
   delete updateData.isLockedReason;
+  delete updateData.pdfPath;
 
   if (updateData.clientId && existing.status === 'confirmed' && updateData.clientId !== existing.clientId) {
     throw new Error('Client cannot be changed on confirmed invoices');
@@ -186,6 +194,33 @@ export async function confirm(id) {
     $set: { status: 'confirmed', invoiceNumber, isLocked: true, isLockedReason: `Confirmed invoice ${invoiceNumber}`, updatedAt: now }
   });
 
+  // Generate and save the combined PDF
+  try {
+    const invoiceDocDef = await buildInvoicePdf(id);
+    const buffers = [await renderToBuffer(invoiceDocDef)];
+
+    if (invoice.includeTimesheetReport && tsIds.length) {
+      const tsDef = await buildTimesheetPdf(invoice.clientId, null, null, null, { ids: tsIds });
+      buffers.push(await renderToBuffer(tsDef));
+    }
+
+    if (invoice.includeExpenseReport && expIds.length) {
+      const expDef = await buildExpensePdf(invoice.clientId, null, null, null, { ids: expIds });
+      buffers.push(await renderToBuffer(expDef));
+    }
+
+    const combined = await combinePdfs(buffers);
+    const DATA_DIR = process.env.DATA_DIR || './data';
+    const invoicesDir = path.join(DATA_DIR, 'invoices', invoiceNumber);
+    await fs.mkdir(invoicesDir, { recursive: true });
+    const pdfPath = path.resolve(invoicesDir, `${id}.pdf`);
+    await fs.writeFile(pdfPath, combined);
+
+    await invoices.update({ _id: id }, { $set: { pdfPath } });
+  } catch (err) {
+    console.error('Failed to generate invoice PDF on confirm:', err);
+  }
+
   return getById(id);
 }
 
@@ -225,11 +260,16 @@ export async function unconfirm(id) {
     );
   }
 
+  // Delete saved PDF file (keep directory)
+  if (invoice.pdfPath) {
+    await fs.unlink(invoice.pdfPath).catch(() => {});
+  }
+
   // Unlock the invoice — invoice number is permanent once assigned
   const now = new Date().toISOString();
   await invoices.update({ _id: id }, {
     $set: { status: 'draft', updatedAt: now },
-    $unset: { isLocked: true, isLockedReason: true }
+    $unset: { isLocked: true, isLockedReason: true, pdfPath: true }
   });
 
   return getById(id);
@@ -464,6 +504,10 @@ export async function removeByClientId(clientId) {
           { multi: true }
         );
       }
+    }
+    // Delete saved PDF file
+    if (inv.pdfPath) {
+      await fs.unlink(inv.pdfPath).catch(() => {});
     }
   }
   return invoices.remove({ clientId }, { multi: true });

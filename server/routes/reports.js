@@ -1,35 +1,10 @@
 import { Router } from 'express';
-import { createRequire } from 'module';
 import { buildTimesheetPdf } from '../services/reportService.js';
 import { buildExpensePdf } from '../services/expenseReportService.js';
 import { combinePdfs } from '../services/pdfCombineService.js';
-
-const require = createRequire(import.meta.url);
-const PdfPrinter = require('pdfmake/js/Printer').default;
-
-const fonts = {
-  Roboto: {
-    normal: 'Helvetica',
-    bold: 'Helvetica-Bold',
-    italics: 'Helvetica-Oblique',
-    bolditalics: 'Helvetica-BoldOblique',
-  },
-};
+import { createPrinter, renderToBuffer } from '../services/pdfRenderer.js';
 
 const router = Router();
-
-// Helper: render a pdfmake doc definition to a PDF buffer
-async function renderToBuffer(docDefinition) {
-  const printer = new PdfPrinter(fonts);
-  const pdfDoc = await printer.createPdfKitDocument(docDefinition);
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    pdfDoc.on('data', (chunk) => chunks.push(chunk));
-    pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-    pdfDoc.on('error', reject);
-    pdfDoc.end();
-  });
-}
 
 router.get('/timesheet-pdf', async (req, res) => {
   try {
@@ -40,7 +15,7 @@ router.get('/timesheet-pdf', async (req, res) => {
     }
 
     const docDefinition = await buildTimesheetPdf(clientId, startDate, endDate, projectId || null);
-    const printer = new PdfPrinter(fonts);
+    const printer = createPrinter();
     const pdfDoc = printer.createPdfKitDocument(docDefinition);
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -62,7 +37,7 @@ router.get('/expense-pdf', async (req, res) => {
     }
 
     const docDefinition = await buildExpensePdf(clientId, startDate, endDate, projectId || null);
-    const printer = new PdfPrinter(fonts);
+    const printer = createPrinter();
     const pdfDoc = printer.createPdfKitDocument(docDefinition);
 
     res.setHeader('Content-Type', 'application/pdf');
