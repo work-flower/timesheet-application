@@ -1,5 +1,6 @@
 import { clients, projects, timesheets } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { assertNotLocked } from './lockCheck.js';
 
 export async function getAll(query = {}) {
   // Build base filter from legacy params
@@ -163,10 +164,15 @@ export async function create(data) {
 }
 
 export async function update(id, data) {
+  const existing = await timesheets.findOne({ _id: id });
+  assertNotLocked(existing);
+
   const now = new Date().toISOString();
   const updateData = { ...data, updatedAt: now };
   delete updateData._id;
   delete updateData.createdAt;
+  delete updateData.isLocked;
+  delete updateData.isLockedReason;
 
   // Type coercion
   if (updateData.hours !== undefined) updateData.hours = Number(updateData.hours);
@@ -190,7 +196,6 @@ export async function update(id, data) {
 
   // Recompute days and amount only when hours or project changed
   if (updateData.hours != null || updateData.projectId != null) {
-    const existing = await timesheets.findOne({ _id: id });
     const finalHours = updateData.hours ?? existing.hours;
     const finalProjectId = updateData.projectId ?? existing.projectId;
     const project = await projects.findOne({ _id: finalProjectId });
@@ -208,5 +213,7 @@ export async function update(id, data) {
 }
 
 export async function remove(id) {
+  const existing = await timesheets.findOne({ _id: id });
+  assertNotLocked(existing);
   return timesheets.remove({ _id: id });
 }

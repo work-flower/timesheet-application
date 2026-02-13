@@ -1,6 +1,7 @@
 import { clients, projects, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
+import { assertNotLocked } from './lockCheck.js';
 
 export async function getAll(query = {}) {
   // Build base filter from legacy params
@@ -114,11 +115,16 @@ export async function create(data) {
 }
 
 export async function update(id, data) {
+  const existing = await expenses.findOne({ _id: id });
+  assertNotLocked(existing);
+
   const now = new Date().toISOString();
   const updateData = { ...data, updatedAt: now };
   delete updateData._id;
   delete updateData.createdAt;
   delete updateData.attachments;
+  delete updateData.isLocked;
+  delete updateData.isLockedReason;
 
   // Type coercion
   if (updateData.amount !== undefined) updateData.amount = Number(updateData.amount);
@@ -134,7 +140,6 @@ export async function update(id, data) {
 
   // Recompute vatPercent when amount or vatAmount changes
   if (updateData.amount !== undefined || updateData.vatAmount !== undefined) {
-    const existing = await expenses.findOne({ _id: id });
     const finalAmount = updateData.amount ?? existing.amount ?? 0;
     const finalVat = updateData.vatAmount ?? existing.vatAmount ?? 0;
     updateData.vatPercent = finalAmount > 0 ? Math.round((finalVat / finalAmount) * 10000) / 100 : 0;
@@ -145,6 +150,8 @@ export async function update(id, data) {
 }
 
 export async function remove(id) {
+  const existing = await expenses.findOne({ _id: id });
+  assertNotLocked(existing);
   await removeAllAttachments(id);
   return expenses.remove({ _id: id });
 }

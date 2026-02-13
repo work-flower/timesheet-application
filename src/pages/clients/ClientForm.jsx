@@ -202,6 +202,9 @@ export default function ClientForm() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
+  const isLocked = !isNew && clientData?.isLocked;
+  const lockReason = clientData?.isLockedReason;
+
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
   return (
@@ -212,6 +215,7 @@ export default function ClientForm() {
         onSaveAndClose={handleSaveAndClose}
         saveDisabled={!form.companyName}
         saving={saving}
+        locked={isLocked}
       />
       <div className={styles.pageBody}>
         <div className={styles.header}>
@@ -229,6 +233,7 @@ export default function ClientForm() {
 
         {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
         {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Client saved successfully.</MessageBarBody></MessageBar>}
+        {isLocked && <MessageBar intent="warning" className={styles.message}><MessageBarBody>{lockReason || 'This record is locked.'}</MessageBarBody></MessageBar>}
 
         {!isNew && (
           <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
@@ -242,7 +247,7 @@ export default function ClientForm() {
 
         <div className={styles.tabContent}>
           {(isNew || tab === 'general') && (
-            <>
+            <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0 }}>
               <FormSection title="Company Information">
                 <FormField changed={changedFields.has('companyName')}>
                   <Field label="Company Name" required>
@@ -334,7 +339,7 @@ export default function ClientForm() {
                   />
                 </div>
               </FormField>
-            </>
+            </fieldset>
           )}
 
           {tab === 'projects' && clientData && (

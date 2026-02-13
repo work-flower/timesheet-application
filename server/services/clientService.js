@@ -2,6 +2,7 @@ import { clients, projects, timesheets, expenses, invoices } from '../db/index.j
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
 import { removeByClientId as removeInvoicesByClientId } from './invoiceService.js';
+import { assertNotLocked } from './lockCheck.js';
 
 export async function getAll(query = {}) {
   const { results, totalCount } = await buildQuery(clients, query, { companyName: 1 });
@@ -98,15 +99,23 @@ export async function create(data) {
 }
 
 export async function update(id, data) {
+  const existing = await clients.findOne({ _id: id });
+  assertNotLocked(existing);
+
   const now = new Date().toISOString();
   const updateData = { ...data, updatedAt: now };
   delete updateData._id;
   delete updateData.createdAt;
+  delete updateData.isLocked;
+  delete updateData.isLockedReason;
   await clients.update({ _id: id }, { $set: updateData });
   return clients.findOne({ _id: id });
 }
 
 export async function remove(id) {
+  const existing = await clients.findOne({ _id: id });
+  assertNotLocked(existing);
+
   // Cascade: delete all timesheets for this client's projects, then projects, then client
   const clientProjects = await projects.find({ clientId: id });
   const projectIds = clientProjects.map((p) => p._id);

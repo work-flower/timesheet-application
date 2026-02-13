@@ -57,6 +57,7 @@ timesheet-app/
 │   │   └── seed.js           # Optional: seed/init logic
 │   ├── odata.js              # Shared OData query parser/applier (parseFilter, parseOrderBy, buildQuery, applySelect, formatResponse)
 │   ├── services/
+│   │   ├── lockCheck.js      # Shared assertNotLocked(record) helper for record locking
 │   │   ├── clientService.js  # Client business logic (auto-create default project on client creation)
 │   │   ├── projectService.js # Project logic (rate inheritance)
 │   │   ├── timesheetService.js # Timesheet logic (filtering, grouping)
@@ -302,13 +303,13 @@ timesheet-app/
 }
 ```
 
-**Invoice lifecycle:** Draft → Confirmed → Posted. Draft invoices are fully editable. Confirming assigns an invoice number (auto-increment from settings seed) and locks referenced timesheets/expenses by setting `invoiceId` on each. Posted invoices are immutable except for payment tracking. Unconfirming reverts to draft and unlocks items.
+**Invoice lifecycle:** Draft → Confirmed → Posted. Draft invoices are editable when unlocked. Confirming assigns an invoice number (once only — permanent, never reassigned), and locks the invoice itself plus referenced timesheets/expenses (sets `invoiceId`, `isLocked`, `isLockedReason`). Posted invoices are immutable except for payment tracking. Unconfirming reverts to draft and unlocks the invoice and all items, but retains the invoice number.
 
 **Invoice lines model:** Each timesheet/expense added to an invoice generates a persistent invoice line with snapshotted values (amount, rate, VAT). Write-in lines are regular lines with `type: 'write-in'`. Lines store all computed values (`netAmount`, `vatAmount`, `grossAmount`) so the form and PDF can render without re-fetching source records.
 
 **VAT computation:** Timesheet VAT is exclusive (added on top of net amount using `project.vatPercent`). Expense VAT is inclusive (persisted `vatAmount`). Write-in line VAT is exclusive (user-specified rate). `project.vatPercent: null` means no VAT (exempt), `0` means zero-rated.
 
-**Item locking:** On confirm, each referenced timesheet/expense (derived from `lines[].sourceId`) gets `invoiceId` set. Consistency checks verify: (1) items aren't locked to other invoices, (2) line values match current source data (amount drift, rate changes, VAT changes). Recalculate realigns stored line values to current source data.
+**Item locking:** On confirm, the invoice itself is locked, and each referenced timesheet/expense (derived from `lines[].sourceId`) gets `invoiceId`, `isLocked`, and `isLockedReason` set. All three are cleared on unconfirm. Consistency checks verify: (1) items aren't locked to other invoices, (2) line values match current source data (amount drift, rate changes, VAT changes). Recalculate realigns stored line values to current source data.
 
 ### documents
 
@@ -569,11 +570,18 @@ GET /api/documents?projectId=abc123&$count=true
 11. Expense `currency` is inherited from the client on creation. Read-only in the form, updates when the project changes.
 12. Expense date must not be in the future.
 13. Expense attachments are stored on disk at `data/expenses/{expenseId}/`. Image thumbnails are generated via `sharp` (200px wide, `thumb_` prefix). Deleting an expense cascade-deletes its attachment directory.
-14. Invoice lifecycle: Draft → Confirmed → Posted. Only drafts can be deleted. Confirmation runs consistency check (must pass), assigns an invoice number (`JBL{5-digit padded}`), and locks referenced timesheets/expenses (sets `invoiceId` on each). Posting seals the invoice. Unconfirming reverts to draft and unlocks items.
+14. **Invoice lifecycle:** Draft → Confirmed → Posted. Only unlocked drafts can be deleted. See rules 19–24 for locking behaviour at each stage.
 15. Invoice lines: Each timesheet/expense added to an invoice generates a persistent line with snapshotted values. Write-in lines are regular lines with `type: 'write-in'`. Totals (`subtotal`, `totalVat`, `total`) are computed from lines and persisted on save. Consistency check detects value drift between lines and source records. Recalculate realigns lines to current source data.
 16. `project.vatPercent`: `20` = standard VAT, `0` = zero-rated, `null` = no VAT (exempt). These are distinct groups on the invoice PDF.
 17. Deleting a client cascade-deletes its invoices (and unlocks any locked items). Deleting an invoice NEVER deletes timesheets or expenses.
-18. Invoice number seed is stored in settings (`invoiceNumberSeed`). Incremented atomically on confirmation.
+18. **Invoice number:** Format `JBL{5-digit padded}`, seed in settings (`invoiceNumberSeed`). Assigned once during the first confirmation. **Permanent** — never cleared, never reassigned. The seed is incremented atomically on assignment and never decremented. Re-confirming an unconfirmed invoice reuses the existing number. The `invoiceNumber` field is protected in `update()` — only `confirm()` can set it.
+19. **Record locking — data model:** Any record can have two optional fields: `isLocked: true | undefined` and `isLockedReason: string | undefined`. These are **protected** — regular `update()` calls delete them from the spread. Only lifecycle methods (`confirm`, `post`, `unconfirm`) set/clear them via direct NeDB `$set`/`$unset`.
+20. **Record locking — API enforcement:** All service `update()` and `remove()` methods call `assertNotLocked(existing)` (from `server/services/lockCheck.js`) at the top before proceeding. If the record is locked, the call throws with the lock reason (HTTP 400).
+21. **Record locking — invoice confirm:** Locks **three things**: the invoice itself (`isLockedReason: "Confirmed invoice JBL00001"`), all referenced timesheets (`isLockedReason: "Locked by invoice JBL00001"`, also sets `invoiceId`), and all referenced expenses (same). This prevents any edits or deletes to the invoice or its source records while confirmed.
+22. **Record locking — invoice post:** Updates the invoice lock reason to `"Posted invoice"`. Timesheets/expenses remain locked from confirmation.
+23. **Record locking — invoice unconfirm:** Unlocks **three things**: the invoice (`$unset isLocked/isLockedReason`), all referenced timesheets (`$unset invoiceId/isLocked/isLockedReason`), and all referenced expenses (same). The invoice reverts to draft status but keeps its invoice number.
+24. **Record locking — cascade deletes:** `removeByClientId()` in `invoiceService` clears `invoiceId`/`isLocked`/`isLockedReason` from timesheets and expenses before deleting client invoices.
+25. **Locked record UI:** Forms detect `isLocked` from loaded API data. When locked: `FormCommandBar` hides Save/Save & Close/Delete (shows only Back), a warning `MessageBar` displays the lock reason, and form content is wrapped in `<fieldset disabled>` to natively disable all descendant inputs/buttons. `server/services/lockCheck.js` provides the shared `assertNotLocked(record)` helper.
 
 ## Development Notes
 
@@ -593,7 +601,8 @@ GET /api/documents?projectId=abc123&$count=true
 - **Navigation guard architecture:** Uses a context-based approach (`UnsavedChangesContext`) instead of React Router's `useBlocker` (which requires `createBrowserRouter`, not `BrowserRouter`). The provider wraps routes inside `BrowserRouter` in `App.jsx`. `AppLayout` intercepts sidebar NavLink clicks and the Settings button via `guardedNavigate`. Browser back/forward is handled via a popstate sentinel entry.
 - `npm run dev` does NOT auto-restart the backend server — restart manually after server-side file changes.
 - The `tar` npm package does not have a default ESM export — must use `import * as tar from 'tar'` (not `import tar from 'tar'`).
-- **Service update pattern (spread):** All service `update()` methods use the spread approach — `const updateData = { ...data, updatedAt: now }` — then delete protected fields (`_id`, `createdAt`, plus entity-specific fields like `status`, `invoiceNumber`, `attachments`). Do NOT use field-by-field whitelists. This ensures new fields are automatically persisted without requiring service changes. Type coercion and computed field recomputation happen after the spread.
+- **Service update pattern (spread):** All service `update()` methods use the spread approach — `const updateData = { ...data, updatedAt: now }` — then delete protected fields (`_id`, `createdAt`, `isLocked`, `isLockedReason`, plus entity-specific fields like `status`, `invoiceNumber`, `attachments`). Do NOT use field-by-field whitelists. This ensures new fields are automatically persisted without requiring service changes. Type coercion and computed field recomputation happen after the spread.
+- **Record locking pattern:** All service `update()` and `remove()` methods fetch the existing record first, then call `assertNotLocked(existing)` before proceeding. The helper is in `server/services/lockCheck.js`. Lock fields (`isLocked`, `isLockedReason`) are always deleted from the update spread (protected). They are set/cleared only by invoice lifecycle methods (`confirm`, `post`, `unconfirm`) via direct NeDB `$set`/`$unset`. Frontend forms derive `isLocked`/`lockReason` from loaded API data, pass `locked` to `FormCommandBar` (hides Save/Delete), show a warning `MessageBar`, and wrap form content in `<fieldset disabled>` for native input disabling.
 
 ## PDF Report Layout (pdfmake)
 

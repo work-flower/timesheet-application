@@ -292,7 +292,9 @@ export default function InvoiceForm() {
 
   const status = invoiceData?.status || 'draft';
   const isPosted = status === 'posted';
-  const isReadOnly = isPosted;
+  const isLocked = !!invoiceData?.isLocked;
+  const lockReason = invoiceData?.isLockedReason;
+  const isReadOnly = isPosted || isLocked;
 
   // Derive line counts and source IDs from form.lines
   const timesheetLines = useMemo(
@@ -965,6 +967,7 @@ export default function InvoiceForm() {
 
         {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
         {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Invoice saved successfully.</MessageBarBody></MessageBar>}
+        {isLocked && <MessageBar intent="warning" className={styles.message}><MessageBarBody>{lockReason || 'This record is locked.'}</MessageBarBody></MessageBar>}
         {errors.length > 0 && (
           <MessageBar intent="error" className={styles.message}>
             <MessageBarBody>

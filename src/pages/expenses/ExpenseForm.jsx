@@ -81,6 +81,7 @@ export default function ExpenseForm() {
     notes: '',
   }, { excludeFields: ['vatPercent'] });
 
+  const [loadedData, setLoadedData] = useState(null);
   const [allProjects, setAllProjects] = useState([]);
   const [allClients, setAllClients] = useState([]);
   const [expenseTypes, setExpenseTypes] = useState([]);
@@ -109,6 +110,7 @@ export default function ExpenseForm() {
 
         if (!isNew) {
           const data = await expensesApi.getById(id);
+          setLoadedData(data);
           setAttachments(data.attachments || []);
           setBase({
             projectId: data.projectId || '',
@@ -267,6 +269,9 @@ export default function ExpenseForm() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
+  const isLocked = !isNew && loadedData?.isLocked;
+  const lockReason = loadedData?.isLockedReason;
+
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
   return (
@@ -278,6 +283,7 @@ export default function ExpenseForm() {
         onDelete={!isNew ? () => setDeleteOpen(true) : undefined}
         saveDisabled={!form.projectId || !form.date}
         saving={saving}
+        locked={isLocked}
       />
       <div className={styles.pageBody}>
         <div className={styles.header}>
@@ -295,7 +301,9 @@ export default function ExpenseForm() {
 
         {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
         {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Expense saved successfully.</MessageBarBody></MessageBar>}
+        {isLocked && <MessageBar intent="warning" className={styles.message}><MessageBarBody>{lockReason || 'This record is locked.'}</MessageBarBody></MessageBar>}
 
+        <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0 }}>
         <FormSection title="Entry Details">
           <FormField changed={changedFields.has('date')}>
             <Field label="Date" required>
@@ -429,6 +437,7 @@ export default function ExpenseForm() {
             />
           )}
         </div>
+        </fieldset>
       </div>
       <ConfirmDialog
         open={deleteOpen}

@@ -1,6 +1,7 @@
 import { clients, projects, timesheets, documents, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
+import { assertNotLocked } from './lockCheck.js';
 
 export async function getAll(query = {}) {
   const { results, totalCount } = await buildQuery(projects, query, { name: 1 });
@@ -95,10 +96,15 @@ export async function create(data) {
 }
 
 export async function update(id, data) {
+  const existing = await projects.findOne({ _id: id });
+  assertNotLocked(existing);
+
   const now = new Date().toISOString();
   const updateData = { ...data, updatedAt: now };
   delete updateData._id;
   delete updateData.createdAt;
+  delete updateData.isLocked;
+  delete updateData.isLockedReason;
 
   // Handle rate — allow setting back to null for inheritance
   if (updateData.rate === '' || updateData.rate === undefined) {
@@ -128,6 +134,7 @@ export async function update(id, data) {
 export async function remove(id) {
   const project = await projects.findOne({ _id: id });
   if (!project) return 0;
+  assertNotLocked(project);
 
   if (project.isDefault) {
     throw new Error('Cannot delete the default project');

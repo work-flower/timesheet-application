@@ -66,6 +66,7 @@ export default function TimesheetForm() {
     notes: '',
   }, { excludeFields: EXCLUDE_FIELDS });
 
+  const [loadedData, setLoadedData] = useState(null);
   const [allProjects, setAllProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -93,6 +94,7 @@ export default function TimesheetForm() {
 
         if (!isNew) {
           const data = await timesheetsApi.getById(id);
+          setLoadedData(data);
           setBase({
             projectId: data.projectId || '',
             date: data.date || today,
@@ -208,6 +210,9 @@ export default function TimesheetForm() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
+  const isLocked = !isNew && loadedData?.isLocked;
+  const lockReason = loadedData?.isLockedReason;
+
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
   return (
@@ -219,6 +224,7 @@ export default function TimesheetForm() {
         onDelete={!isNew ? () => setDeleteOpen(true) : undefined}
         saveDisabled={!form.projectId || !form.date}
         saving={saving}
+        locked={isLocked}
       />
       <div className={styles.pageBody}>
         <div className={styles.header}>
@@ -236,80 +242,83 @@ export default function TimesheetForm() {
 
         {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
         {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Timesheet entry saved successfully.</MessageBarBody></MessageBar>}
+        {isLocked && <MessageBar intent="warning" className={styles.message}><MessageBarBody>{lockReason || 'This record is locked.'}</MessageBarBody></MessageBar>}
 
-        <FormSection title="Entry Details">
-          <FormField changed={changedFields.has('date')}>
-            <Field label="Date" required>
-              <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
-            </Field>
-          </FormField>
-          <FormField changed={changedFields.has('projectId')}>
-            <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
-              <Select value={form.projectId} onChange={handleChange('projectId')}>
-                <option value="">Select project...</option>
-                {Object.entries(projectsByClient).map(([clientName, projs]) => (
-                  <optgroup key={clientName} label={clientName}>
-                    {projs.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name} (£{p.effectiveRate}/day)
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </Select>
-            </Field>
-          </FormField>
-          <FormField changed={changedFields.has('hours')}>
-            <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
-              <SpinButton
-                defaultValue={form.hours}
-                onChange={(e, data) => {
-                  const val = data.value ?? parseFloat(data.displayValue);
-                  if (val != null && !isNaN(val)) {
-                    setForm((prev) => ({
-                      ...prev,
-                      hours: val,
-                      ...computeDaysAmount(val, prev.projectId, allProjects),
-                    }));
-                  }
-                }}
-                min={0.25}
-                max={24}
-                step={0.25}
-              />
-            </Field>
-          </FormField>
-          <FormField>
-            <Field label="Days">
-              <Input
-                readOnly
-                value={form.days != null ? form.days.toFixed(2) : '—'}
-              />
-            </Field>
-          </FormField>
-          <FormField>
-            <Field label="Amount">
-              <Input
-                readOnly
-                value={form.amount != null
-                  ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(form.amount)
-                  : '—'}
-              />
-            </Field>
-          </FormField>
-        </FormSection>
+        <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0 }}>
+          <FormSection title="Entry Details">
+            <FormField changed={changedFields.has('date')}>
+              <Field label="Date" required>
+                <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
+              </Field>
+            </FormField>
+            <FormField changed={changedFields.has('projectId')}>
+              <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
+                <Select value={form.projectId} onChange={handleChange('projectId')}>
+                  <option value="">Select project...</option>
+                  {Object.entries(projectsByClient).map(([clientName, projs]) => (
+                    <optgroup key={clientName} label={clientName}>
+                      {projs.map((p) => (
+                        <option key={p._id} value={p._id}>
+                          {p.name} (£{p.effectiveRate}/day)
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </Select>
+              </Field>
+            </FormField>
+            <FormField changed={changedFields.has('hours')}>
+              <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
+                <SpinButton
+                  defaultValue={form.hours}
+                  onChange={(e, data) => {
+                    const val = data.value ?? parseFloat(data.displayValue);
+                    if (val != null && !isNaN(val)) {
+                      setForm((prev) => ({
+                        ...prev,
+                        hours: val,
+                        ...computeDaysAmount(val, prev.projectId, allProjects),
+                      }));
+                    }
+                  }}
+                  min={0.25}
+                  max={24}
+                  step={0.25}
+                />
+              </Field>
+            </FormField>
+            <FormField>
+              <Field label="Days">
+                <Input
+                  readOnly
+                  value={form.days != null ? form.days.toFixed(2) : '—'}
+                />
+              </Field>
+            </FormField>
+            <FormField>
+              <Field label="Amount">
+                <Input
+                  readOnly
+                  value={form.amount != null
+                    ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(form.amount)
+                    : '—'}
+                />
+              </Field>
+            </FormField>
+          </FormSection>
 
-        <FormField fullWidth changed={changedFields.has('notes')}>
-          <div className={styles.notes}>
-            <MarkdownEditor
-              label="Notes"
-              value={form.notes}
-              onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
-              placeholder="What did you work on today?"
-              height={200}
-            />
-          </div>
-        </FormField>
+          <FormField fullWidth changed={changedFields.has('notes')}>
+            <div className={styles.notes}>
+              <MarkdownEditor
+                label="Notes"
+                value={form.notes}
+                onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+                placeholder="What did you work on today?"
+                height={200}
+              />
+            </div>
+          </FormField>
+        </fieldset>
       </div>
       <ConfirmDialog
         open={deleteOpen}

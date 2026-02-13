@@ -21,39 +21,43 @@ const useStyles = makeStyles({
   },
 });
 
-export default function FormCommandBar({ onSave, onSaveAndClose, onBack, onDelete, saveDisabled, saving }) {
+export default function FormCommandBar({ onSave, onSaveAndClose, onBack, onDelete, saveDisabled, saving, locked }) {
   return (
     <div className={useStyles().bar}>
       <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={onBack} size="small">
         Back
       </Button>
-      <ToolbarDivider />
-      <Button
-        appearance="primary"
-        icon={<SaveRegular />}
-        onClick={onSave}
-        disabled={saving || saveDisabled}
-        size="small"
-      >
-        {saving ? 'Saving...' : 'Save'}
-      </Button>
-      {onSaveAndClose && (
-        <Button
-          appearance="outline"
-          icon={<SaveArrowRightRegular />}
-          onClick={onSaveAndClose}
-          disabled={saving || saveDisabled}
-          size="small"
-        >
-          {saving ? 'Saving...' : 'Save & Close'}
-        </Button>
-      )}
-      {onDelete && (
+      {!locked && (
         <>
           <ToolbarDivider />
-          <Button appearance="subtle" icon={<DeleteRegular />} onClick={onDelete} size="small">
-            Delete
+          <Button
+            appearance="primary"
+            icon={<SaveRegular />}
+            onClick={onSave}
+            disabled={saving || saveDisabled}
+            size="small"
+          >
+            {saving ? 'Saving...' : 'Save'}
           </Button>
+          {onSaveAndClose && (
+            <Button
+              appearance="outline"
+              icon={<SaveArrowRightRegular />}
+              onClick={onSaveAndClose}
+              disabled={saving || saveDisabled}
+              size="small"
+            >
+              {saving ? 'Saving...' : 'Save & Close'}
+            </Button>
+          )}
+          {onDelete && (
+            <>
+              <ToolbarDivider />
+              <Button appearance="subtle" icon={<DeleteRegular />} onClick={onDelete} size="small">
+                Delete
+              </Button>
+            </>
+          )}
         </>
       )}
     </div>
