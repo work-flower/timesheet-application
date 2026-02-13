@@ -540,16 +540,28 @@ export default function InvoiceForm() {
   const openTimesheetPicker = async () => {
     if (!form.clientId) return;
     try {
-      const params = { clientId: form.clientId };
-      if (form.servicePeriodStart) params.startDate = form.servicePeriodStart;
-      if (form.servicePeriodEnd) params.endDate = form.servicePeriodEnd;
-      const ts = await timesheetsApi.getAll(params);
-      setAvailableTimesheets(ts);
+      const ts = await timesheetsApi.getAll({ clientId: form.clientId });
+      // Exclude timesheets already locked to another invoice
+      setAvailableTimesheets(ts.filter(t => !t.invoiceId || t.invoiceId === id));
       setTsPickerOpen(true);
     } catch (err) {
       setError(err.message);
     }
   };
+
+  const tsFilterToggle = useMemo(() => {
+    const start = form.servicePeriodStart || null;
+    const end = form.servicePeriodEnd || null;
+    if (!start && !end) return null;
+    return {
+      label: 'Include entries outside service period',
+      filterFn: (item) => {
+        if (start && item.date < start) return false;
+        if (end && item.date > end) return false;
+        return true;
+      },
+    };
+  }, [form.servicePeriodStart, form.servicePeriodEnd]);
 
   const handleTimesheetPickerConfirm = (selectedIds) => {
     const currentSourceIds = new Set(tsSourceIds);
@@ -601,16 +613,19 @@ export default function InvoiceForm() {
   const openExpensePicker = async () => {
     if (!form.clientId) return;
     try {
-      const params = { clientId: form.clientId };
-      if (form.servicePeriodStart) params.startDate = form.servicePeriodStart;
-      if (form.servicePeriodEnd) params.endDate = form.servicePeriodEnd;
-      const exp = await expensesApi.getAll(params);
-      setAvailableExpenses(exp);
+      const exp = await expensesApi.getAll({ clientId: form.clientId });
+      // Exclude expenses already locked to another invoice
+      setAvailableExpenses(exp.filter(e => !e.invoiceId || e.invoiceId === id));
       setExpPickerOpen(true);
     } catch (err) {
       setError(err.message);
     }
   };
+
+  const expFilterToggle = useMemo(() => ({
+    label: 'Include non-billable expenses',
+    filterFn: (item) => item.billable !== false,
+  }), []);
 
   const handleExpensePickerConfirm = (selectedIds) => {
     const currentSourceIds = new Set(expSourceIds);
@@ -1198,6 +1213,7 @@ export default function InvoiceForm() {
         title="Select Timesheets"
         alreadySelectedIds={tsSourceIds}
         invoiceId={id}
+        filterToggle={tsFilterToggle}
       />
 
       {/* Expense picker */}
@@ -1207,6 +1223,7 @@ export default function InvoiceForm() {
         onConfirm={handleExpensePickerConfirm}
         items={availableExpenses}
         columns={expensePickerColumns}
+        filterToggle={expFilterToggle}
         title="Select Expenses"
         alreadySelectedIds={expSourceIds}
         invoiceId={id}

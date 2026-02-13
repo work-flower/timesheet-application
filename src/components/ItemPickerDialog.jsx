@@ -8,6 +8,7 @@ import {
   DialogActions,
   Button,
   Checkbox,
+  Switch,
   makeStyles,
   tokens,
   Text,
@@ -16,6 +17,11 @@ import {
 import { LockClosedRegular } from '@fluentui/react-icons';
 
 const useStyles = makeStyles({
+  toolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    marginBottom: '8px',
+  },
   content: {
     maxHeight: '400px',
     overflowY: 'auto',
@@ -61,14 +67,24 @@ export default function ItemPickerDialog({
   title = 'Select Items',
   alreadySelectedIds = [],
   invoiceId = null,
+  filterToggle = null,
 }) {
   const styles = useStyles();
   const [selected, setSelected] = useState(new Set(alreadySelectedIds));
+  const [toggleOn, setToggleOn] = useState(false);
 
-  // Reset selection when dialog opens
+  // Reset selection and toggle when dialog opens
   useMemo(() => {
-    if (open) setSelected(new Set(alreadySelectedIds));
+    if (open) {
+      setSelected(new Set(alreadySelectedIds));
+      setToggleOn(false);
+    }
   }, [open, alreadySelectedIds]);
+
+  const filteredItems = useMemo(() => {
+    if (!filterToggle?.filterFn || toggleOn) return items;
+    return items.filter(filterToggle.filterFn);
+  }, [items, toggleOn, filterToggle]);
 
   const toggleItem = (id) => {
     setSelected(prev => {
@@ -95,50 +111,61 @@ export default function ItemPickerDialog({
       <DialogSurface style={{ maxWidth: '700px', width: '90vw' }}>
         <DialogBody>
           <DialogTitle>{title}</DialogTitle>
-          <DialogContent className={styles.content}>
-            {items.length === 0 ? (
-              <Text style={{ padding: '16px', color: tokens.colorNeutralForeground3 }}>
-                No items available.
-              </Text>
-            ) : (
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th className={styles.th} style={{ width: '32px' }}></th>
-                    {columns.map(col => (
-                      <th key={col.key} className={styles.th}>{col.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map(item => {
-                    const locked = isLockedToOther(item);
-                    return (
-                      <tr key={item._id} className={locked ? styles.rowDisabled : undefined}>
-                        <td className={styles.td}>
-                          {locked ? (
-                            <Tooltip content={`Locked to invoice ${item.invoiceNumber || item.invoiceId}`} relationship="label">
-                              <LockClosedRegular className={styles.lockIcon} />
-                            </Tooltip>
-                          ) : (
-                            <Checkbox
-                              checked={selected.has(item._id)}
-                              onChange={() => toggleItem(item._id)}
-                            />
-                          )}
-                        </td>
-                        {columns.map(col => (
-                          <td key={col.key} className={styles.td}>
-                            {col.render ? col.render(item) : item[col.key]}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          <DialogContent>
+            {filterToggle && (
+              <div className={styles.toolbar}>
+                <Switch
+                  checked={toggleOn}
+                  onChange={(e, data) => setToggleOn(data.checked)}
+                  label={filterToggle.label}
+                />
+              </div>
             )}
-            <Text className={styles.summary}>{selected.size} item(s) selected</Text>
+            <div className={styles.content}>
+              {filteredItems.length === 0 ? (
+                <Text style={{ padding: '16px', color: tokens.colorNeutralForeground3 }}>
+                  No items available.
+                </Text>
+              ) : (
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th className={styles.th} style={{ width: '32px' }}></th>
+                      {columns.map(col => (
+                        <th key={col.key} className={styles.th}>{col.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredItems.map(item => {
+                      const locked = isLockedToOther(item);
+                      return (
+                        <tr key={item._id} className={locked ? styles.rowDisabled : undefined}>
+                          <td className={styles.td}>
+                            {locked ? (
+                              <Tooltip content={`Locked to invoice ${item.invoiceNumber || item.invoiceId}`} relationship="label">
+                                <LockClosedRegular className={styles.lockIcon} />
+                              </Tooltip>
+                            ) : (
+                              <Checkbox
+                                checked={selected.has(item._id)}
+                                onChange={() => toggleItem(item._id)}
+                              />
+                            )}
+                          </td>
+                          {columns.map(col => (
+                            <td key={col.key} className={styles.td}>
+                              {col.render ? col.render(item) : item[col.key]}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <Text className={styles.summary}>{selected.size} item(s) selected</Text>
+            </div>
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" onClick={onClose}>Cancel</Button>
