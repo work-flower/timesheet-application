@@ -1,6 +1,26 @@
 import { useState, useRef, useMemo, useCallback } from 'react';
 
+function parseQueryParams() {
+  const params = new URLSearchParams(window.location.search);
+  const result = {};
+  for (const [key, raw] of params.entries()) {
+    if (raw === '') continue;
+    if (raw === 'true' || raw === 'false') {
+      result[key] = raw === 'true';
+    } else if (!isNaN(raw) && raw.trim() !== '') {
+      result[key] = parseFloat(raw);
+    } else {
+      result[key] = raw;
+    }
+  }
+  return result;
+}
+
 export function useFormTracker(initialState, { excludeFields = [] } = {}) {
+  const queryParams = useMemo(() => parseQueryParams(), []);
+  const queryParamsRef = useRef(queryParams);
+  const appliedRef = useRef(false);
+
   const [form, setFormState] = useState(initialState);
   const baseRef = useRef(initialState);
 
@@ -11,6 +31,11 @@ export function useFormTracker(initialState, { excludeFields = [] } = {}) {
   const setBase = useCallback((state) => {
     baseRef.current = state;
     setFormState(state);
+    // Apply query params once as user changes after the first setBase
+    if (!appliedRef.current && Object.keys(queryParamsRef.current).length > 0) {
+      appliedRef.current = true;
+      setFormState((prev) => ({ ...prev, ...queryParamsRef.current }));
+    }
   }, []);
 
   const resetForm = useCallback(() => {
