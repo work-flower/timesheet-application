@@ -9,6 +9,41 @@ async function seed() {
   await expenses.remove({}, { multi: true });
   await invoices.remove({}, { multi: true });
 
+  // Seed business client (created before settings so we can reference its ID)
+  const businessClient = await clients.insert({
+    companyName: 'Smith Consulting Ltd',
+    primaryContactName: '',
+    primaryContactEmail: '',
+    primaryContactPhone: '',
+    defaultRate: 0,
+    currency: 'GBP',
+    workingHoursPerDay: 8,
+    invoicingEntityName: '',
+    invoicingEntityAddress: '123 High Street, London, EC1A 1BB',
+    isBusiness: true,
+    isLocked: true,
+    isLockedReason: 'Business Client — managed via Settings',
+    notes: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  // Default project for business client
+  await projects.insert({
+    clientId: businessClient._id,
+    endClientId: null,
+    name: 'Default Project',
+    ir35Status: 'OUTSIDE_IR35',
+    rate: null,
+    workingHoursPerDay: null,
+    vatPercent: 20,
+    isDefault: true,
+    status: 'active',
+    notes: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
   // Seed settings
   await settings.insert({
     name: 'John Smith',
@@ -27,6 +62,7 @@ async function seed() {
     bankSortCode: '20-00-00',
     bankAccountNumber: '12345678',
     bankAccountOwner: 'Smith Consulting Ltd',
+    businessClientId: businessClient._id,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -243,7 +279,7 @@ async function seed() {
   });
 
   console.log('Seed complete!');
-  console.log(`Created: 2 clients, 3 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice`);
+  console.log(`Created: 3 clients, 4 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice`);
 }
 
 seed().catch(console.error);

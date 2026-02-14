@@ -9,9 +9,10 @@ import {
   Button,
   MessageBar,
   MessageBarBody,
+  Select,
 } from '@fluentui/react-components';
 import { SaveRegular } from '@fluentui/react-icons';
-import { settingsApi } from '../../api/index.js';
+import { settingsApi, clientsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 
 const useStyles = makeStyles({
@@ -29,6 +30,7 @@ const useStyles = makeStyles({
 export default function InvoicingSettings() {
   const styles = useStyles();
   const [form, setForm] = useState({
+    businessClientId: '',
     invoiceNumberSeed: 0,
     defaultPaymentTermDays: 10,
     defaultVatRate: 20,
@@ -38,6 +40,7 @@ export default function InvoicingSettings() {
     bankAccountNumber: '',
     bankAccountOwner: '',
   });
+  const [clientsList, setClientsList] = useState([]);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
@@ -46,6 +49,7 @@ export default function InvoicingSettings() {
     settingsApi.get().then((data) => {
       if (data) {
         setForm({
+          businessClientId: data.businessClientId || '',
           invoiceNumberSeed: data.invoiceNumberSeed ?? 0,
           defaultPaymentTermDays: data.defaultPaymentTermDays ?? 10,
           defaultVatRate: data.defaultVatRate ?? 20,
@@ -57,6 +61,7 @@ export default function InvoicingSettings() {
         });
       }
     });
+    clientsApi.getAll().then(setClientsList);
   }, []);
 
   const handleChange = (field) => (e, data) => {
@@ -82,6 +87,22 @@ export default function InvoicingSettings() {
     <>
       {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
       {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Invoicing settings saved.</MessageBarBody></MessageBar>}
+
+      <FormSection title="Business Client">
+        <FormField>
+          <Field label="Business Client" hint="Designate a client to track business-level expenses (rent, software, tax, etc.)">
+            <Select
+              value={form.businessClientId}
+              onChange={(e, data) => setForm((prev) => ({ ...prev, businessClientId: data.value }))}
+            >
+              <option value="">None</option>
+              {clientsList.map((c) => (
+                <option key={c._id} value={c._id}>{c.companyName}</option>
+              ))}
+            </Select>
+          </Field>
+        </FormField>
+      </FormSection>
 
       <FormSection title="Invoice Numbering">
         <FormField>
