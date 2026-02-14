@@ -9,6 +9,7 @@
     "seed": "node server/db/seed.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0",
     "@aws-sdk/client-s3": "^3.988.0",
     "@fluentui/react-components": "^9.54.0",
     "@fluentui/react-datepicker-compat": "^0.4.0",

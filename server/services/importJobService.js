@@ -1,16 +1,17 @@
-import { importJobs, stagedTransactions, transactions } from '../db/index.js';
+import { importJobs, stagedTransactions } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { assertNotLocked } from './lockCheck.js';
-import { unlinkSync, existsSync } from 'fs';
+import { unlinkSync, existsSync, rmSync } from 'fs';
+import { dirname } from 'path';
+import { createHash } from 'crypto';
+import * as stagedTransactionService from './stagedTransactionService.js';
+import { parseFile } from './aiParserService.js';
 
 export async function getAll(query = {}) {
   const baseFilter = {};
 
   if (query.status) {
     baseFilter.status = query.status;
-  }
-  if (query.accountName) {
-    baseFilter.accountName = query.accountName;
   }
 
   const { results, totalCount } = await buildQuery(
@@ -32,9 +33,7 @@ export async function create(data) {
     filePath: data.filePath || '',
     status: 'processing',
     error: null,
-    accountName: data.accountName || '',
-    stagedCount: 0,
-    committedCount: 0,
+    userPrompt: data.userPrompt || 'Parse the attached bank statement.',
     createdAt: now,
     updatedAt: now,
     completedAt: null,
@@ -64,7 +63,7 @@ export async function remove(id) {
   if (!existing) return null;
 
   // Terminal jobs are locked but deletable — skip lock check here
-  const allowedStatuses = ['committed', 'abandoned', 'failed'];
+  const allowedStatuses = ['abandoned', 'failed'];
   if (!allowedStatuses.includes(existing.status)) {
     throw new Error(`Cannot delete import job with status "${existing.status}". Only ${allowedStatuses.join(', ')} jobs can be deleted.`);
   }
@@ -72,64 +71,53 @@ export async function remove(id) {
   // Cascade-delete staged transactions for this job
   await stagedTransactions.remove({ importJobId: id }, { multi: true });
 
-  // Delete uploaded file from disk
+  // Delete uploaded file and its directory from disk
   if (existing.filePath && existsSync(existing.filePath)) {
-    unlinkSync(existing.filePath);
+    const dir = dirname(existing.filePath);
+    rmSync(dir, { recursive: true, force: true });
   }
 
   return importJobs.remove({ _id: id });
 }
 
-export async function commit(id) {
-  const existing = await importJobs.findOne({ _id: id });
-  if (!existing) throw new Error('Import job not found');
-  if (existing.status !== 'ready_for_review') {
-    throw new Error(`Cannot commit import job with status "${existing.status}". Job must be "ready_for_review".`);
-  }
+export async function processFile(jobId) {
+  try {
+    const job = await importJobs.findOne({ _id: jobId });
+    if (!job) throw new Error('Import job not found');
 
-  // Get all staged transactions for this job
-  const staged = await stagedTransactions.find({ importJobId: id });
+    const { rows, stopReason } = await parseFile(job.filePath, job.filename, job.userPrompt);
 
-  const now = new Date().toISOString();
+    // Build staged transactions with composite hash
+    const stagedItems = rows.map((row) => {
+      const hashInput = `${job.filename}-${row.date || ''}-${row.description || ''}-${row.amount || ''}`;
+      const compositeHash = createHash('md5').update(hashInput).digest('hex');
+      return {
+        importJobId: jobId,
+        compositeHash,
+        ...row,
+      };
+    });
 
-  // Move each staged transaction to the transactions collection
-  for (const item of staged) {
-    const { _id, importJobId, createdAt: _ca, updatedAt: _ua, ...fields } = item;
-    await transactions.insert({
-      accountName: existing.accountName || '',
-      date: fields.date || '',
-      description: fields.description || '',
-      amount: fields.amount != null ? Number(fields.amount) : 0,
-      balance: fields.balance != null ? Number(fields.balance) : null,
-      importJobId: id,
-      source: item, // Full staged record as audit trail
-      status: 'unmatched',
-      ignoreReason: null,
-      invoiceId: null,
-      expenseId: null,
-      clientId: null,
-      projectId: null,
-      createdAt: now,
-      updatedAt: now,
+    await stagedTransactionService.createBulk(stagedItems);
+
+    const now = new Date().toISOString();
+    await importJobs.update({ _id: jobId }, {
+      $set: {
+        status: 'ready_for_review',
+        aiStopReason: stopReason,
+        updatedAt: now,
+      },
+    });
+  } catch (err) {
+    const now = new Date().toISOString();
+    await importJobs.update({ _id: jobId }, {
+      $set: {
+        status: 'failed',
+        error: err.message,
+        updatedAt: now,
+      },
     });
   }
-
-  // Delete staged records
-  await stagedTransactions.remove({ importJobId: id }, { multi: true });
-
-  // Update job status and lock
-  await importJobs.update({ _id: id }, {
-    $set: {
-      status: 'committed',
-      committedCount: staged.length,
-      completedAt: now,
-      updatedAt: now,
-      isLocked: true,
-      isLockedReason: 'Committed import job',
-    },
-  });
-
-  return getById(id);
 }
 
 export async function abandon(id) {

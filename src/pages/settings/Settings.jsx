@@ -23,6 +23,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import BackupSettings from './BackupSettings.jsx';
 import InvoicingSettings from './InvoicingSettings.jsx';
+import AiConfigSettings from './AiConfigSettings.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -143,6 +144,7 @@ export default function Settings() {
         >
           <Tab value="profile">Profile</Tab>
           <Tab value="invoicing">Invoicing</Tab>
+          <Tab value="aiConfig">Transaction Import AI Config</Tab>
           <Tab value="backup">Backup</Tab>
         </TabList>
 
@@ -184,6 +186,7 @@ export default function Settings() {
         )}
 
         {tab === 'invoicing' && <InvoicingSettings />}
+        {tab === 'aiConfig' && <AiConfigSettings />}
         {tab === 'backup' && <BackupSettings />}
       </div>
     </div>

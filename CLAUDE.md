@@ -11,6 +11,7 @@ No authentication — single user, local app.
 - **Frontend:** React 18, React Router v6, Vite, Fluent UI v9 (`@fluentui/react-components`) — **MUST use Fluent UI React components for all UI. Do not replace with HTML tables, custom components, or other libraries unless explicitly asked.**
 - **Backend:** Node.js, Express.js, NeDB (`nedb-promises`), ESM throughout (`"type": "module"`)
 - **PDF:** pdfmake (server-side), pdf-lib (PDF merging)
+- **AI:** `@anthropic-ai/sdk` (Claude API for bank statement parsing)
 - **Other:** `@uiw/react-md-editor` (markdown notes), `multer` + `sharp` (expense attachments + thumbnails), `@aws-sdk/client-s3` + `archiver` + `tar` + `node-cron` (R2 cloud backup), `dotenv`
 
 ## Configuration
@@ -165,6 +166,63 @@ R2 cloud backup configuration. Stored in a **separate** database file — **not*
 | backupPath | R2 key prefix (change to browse another environment's backups) |
 | schedule | `off`, `daily`, or `weekly` |
 
+### aiConfig (single document)
+
+AI-powered transaction import configuration. Stored in a **separate** database file (`ai-config.db`) — **not** included in backup archives. API key masked on read.
+
+| Field | Description |
+|-------|-------------|
+| apiKey | Claude API key (masked on read, retained on update if masked) |
+| model | Claude model ID (default: `claude-sonnet-4-5-20250929`) |
+| maxTokens | Maximum output tokens for AI response (default: 64000, max: 64000) |
+| timeoutMinutes | Request timeout in minutes (default: 30) |
+| systemPrompt | System prompt sent with every AI parsing request |
+
+### importJobs
+
+| Field | Description |
+|-------|-------------|
+| filename | Original uploaded filename |
+| filePath | Absolute path to uploaded file on disk (`DATA_DIR/uploads/{jobId}/`) |
+| status | `processing` → `ready_for_review` → `abandoned`; also `failed` |
+| error | Error message (set on failure, cleared on retry) |
+| userPrompt | Job-specific instructions sent alongside the file to the AI (read-only after creation) |
+| aiStopReason | Claude API stop reason from the parsing response |
+| completedAt | Timestamp when job reached a terminal status |
+
+Uploaded files stored on disk at `DATA_DIR/uploads/{jobId}/`. Deleting a job cascade-deletes its staged transactions and upload directory. Only terminal-status jobs (`abandoned`, `failed`) can be deleted.
+
+### stagedTransactions
+
+Temporary parsed transactions awaiting review before commit. Semi-structured — fields vary based on AI output.
+
+| Field | Description |
+|-------|-------------|
+| importJobId | FK → importJobs |
+| compositeHash | MD5 of `filename-date-description-amount` (idempotent dedup key) |
+| date | `YYYY-MM-DD` (from AI) |
+| description | Transaction description (from AI) |
+| amount | Number, negative for debits, positive for credits (from AI) |
+| *(additional)* | Any other fields the AI returns (e.g. `balance`, `reference`, `transactionType`) |
+
+Deleted when job is abandoned.
+
+### transactions
+
+| Field | Description |
+|-------|-------------|
+| date | `YYYY-MM-DD` |
+| description | Transaction description |
+| amount | Number, negative for debits, positive for credits |
+| balance | Running balance (nullable) |
+| importJobId | FK → importJobs (source traceability) |
+| source | Full staged transaction record (audit trail) |
+| status | `unmatched`, `matched`, or `ignored` |
+| ignoreReason | Reason for ignoring (nullable) |
+| invoiceId | FK → invoices (nullable, for matched income) |
+| expenseId | FK → expenses (nullable, for matched expenses) |
+| clientId, projectId | FK references (nullable, for matched transactions) |
+
 ---
 
 ## Business Rules
@@ -207,6 +265,15 @@ R2 cloud backup configuration. Stored in a **separate** database file — **not*
 22. **Unconfirm** unlocks: the invoice, all referenced timesheets (clears `invoiceId`), all referenced expenses (clears `invoiceId`).
 23. **Locked record UI:** Form hides Save/Delete buttons (shows only Back), displays warning banner with lock reason, disables all form inputs.
 
+### Transaction Imports
+
+24. **File upload:** Creating an import job requires a file upload (CSV, PDF, OFX, XML, TXT, XLS, XLSX). The file is stored on disk at `DATA_DIR/uploads/{jobId}/`.
+25. **AI parsing:** After upload, the file is sent to Claude API with the system prompt (from AI config) and the job's user prompt. Claude returns a JSON array of transactions. Parsing runs asynchronously — the job is created immediately with `processing` status.
+26. **Staged transactions:** Each parsed row becomes a staged transaction with a composite hash (MD5 of `filename-date-description-amount`). Staged transactions are semi-structured — all fields returned by the AI are stored.
+27. **Lifecycle:** `processing` → `ready_for_review` → `abandoned`. On failure: `processing` → `failed`. Failed jobs can be retried by re-uploading a file.
+28. **Abandon** deletes all staged transactions.
+29. **Delete** is only allowed for terminal-status jobs (`abandoned`, `failed`). Cascade-deletes staged transactions and the upload directory.
+
 ---
 
 ## API
@@ -223,6 +290,10 @@ All endpoints prefixed with `/api`. All list endpoints support OData-style query
 - **Reports:** Generate timesheet PDF (by client + date range, optional project filter). Generate expense PDF (same params). Combined PDF endpoint accepts array of report specs (invoice + timesheet + expense) and merges into single PDF.
 - **Documents:** List, detail, serve PDF file, generate + save PDF, delete (removes file + record)
 - **Settings:** Get/update contractor profile (single document, upserted)
+- **AI Config:** Get/update config (API key masked on read), test connection (sends trivial request to Claude API). Separate from settings — own database, own endpoints.
+- **Import Jobs:** List (supports `status` filter), detail, create (multipart file upload, triggers background AI parsing), update (supports multipart file re-upload on failed jobs), delete (terminal only, cascade). Lifecycle: abandon.
+- **Staged Transactions:** List (supports `importJobId` filter), detail, create, update, delete. Bulk create used internally by AI parser.
+- **Transactions:** List (supports `importJobId`, `status`, `accountName` filters), detail, create, update, delete.
 - **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup
 
 ### OData Query Support
@@ -253,7 +324,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 ### Layout
 
 1. **Top Bar:** App title "Timesheet Manager" on the left with hamburger menu toggle, Settings button on the right
-2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Dashboard, Clients, Projects, Timesheets, Expenses, Invoices, Reports (expandable parent with Timesheet and Expenses children). Active item highlighted with blue accent border.
+2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Dashboard, Clients, Projects, Timesheets, Expenses, Invoices, Reports (expandable parent with Timesheet and Expenses children), Data Management (expandable parent with Import Transactions child). Active item highlighted with blue accent border.
 3. **Main Content Area** (scrollable): List views, form views, or dashboard
 
 ### Navigation
@@ -278,7 +349,10 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/invoices/:id` | Invoice form (tabs: Invoice, PDF Preview) |
 | `/reports/timesheets` | Timesheet report generation page |
 | `/reports/expenses` | Expense report generation page |
-| `/settings` | Settings (tabs: Profile, Invoicing, Backup) |
+| `/import-jobs` | Import job list |
+| `/import-jobs/new` | Import job create form (file upload) |
+| `/import-jobs/:id` | Import job form (staged transactions grid, lifecycle) |
+| `/settings` | Settings (tabs: Profile, Invoicing, Transaction Import AI Config, Backup) |
 
 ### List Views
 
@@ -287,6 +361,7 @@ All list views share a common pattern: command bar (New, Delete, Search) → sor
 - **Timesheet list:** Default period: current week. Period toggle buttons (This Week / This Month / All Time / Custom with date pickers). Client and Project dropdown filters. Summary row showing Days, Amount totals. All filter selections persisted to localStorage.
 - **Expense list:** Default period: current month. Same period toggle pattern. Client, Project, and Expense Type dropdown filters. Columns: Date, Client, Project, Type, Description, Amount, VAT, Billable, Attachments count. Summary footer: Billable Total, Non-Billable Total, Entry count. All filters persisted to localStorage.
 - **Invoice list:** Filters: Status (draft/confirmed/posted), Client, Payment (unpaid/paid/overdue). Columns: Invoice #, Date, Client, Period, Status badge, Amount, Payment badge. Summary footer: total invoices, total amount, unpaid amount. Filters persisted to localStorage.
+- **Import job list:** Status dropdown filter. Columns: Filename (truncated with ellipsis), Status (colour-coded badge), Created date. Summary footer: job count. Status filter persisted to localStorage.
 
 ### Form Views
 
@@ -341,15 +416,26 @@ Below cards: "Recent Timesheet Entries" grid showing last 10 entries (Date, Clie
 - **PDF Preview tab:** Toggle switches for "Include Timesheet Report" and "Include Expense Report" (auto-save on toggle; disabled when locked). Uses saved PDF file for confirmed/posted invoices (no regeneration). Falls back to on-the-fly combined PDF generation for drafts.
 - **Payment section** (posted only): Payment Status dropdown (unpaid/paid/overdue), Paid Date field
 
+**Import job form:**
+- Custom command bar (not FormCommandBar) with conditional buttons: Save/Save & Close (new only), Abandon (processing or ready_for_review), Delete (terminal only)
+- Create mode: file upload input (required), user prompt (markdown editor). Form disabled (`fieldset disabled={isLocked || !isNew}`) after creation.
+- Edit mode: read-only filename, created/completed timestamps, read-only user prompt
+- Failed jobs: file re-upload input (outside fieldset) to retry parsing
+- Processing state: spinner with "Processing file..." message, polls every 3 seconds until status changes
+- Staged transactions grid: dynamic columns derived from AI response fields (read-only)
+- Terminal states: Results section showing AI stop reason
+- Status badge (colour-coded: Processing=brand, Ready for Review=warning, Abandoned=subtle, Failed=danger)
+
 ### Reports Pages
 
 Two report pages (Timesheet and Expense) sharing the same two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods computed from actual entry dates (monthly or weekly). Actions: Generate (preview), Download (browser save). Timesheet report also has Save Document (persists server-side, viewable from project's Documents tab). Selections persisted to localStorage (separate keys per report type).
 
 ### Settings Page
 
-Three tabs:
+Four tabs:
 - **Profile:** Contractor personal + business details form with dirty tracking
 - **Invoicing:** Invoice number seed (read-only display), default payment term days, default VAT rate, invoice footer text, bank details (name, sort code, account number, account owner)
+- **Transaction Import AI Config:** API Key (password input, masked), Model (text input), Max Tokens (number input, default 64000, max 64000), Timeout in minutes (number input, default 30). Test Connection and Save Configuration buttons. System Prompt (markdown editor, full width). Independent component with own save logic (not part of main Settings form tracker).
 - **Backup:** R2 credentials, backup path, schedule (off/daily/weekly). Save Configuration button, Test Connection, Backup Now. Backup history grid with Restore/Delete per row. Restore shows confirmation dialog and reload banner on success.
 
 ---
@@ -396,6 +482,8 @@ Clears all data and creates:
 - **Projects:** 3 total — Barclays Default (Outside IR35, inherits rate), Payment Platform Migration (Outside IR35, £700/day override), HMRC Default (Inside IR35, inherits rate)
 - **Timesheets:** Up to 5 entries for current week on Payment Platform Migration (8h/day, £700) + 3 entries for last week on HMRC (7.5h/day, £600). Only creates entries for non-future dates.
 - **Expenses:** Travel (£45.60, billable) and Mileage (£32.40, billable) on Payment Platform Migration this week, Equipment (£24.99 + £4.17 VAT, non-billable) on Payment Platform Migration, Travel (£28.50, billable) on HMRC last week.
+- **AI Config:** Default config with empty API key, default model, and default system prompt for bank statement parsing.
+- **Import Job:** 1 ready_for_review job (natwest-jan-2026.csv) + 4 linked transactions (matched, unmatched, ignored statuses).
 
 ## Docker
 

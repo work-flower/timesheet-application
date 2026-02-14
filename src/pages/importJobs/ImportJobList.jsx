@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
@@ -58,7 +58,6 @@ const useStyles = makeStyles({
 const statusColors = {
   processing: 'brand',
   ready_for_review: 'warning',
-  committed: 'success',
   abandoned: 'subtle',
   failed: 'danger',
 };
@@ -66,14 +65,20 @@ const statusColors = {
 const statusLabels = {
   processing: 'Processing',
   ready_for_review: 'Ready for Review',
-  committed: 'Committed',
   abandoned: 'Abandoned',
   failed: 'Failed',
 };
 
 const columns = [
-  { key: 'filename', label: 'Filename' },
-  { key: 'accountName', label: 'Account Name' },
+  {
+    key: 'filename',
+    label: 'Filename',
+    render: (item) => (
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+        {item.filename}
+      </span>
+    ),
+  },
   {
     key: 'status',
     label: 'Status',
@@ -84,18 +89,6 @@ const columns = [
     ),
   },
   {
-    key: 'stagedCount',
-    label: 'Staged',
-    compare: (a, b) => (a.stagedCount || 0) - (b.stagedCount || 0),
-    render: (item) => item.stagedCount ?? '—',
-  },
-  {
-    key: 'committedCount',
-    label: 'Committed',
-    compare: (a, b) => (a.committedCount || 0) - (b.committedCount || 0),
-    render: (item) => item.committedCount ?? '—',
-  },
-  {
     key: 'createdAt',
     label: 'Created',
     compare: (a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''),
@@ -103,49 +96,34 @@ const columns = [
   },
 ];
 
-const terminalStatuses = new Set(['committed', 'abandoned', 'failed']);
+const terminalStatuses = new Set(['abandoned', 'failed']);
 
 export default function ImportJobList() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
-  const [allJobs, setAllJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('importJobs.status') || '');
-  const [accountFilter, setAccountFilter] = useState(() => localStorage.getItem('importJobs.accountName') || '');
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => { localStorage.setItem('importJobs.status', statusFilter); }, [statusFilter]);
-  useEffect(() => { localStorage.setItem('importJobs.accountName', accountFilter); }, [accountFilter]);
-
-  // Fetch all jobs once for account name dropdown
-  useEffect(() => {
-    importJobsApi.getAll().then(setAllJobs);
-  }, []);
 
   // Fetch filtered jobs
   useEffect(() => {
     setLoading(true);
     const params = {};
     if (statusFilter) params.status = statusFilter;
-    if (accountFilter) params.accountName = accountFilter;
     importJobsApi.getAll(params)
       .then(setJobs)
       .finally(() => setLoading(false));
-  }, [statusFilter, accountFilter]);
-
-  const accountNames = useMemo(() => {
-    const names = new Set(allJobs.map(j => j.accountName).filter(Boolean));
-    return [...names].sort();
-  }, [allJobs]);
+  }, [statusFilter]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
       await importJobsApi.delete(deleteTarget);
       setJobs((prev) => prev.filter((j) => j._id !== deleteTarget));
-      setAllJobs((prev) => prev.filter((j) => j._id !== deleteTarget));
     } catch (err) {
       alert(err.message);
     }
@@ -179,22 +157,8 @@ export default function ImportJobList() {
           <option value="">All</option>
           <option value="processing">Processing</option>
           <option value="ready_for_review">Ready for Review</option>
-          <option value="committed">Committed</option>
           <option value="abandoned">Abandoned</option>
           <option value="failed">Failed</option>
-        </Select>
-
-        <Text size={200} weight="semibold" style={{ marginLeft: 12 }}>Account:</Text>
-        <Select
-          size="small"
-          value={accountFilter}
-          onChange={(e, data) => setAccountFilter(data.value)}
-          style={{ minWidth: 160 }}
-        >
-          <option value="">All Accounts</option>
-          {accountNames.map((name) => (
-            <option key={name} value={name}>{name}</option>
-          ))}
         </Select>
       </div>
       <EntityGrid

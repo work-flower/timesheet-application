@@ -199,10 +199,28 @@ export const importJobsApi = {
     return request(`/import-jobs${query ? `?${query}` : ''}`);
   },
   getById: (id) => request(`/import-jobs/${id}`),
-  create: (data) => request('/import-jobs', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id, data) => request(`/import-jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  create: async (formData) => {
+    // formData is a FormData object — no Content-Type header (browser sets multipart boundary)
+    const res = await fetch(`${BASE}/import-jobs`, { method: 'POST', body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    return res.json();
+  },
+  update: async (id, data) => {
+    // Support both FormData (file re-upload) and plain object
+    if (data instanceof FormData) {
+      const res = await fetch(`${BASE}/import-jobs/${id}`, { method: 'PUT', body: data });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Request failed: ${res.status}`);
+      }
+      return res.json();
+    }
+    return request(`/import-jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
   delete: (id) => request(`/import-jobs/${id}`, { method: 'DELETE' }),
-  commit: (id) => request(`/import-jobs/${id}/commit`, { method: 'POST', body: '{}' }),
   abandon: (id) => request(`/import-jobs/${id}/abandon`, { method: 'POST', body: '{}' }),
 };
 
@@ -220,6 +238,13 @@ export const stagedTransactionsApi = {
   create: (data) => request('/staged-transactions', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/staged-transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/staged-transactions/${id}`, { method: 'DELETE' }),
+};
+
+// AI Config
+export const aiConfigApi = {
+  getConfig: () => request('/ai-config'),
+  updateConfig: (data) => request('/ai-config', { method: 'PUT', body: JSON.stringify(data) }),
+  testConnection: (data) => request('/ai-config/test-connection', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // Backup

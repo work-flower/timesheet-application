@@ -1,4 +1,5 @@
 import { clients, projects, timesheets, settings, expenses, invoices, transactions, importJobs, stagedTransactions } from './index.js';
+import aiConfig from './aiConfig.js';
 
 async function seed() {
   // Clear existing data
@@ -11,6 +12,7 @@ async function seed() {
   await transactions.remove({}, { multi: true });
   await importJobs.remove({}, { multi: true });
   await stagedTransactions.remove({}, { multi: true });
+  await aiConfig.remove({}, { multi: true });
 
   // Seed business client (created before settings so we can reference its ID)
   const businessClient = await clients.insert({
@@ -281,15 +283,24 @@ async function seed() {
     updatedAt: now,
   });
 
-  // Seed import job (committed)
+  // Seed AI config
+  await aiConfig.insert({
+    apiKey: '',
+    model: 'claude-sonnet-4-5-20250929',
+    maxTokens: null,
+    timeoutMinutes: null,
+    systemPrompt: 'You are a bank statement parser. The attached file is a bank statement export which may be in CSV, OFX, PDF or other formats. Extract all transactions and return a JSON array. Each transaction must have: `date` (YYYY-MM-DD), `description` (string), `amount` (number, negative for debits, positive for credits). Include any other fields present such as `balance`, `reference`, `transactionType`, etc. Return ONLY the JSON array, no other text.',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // Seed import job (ready_for_review)
   const importJob = await importJobs.insert({
     filename: 'natwest-jan-2026.csv',
     filePath: '',
-    status: 'committed',
+    status: 'ready_for_review',
     error: null,
-    accountName: 'NatWest Business Current',
-    stagedCount: 4,
-    committedCount: 4,
+    userPrompt: 'Parse the attached bank statement.',
     createdAt: now,
     updatedAt: now,
     completedAt: now,
@@ -369,7 +380,7 @@ async function seed() {
   });
 
   console.log('Seed complete!');
-  console.log(`Created: 3 clients, 4 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice, 1 import job, 4 transactions`);
+  console.log(`Created: 3 clients, 4 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice, 1 import job, 4 transactions, 1 AI config`);
 }
 
 seed().catch(console.error);
