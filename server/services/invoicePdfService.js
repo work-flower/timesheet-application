@@ -298,6 +298,7 @@ export async function buildInvoicePdf(invoiceId) {
   return {
     content,
     footer: { stack: footerStack },
+    ...(invoice.status === 'draft' ? { watermark: { text: 'DRAFT', color: NAVY, opacity: 0.06, bold: true } } : {}),
     styles: {
       businessName: { fontSize: 16, bold: true, color: NAVY, margin: [0, 0, 0, 4] },
       businessDetail: { fontSize: 9, color: GREY_TEXT, margin: [0, 4, 0, 0] },
