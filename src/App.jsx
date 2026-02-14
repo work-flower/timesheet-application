@@ -15,6 +15,8 @@ import ExpenseForm from './pages/expenses/ExpenseForm.jsx';
 import InvoiceList from './pages/invoices/InvoiceList.jsx';
 import InvoiceForm from './pages/invoices/InvoiceForm.jsx';
 import Settings from './pages/settings/Settings.jsx';
+import ImportJobList from './pages/importJobs/ImportJobList.jsx';
+import ImportJobForm from './pages/importJobs/ImportJobForm.jsx';
 import ReportForm from './pages/reports/ReportForm.jsx';
 import ExpenseReportForm from './pages/reports/ExpenseReportForm.jsx';
 
@@ -41,6 +43,9 @@ export default function App() {
               <Route path="/invoices" element={<InvoiceList />} />
               <Route path="/invoices/new" element={<InvoiceForm />} />
               <Route path="/invoices/:id" element={<InvoiceForm />} />
+              <Route path="/import-jobs" element={<ImportJobList />} />
+              <Route path="/import-jobs/new" element={<ImportJobForm />} />
+              <Route path="/import-jobs/:id" element={<ImportJobForm />} />
               <Route path="/reports" element={<Navigate to="/reports/timesheets" replace />} />
               <Route path="/reports/timesheets" element={<ReportForm />} />
               <Route path="/reports/expenses" element={<ExpenseReportForm />} />

@@ -1,5 +1,6 @@
 import { importJobs, stagedTransactions, transactions } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { assertNotLocked } from './lockCheck.js';
 import { unlinkSync, existsSync } from 'fs';
 
 export async function getAll(query = {}) {
@@ -43,6 +44,7 @@ export async function create(data) {
 export async function update(id, data) {
   const existing = await importJobs.findOne({ _id: id });
   if (!existing) return null;
+  assertNotLocked(existing);
 
   const now = new Date().toISOString();
   const updateData = { ...data, updatedAt: now };
@@ -50,6 +52,8 @@ export async function update(id, data) {
   delete updateData.createdAt;
   delete updateData.filePath;
   delete updateData.filename;
+  delete updateData.isLocked;
+  delete updateData.isLockedReason;
 
   await importJobs.update({ _id: id }, { $set: updateData });
   return getById(id);
@@ -59,6 +63,7 @@ export async function remove(id) {
   const existing = await importJobs.findOne({ _id: id });
   if (!existing) return null;
 
+  // Terminal jobs are locked but deletable — skip lock check here
   const allowedStatuses = ['committed', 'abandoned', 'failed'];
   if (!allowedStatuses.includes(existing.status)) {
     throw new Error(`Cannot delete import job with status "${existing.status}". Only ${allowedStatuses.join(', ')} jobs can be deleted.`);
@@ -112,13 +117,15 @@ export async function commit(id) {
   // Delete staged records
   await stagedTransactions.remove({ importJobId: id }, { multi: true });
 
-  // Update job status
+  // Update job status and lock
   await importJobs.update({ _id: id }, {
     $set: {
       status: 'committed',
       committedCount: staged.length,
       completedAt: now,
       updatedAt: now,
+      isLocked: true,
+      isLockedReason: 'Committed import job',
     },
   });
 
@@ -137,12 +144,14 @@ export async function abandon(id) {
   // Delete all staged transactions for this job
   await stagedTransactions.remove({ importJobId: id }, { multi: true });
 
-  // Update job status
+  // Update job status and lock
   await importJobs.update({ _id: id }, {
     $set: {
       status: 'abandoned',
       completedAt: now,
       updatedAt: now,
+      isLocked: true,
+      isLockedReason: 'Abandoned import job',
     },
   });
 

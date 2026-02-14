@@ -16,6 +16,8 @@ import {
   ReceiptRegular,
   MoneyRegular,
   DocumentBulletListRegular,
+  DatabaseRegular,
+  ArrowImportRegular,
   SettingsRegular,
   NavigationRegular,
   ChevronDownRegular,
@@ -197,6 +199,14 @@ const navItems = [
   { to: '/expenses', label: 'Expenses', icon: <ReceiptRegular /> },
   { to: '/invoices', label: 'Invoices', icon: <MoneyRegular /> },
   {
+    label: 'Data Management',
+    icon: <DatabaseRegular />,
+    prefix: '/import-jobs',
+    children: [
+      { to: '/import-jobs', label: 'Import Transactions', icon: <ArrowImportRegular /> },
+    ],
+  },
+  {
     label: 'Reports',
     icon: <DocumentBulletListRegular />,
     prefix: '/reports',
@@ -218,6 +228,14 @@ export default function AppLayout() {
   const [reportsExpanded, setReportsExpanded] = useState(
     () => isChildRouteActive('/reports'),
   );
+  const [dataExpanded, setDataExpanded] = useState(
+    () => isChildRouteActive('/import-jobs'),
+  );
+
+  const expandState = {
+    '/reports': [reportsExpanded, setReportsExpanded],
+    '/import-jobs': [dataExpanded, setDataExpanded],
+  };
 
   function isActive(item) {
     if (item.exact) return location.pathname === item.to;
@@ -269,13 +287,14 @@ export default function AppLayout() {
       });
     }
 
-    const expanded = reportsExpanded || parentActive;
+    const [isExpanded, setIsExpanded] = expandState[item.prefix] || [false, () => {}];
+    const expanded = isExpanded || parentActive;
 
     return (
       <div key={item.prefix}>
         <div
           className={parentActive ? styles.navParentActive : styles.navParent}
-          onClick={() => setReportsExpanded((v) => !v)}
+          onClick={() => setIsExpanded((v) => !v)}
         >
           <span className={styles.navIcon}>{item.icon}</span>
           <span>{item.label}</span>
