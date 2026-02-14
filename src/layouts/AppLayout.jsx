@@ -183,6 +183,7 @@ const useStyles = makeStyles({
   },
   content: {
     flex: 1,
+    minWidth: 0,
     overflow: 'auto',
     backgroundColor: tokens.colorNeutralBackground2,
   },

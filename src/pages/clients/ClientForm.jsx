@@ -28,9 +28,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
-  page: {
-    maxWidth: '1000px',
-  },
+  page: {},
   pageBody: {
     padding: '16px 24px',
   },

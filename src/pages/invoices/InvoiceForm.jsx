@@ -46,9 +46,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
-  page: {
-    width: '100%',
-  },
+  page: {},
   commandBar: {
     display: 'flex',
     alignItems: 'center',
@@ -224,13 +222,13 @@ const makeUnifiedColumns = (onRemove, onUpdateWriteIn, isReadOnly, errorMap, war
       ? <Input type="number" value={String(item.vatPercent ?? '')} onChange={(e) => { const v = e.target.value; onUpdateWriteIn(item.id, 'vatPercent', v === '' ? null : parseFloat(v)); }} size="small" appearance="underline" />
       : (item.vatPercent != null ? `${item.vatPercent}%` : 'N/A'),
   },
-  { key: 'vatAmount', label: 'VAT Amount',
+  { key: 'vatAmount', label: 'VAT',
     render: (item) => fmtGBP(item.vatAmount),
   },
-  { key: 'netAmount', label: 'Net Amount',
+  { key: 'netAmount', label: 'Net',
     render: (item) => fmtGBP(item.netAmount),
   },
-  { key: 'grossAmount', label: 'Gross Amount',
+  { key: 'grossAmount', label: 'Gross',
     render: (item) => fmtGBP(item.grossAmount),
   },
   ...(onRemove ? [{
@@ -1020,7 +1018,7 @@ export default function InvoiceForm() {
           {/* Invoice tab (or new form) — all lines managed here */}
           {(isNew || tab === 'invoice') && (
             <>
-              <fieldset disabled={!!isReadOnly} style={{ border: 'none', padding: 0, margin: 0, ...(isReadOnly ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
+              <fieldset disabled={!!isReadOnly} style={{ border: 'none', padding: 0, margin: 0, minWidth: 0, ...(isReadOnly ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
                 <FormSection title="Invoice Details">
                   <FormField changed={changedFields.has('clientId')}>
                     <Field label="Client" required>
@@ -1152,7 +1150,7 @@ export default function InvoiceForm() {
           {/* PDF Preview tab */}
           {tab === 'pdf' && (
             <>
-              <fieldset disabled={!!isReadOnly} style={{ border: 'none', padding: 0, margin: 0, ...(isReadOnly ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
+              <fieldset disabled={!!isReadOnly} style={{ border: 'none', padding: 0, margin: 0, minWidth: 0, ...(isReadOnly ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
                 <div style={{ display: 'flex', gap: '24px', marginBottom: '12px' }}>
                   <Switch
                     checked={form.includeTimesheetReport}

@@ -8,7 +8,7 @@ No authentication — single user, local app.
 
 ## Tech Stack
 
-- **Frontend:** React 18, React Router v6, Vite, Fluent UI v9 (`@fluentui/react-components`)
+- **Frontend:** React 18, React Router v6, Vite, Fluent UI v9 (`@fluentui/react-components`) — **MUST use Fluent UI React components for all UI. Do not replace with HTML tables, custom components, or other libraries unless explicitly asked.**
 - **Backend:** Node.js, Express.js, NeDB (`nedb-promises`), ESM throughout (`"type": "module"`)
 - **PDF:** pdfmake (server-side), pdf-lib (PDF merging)
 - **Other:** `@uiw/react-md-editor` (markdown notes), `multer` + `sharp` (expense attachments + thumbnails), `@aws-sdk/client-s3` + `archiver` + `tar` + `node-cron` (R2 cloud backup), `dotenv`
