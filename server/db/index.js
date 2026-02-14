@@ -11,6 +11,7 @@ const dataDir = process.env.DATA_DIR || join(__dirname, '..', '..', 'data');
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(join(dataDir, 'documents'), { recursive: true });
 mkdirSync(join(dataDir, 'expenses'), { recursive: true });
+mkdirSync(join(dataDir, 'imports'), { recursive: true });
 
 const clients = Datastore.create({ filename: join(dataDir, 'clients.db'), autoload: true });
 const projects = Datastore.create({ filename: join(dataDir, 'projects.db'), autoload: true });
@@ -19,5 +20,8 @@ const settings = Datastore.create({ filename: join(dataDir, 'settings.db'), auto
 const documents = Datastore.create({ filename: join(dataDir, 'documents.db'), autoload: true });
 const expenses = Datastore.create({ filename: join(dataDir, 'expenses.db'), autoload: true });
 const invoices = Datastore.create({ filename: join(dataDir, 'invoices.db'), autoload: true });
+const transactions = Datastore.create({ filename: join(dataDir, 'transactions.db'), autoload: true });
+const importJobs = Datastore.create({ filename: join(dataDir, 'importJobs.db'), autoload: true });
+const stagedTransactions = Datastore.create({ filename: join(dataDir, 'stagedTransactions.db'), autoload: true });
 
-export { clients, projects, timesheets, settings, documents, expenses, invoices };
+export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions };

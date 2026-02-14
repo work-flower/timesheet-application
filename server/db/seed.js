@@ -1,4 +1,4 @@
-import { clients, projects, timesheets, settings, expenses, invoices } from './index.js';
+import { clients, projects, timesheets, settings, expenses, invoices, transactions, importJobs, stagedTransactions } from './index.js';
 
 async function seed() {
   // Clear existing data
@@ -8,6 +8,9 @@ async function seed() {
   await settings.remove({}, { multi: true });
   await expenses.remove({}, { multi: true });
   await invoices.remove({}, { multi: true });
+  await transactions.remove({}, { multi: true });
+  await importJobs.remove({}, { multi: true });
+  await stagedTransactions.remove({}, { multi: true });
 
   // Seed business client (created before settings so we can reference its ID)
   const businessClient = await clients.insert({
@@ -190,7 +193,7 @@ async function seed() {
 
   // Seed expenses
   const now = new Date().toISOString();
-  await expenses.insert({
+  const travelExpense = await expenses.insert({
     projectId: proj2._id,
     date: monday.toISOString().split('T')[0],
     expenseType: 'Travel',
@@ -259,7 +262,7 @@ async function seed() {
   });
 
   // Seed sample invoices — draft invoice for Barclays with empty lines
-  await invoices.insert({
+  const draftInvoice = await invoices.insert({
     clientId: client1._id,
     status: 'draft',
     invoiceNumber: null,
@@ -278,8 +281,95 @@ async function seed() {
     updatedAt: now,
   });
 
+  // Seed import job (committed)
+  const importJob = await importJobs.insert({
+    filename: 'natwest-jan-2026.csv',
+    filePath: '',
+    status: 'committed',
+    error: null,
+    accountName: 'NatWest Business Current',
+    stagedCount: 4,
+    committedCount: 4,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: now,
+  });
+
+  // Seed transactions linked to import job
+  await transactions.insert({
+    accountName: 'NatWest Business Current',
+    date: monday.toISOString().split('T')[0],
+    description: 'BARCLAYS BANK PLC - PAYMENT RECEIVED',
+    amount: 3500,
+    balance: 15230.50,
+    importJobId: importJob._id,
+    source: { date: monday.toISOString().split('T')[0], description: 'BARCLAYS BANK PLC - PAYMENT RECEIVED', amount: 3500, balance: 15230.50, type: 'credit' },
+    status: 'matched',
+    ignoreReason: null,
+    invoiceId: draftInvoice._id,
+    expenseId: null,
+    clientId: client1._id,
+    projectId: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await transactions.insert({
+    accountName: 'NatWest Business Current',
+    date: monday.toISOString().split('T')[0],
+    description: 'TFL TRAVEL - CONTACTLESS',
+    amount: -45.60,
+    balance: 11730.50,
+    importJobId: importJob._id,
+    source: { date: monday.toISOString().split('T')[0], description: 'TFL TRAVEL - CONTACTLESS', amount: -45.60, balance: 11730.50, type: 'debit' },
+    status: 'matched',
+    ignoreReason: null,
+    invoiceId: null,
+    expenseId: travelExpense._id,
+    clientId: client1._id,
+    projectId: proj2._id,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await transactions.insert({
+    accountName: 'NatWest Business Current',
+    date: lastWeekMon.toISOString().split('T')[0],
+    description: 'GITHUB INC - SUBSCRIPTION',
+    amount: -29.99,
+    balance: 11700.51,
+    importJobId: importJob._id,
+    source: { date: lastWeekMon.toISOString().split('T')[0], description: 'GITHUB INC - SUBSCRIPTION', amount: -29.99, balance: 11700.51, type: 'debit' },
+    status: 'unmatched',
+    ignoreReason: null,
+    invoiceId: null,
+    expenseId: null,
+    clientId: null,
+    projectId: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await transactions.insert({
+    accountName: 'NatWest Business Current',
+    date: lastWeekMon.toISOString().split('T')[0],
+    description: 'NATWEST - MONTHLY ACCOUNT FEE',
+    amount: -15.00,
+    balance: 11685.51,
+    importJobId: importJob._id,
+    source: { date: lastWeekMon.toISOString().split('T')[0], description: 'NATWEST - MONTHLY ACCOUNT FEE', amount: -15.00, balance: 11685.51, type: 'debit' },
+    status: 'ignored',
+    ignoreReason: 'Bank fee — not a business expense',
+    invoiceId: null,
+    expenseId: null,
+    clientId: null,
+    projectId: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
   console.log('Seed complete!');
-  console.log(`Created: 3 clients, 4 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice`);
+  console.log(`Created: 3 clients, 4 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice, 1 import job, 4 transactions`);
 }
 
 seed().catch(console.error);

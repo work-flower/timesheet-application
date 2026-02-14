@@ -172,6 +172,56 @@ export const invoicesApi = {
   getFileUrl: (id) => `${BASE}/invoices/${id}/file`,
 };
 
+// Transactions
+export const transactionsApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/transactions${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/transactions/${id}`),
+  create: (data) => request('/transactions', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/transactions/${id}`, { method: 'DELETE' }),
+};
+
+// Import Jobs
+export const importJobsApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/import-jobs${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/import-jobs/${id}`),
+  create: (data) => request('/import-jobs', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/import-jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/import-jobs/${id}`, { method: 'DELETE' }),
+  commit: (id) => request(`/import-jobs/${id}/commit`, { method: 'POST', body: '{}' }),
+  abandon: (id) => request(`/import-jobs/${id}/abandon`, { method: 'POST', body: '{}' }),
+};
+
+// Staged Transactions
+export const stagedTransactionsApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/staged-transactions${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/staged-transactions/${id}`),
+  create: (data) => request('/staged-transactions', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/staged-transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/staged-transactions/${id}`, { method: 'DELETE' }),
+};
+
 // Backup
 export const backupApi = {
   getConfig: () => request('/backup/config'),

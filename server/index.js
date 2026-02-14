@@ -11,6 +11,9 @@ import documentRoutes from './routes/documents.js';
 import backupRoutes from './routes/backup.js';
 import expenseRoutes from './routes/expenses.js';
 import invoiceRoutes from './routes/invoices.js';
+import transactionRoutes from './routes/transactions.js';
+import importJobRoutes from './routes/importJobs.js';
+import stagedTransactionRoutes from './routes/stagedTransactions.js';
 import { initScheduler } from './services/backupScheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,6 +34,9 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/transactions', transactionRoutes);
+app.use('/api/import-jobs', importJobRoutes);
+app.use('/api/staged-transactions', stagedTransactionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
