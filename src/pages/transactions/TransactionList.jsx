@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -86,6 +87,12 @@ const useStyles = makeStyles({
     alignItems: 'center',
     padding: '48px',
     color: tokens.colorNeutralForeground3,
+  },
+  row: {
+    cursor: 'pointer',
+    ':hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
   },
 });
 
@@ -181,22 +188,11 @@ const columns = [
       </TableCellLayout>
     ),
   }),
-  createTableColumn({
-    columnId: 'clientName',
-    compare: (a, b) => (a.clientName || '').localeCompare(b.clientName || ''),
-    renderHeaderCell: () => 'Client',
-    renderCell: (item) => <TableCellLayout>{item.clientName || '\u2014'}</TableCellLayout>,
-  }),
-  createTableColumn({
-    columnId: 'projectName',
-    compare: (a, b) => (a.projectName || '').localeCompare(b.projectName || ''),
-    renderHeaderCell: () => 'Project',
-    renderCell: (item) => <TableCellLayout>{item.projectName || '\u2014'}</TableCellLayout>,
-  }),
 ];
 
 export default function TransactionList() {
   const styles = useStyles();
+  const navigate = useNavigate();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -243,9 +239,7 @@ export default function TransactionList() {
       (e.description || '').toLowerCase().includes(q) ||
       (e.accountName || '').toLowerCase().includes(q) ||
       (e.accountNumber || '').toLowerCase().includes(q) ||
-      (e.reference || '').toLowerCase().includes(q) ||
-      (e.clientName || '').toLowerCase().includes(q) ||
-      (e.projectName || '').toLowerCase().includes(q)
+      (e.reference || '').toLowerCase().includes(q)
     );
   }, [entries, search]);
 
@@ -328,7 +322,7 @@ export default function TransactionList() {
             </DataGridHeader>
             <DataGridBody>
               {({ item, rowId }) => (
-                <DataGridRow key={rowId}>
+                <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/transactions/${item._id}`)}>
                   {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                 </DataGridRow>
               )}

@@ -41,6 +41,16 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+router.put('/:id/mapping', async (req, res) => {
+  try {
+    const result = await transactionService.updateMapping(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: 'Transaction not found' });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', async (req, res) => {
   try {
     await transactionService.remove(req.params.id);

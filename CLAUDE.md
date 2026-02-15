@@ -219,9 +219,6 @@ Deleted when job is abandoned.
 | source | Full staged transaction record (audit trail) |
 | status | `unmatched`, `matched`, or `ignored` |
 | ignoreReason | Reason for ignoring (nullable) |
-| invoiceId | FK → invoices (nullable, for matched income) |
-| expenseId | FK → expenses (nullable, for matched expenses) |
-| clientId, projectId | FK references (nullable, for matched transactions) |
 
 ---
 
@@ -352,6 +349,8 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/import-jobs` | Import job list |
 | `/import-jobs/new` | Import job create form (file upload) |
 | `/import-jobs/:id` | Import job form (staged transactions grid, lifecycle) |
+| `/transactions` | Transaction list |
+| `/transactions/:id` | Transaction form (read-only details, editable status) |
 | `/settings` | Settings (tabs: Profile, Invoicing, Transaction Import AI Config, Backup) |
 
 ### List Views

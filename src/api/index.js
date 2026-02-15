@@ -186,6 +186,7 @@ export const transactionsApi = {
   create: (data) => request('/transactions', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/transactions/${id}`, { method: 'DELETE' }),
+  updateMapping: (id, data) => request(`/transactions/${id}/mapping`, { method: 'PUT', body: JSON.stringify(data) }),
 };
 
 // Import Jobs
