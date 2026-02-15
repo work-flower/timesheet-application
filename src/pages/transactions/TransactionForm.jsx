@@ -305,7 +305,7 @@ export default function TransactionForm() {
     setInvoicesLoading(true);
     try {
       const result = await invoicesApi.getAll();
-      setInvoices(result);
+      setInvoices(result.filter((inv) => inv.status !== 'draft'));
     } catch (err) {
       setError(err.message);
     } finally {
