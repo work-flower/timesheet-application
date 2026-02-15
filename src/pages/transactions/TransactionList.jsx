@@ -301,26 +301,28 @@ export default function TransactionList() {
           </>
         )}
       </div>
-      {loading ? (
-        <div className={styles.loading}><Spinner label="Loading..." /></div>
-      ) : filtered.length === 0 ? (
-        <div className={styles.empty}><Text>No transactions found.</Text></div>
-      ) : (
-        <DataGrid items={filtered} columns={columns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
-          <DataGridHeader>
-            <DataGridRow>
-              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
-            </DataGridRow>
-          </DataGridHeader>
-          <DataGridBody>
-            {({ item, rowId }) => (
-              <DataGridRow key={rowId}>
-                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {loading ? (
+          <div className={styles.loading}><Spinner label="Loading..." /></div>
+        ) : filtered.length === 0 ? (
+          <div className={styles.empty}><Text>No transactions found.</Text></div>
+        ) : (
+          <DataGrid items={filtered} columns={columns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+            <DataGridHeader>
+              <DataGridRow>
+                {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
               </DataGridRow>
-            )}
-          </DataGridBody>
-        </DataGrid>
-      )}
+            </DataGridHeader>
+            <DataGridBody>
+              {({ item, rowId }) => (
+                <DataGridRow key={rowId}>
+                  {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                </DataGridRow>
+              )}
+            </DataGridBody>
+          </DataGrid>
+        )}
+      </div>
       {filtered.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

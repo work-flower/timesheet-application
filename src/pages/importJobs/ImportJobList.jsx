@@ -196,45 +196,47 @@ export default function ImportJobList() {
           <option value="failed">Failed</option>
         </Select>
       </div>
-      {loading ? (
-        <div className={styles.loading}>
-          <Spinner label="Loading..." />
-        </div>
-      ) : !jobs || jobs.length === 0 ? (
-        <div className={styles.empty}>
-          <Text>No import jobs found.</Text>
-        </div>
-      ) : (
-        <DataGrid
-          items={jobs}
-          columns={columns}
-          sortable
-          getRowId={(item) => item._id}
-          selectionMode="multiselect"
-          selectedItems={selected}
-          onSelectionChange={(e, data) => setSelected(data.selectedItems)}
-          style={{ width: '100%' }}
-        >
-          <DataGridHeader>
-            <DataGridRow>
-              {({ renderHeaderCell }) => (
-                <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
-              )}
-            </DataGridRow>
-          </DataGridHeader>
-          <DataGridBody>
-            {({ item, rowId }) => (
-              <DataGridRow
-                key={rowId}
-                className={styles.row}
-                onClick={() => navigate(`/import-jobs/${item._id}`)}
-              >
-                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {loading ? (
+          <div className={styles.loading}>
+            <Spinner label="Loading..." />
+          </div>
+        ) : !jobs || jobs.length === 0 ? (
+          <div className={styles.empty}>
+            <Text>No import jobs found.</Text>
+          </div>
+        ) : (
+          <DataGrid
+            items={jobs}
+            columns={columns}
+            sortable
+            getRowId={(item) => item._id}
+            selectionMode="multiselect"
+            selectedItems={selected}
+            onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+            style={{ width: '100%' }}
+          >
+            <DataGridHeader>
+              <DataGridRow>
+                {({ renderHeaderCell }) => (
+                  <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
+                )}
               </DataGridRow>
-            )}
-          </DataGridBody>
-        </DataGrid>
-      )}
+            </DataGridHeader>
+            <DataGridBody>
+              {({ item, rowId }) => (
+                <DataGridRow
+                  key={rowId}
+                  className={styles.row}
+                  onClick={() => navigate(`/import-jobs/${item._id}`)}
+                >
+                  {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                </DataGridRow>
+              )}
+            </DataGridBody>
+          </DataGrid>
+        )}
+      </div>
       {jobs.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

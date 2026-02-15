@@ -457,16 +457,16 @@ export default function StagedTransactionReview() {
       )}
 
       {/* Grid */}
-      {!selectedJobId ? (
-        <div style={{ padding: '48px', textAlign: 'center' }}>
-          <Text style={{ color: tokens.colorNeutralForeground3 }}>Select an import job to review staged transactions.</Text>
-        </div>
-      ) : loading ? (
-        <div className={styles.loading}><Spinner label="Loading..." /></div>
-      ) : filteredTxs.length === 0 ? (
-        <div className={styles.empty}><Text>No staged transactions found.</Text></div>
-      ) : (
-        <div className={styles.gridWrapper}>
+      <div className={styles.gridWrapper}>
+        {!selectedJobId ? (
+          <div style={{ padding: '48px', textAlign: 'center' }}>
+            <Text style={{ color: tokens.colorNeutralForeground3 }}>Select an import job to review staged transactions.</Text>
+          </div>
+        ) : loading ? (
+          <div className={styles.loading}><Spinner label="Loading..." /></div>
+        ) : filteredTxs.length === 0 ? (
+          <div className={styles.empty}><Text>No staged transactions found.</Text></div>
+        ) : (
           <DataGrid
             items={filteredTxs}
             columns={columns}
@@ -487,8 +487,8 @@ export default function StagedTransactionReview() {
               )}
             </DataGridBody>
           </DataGrid>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Summary */}
       {selectedJobId && stagedTxs.length > 0 && (

@@ -282,35 +282,37 @@ export default function TimesheetList() {
           ))}
         </Select>
       </div>
-      {loading ? (
-        <div className={styles.loading}><Spinner label="Loading..." /></div>
-      ) : entries.length === 0 ? (
-        <div className={styles.empty}><Text>No timesheet entries found for this period.</Text></div>
-      ) : (
-        <DataGrid
-          items={entries}
-          columns={columns}
-          sortable
-          getRowId={(item) => item._id}
-          selectionMode="multiselect"
-          selectedItems={selected}
-          onSelectionChange={(e, data) => setSelected(data.selectedItems)}
-          style={{ width: '100%' }}
-        >
-          <DataGridHeader>
-            <DataGridRow>
-              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
-            </DataGridRow>
-          </DataGridHeader>
-          <DataGridBody>
-            {({ item, rowId }) => (
-              <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/timesheets/${item._id}`)}>
-                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {loading ? (
+          <div className={styles.loading}><Spinner label="Loading..." /></div>
+        ) : entries.length === 0 ? (
+          <div className={styles.empty}><Text>No timesheet entries found for this period.</Text></div>
+        ) : (
+          <DataGrid
+            items={entries}
+            columns={columns}
+            sortable
+            getRowId={(item) => item._id}
+            selectionMode="multiselect"
+            selectedItems={selected}
+            onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+            style={{ width: '100%' }}
+          >
+            <DataGridHeader>
+              <DataGridRow>
+                {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
               </DataGridRow>
-            )}
-          </DataGridBody>
-        </DataGrid>
-      )}
+            </DataGridHeader>
+            <DataGridBody>
+              {({ item, rowId }) => (
+                <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/timesheets/${item._id}`)}>
+                  {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                </DataGridRow>
+              )}
+            </DataGridBody>
+          </DataGrid>
+        )}
+      </div>
       {entries.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

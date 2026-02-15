@@ -129,39 +129,41 @@ export default function ClientList() {
         searchValue={search}
         onSearchChange={setSearch}
       />
-      {loading ? (
-        <div className={styles.loading}><Spinner label="Loading..." /></div>
-      ) : filtered.length === 0 ? (
-        <div className={styles.empty}><Text>No clients found. Click 'New Client' to create one.</Text></div>
-      ) : (
-        <DataGrid
-          items={filtered}
-          columns={columns}
-          sortable
-          getRowId={(item) => item._id}
-          selectionMode="multiselect"
-          selectedItems={selected}
-          onSelectionChange={(e, data) => setSelected(data.selectedItems)}
-          style={{ width: '100%' }}
-        >
-          <DataGridHeader>
-            <DataGridRow>
-              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
-            </DataGridRow>
-          </DataGridHeader>
-          <DataGridBody>
-            {({ item, rowId }) => (
-              <DataGridRow
-                key={rowId}
-                className={styles.row}
-                onClick={() => navigate(`/clients/${item._id}`)}
-              >
-                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {loading ? (
+          <div className={styles.loading}><Spinner label="Loading..." /></div>
+        ) : filtered.length === 0 ? (
+          <div className={styles.empty}><Text>No clients found. Click 'New Client' to create one.</Text></div>
+        ) : (
+          <DataGrid
+            items={filtered}
+            columns={columns}
+            sortable
+            getRowId={(item) => item._id}
+            selectionMode="multiselect"
+            selectedItems={selected}
+            onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+            style={{ width: '100%' }}
+          >
+            <DataGridHeader>
+              <DataGridRow>
+                {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
               </DataGridRow>
-            )}
-          </DataGridBody>
-        </DataGrid>
-      )}
+            </DataGridHeader>
+            <DataGridBody>
+              {({ item, rowId }) => (
+                <DataGridRow
+                  key={rowId}
+                  className={styles.row}
+                  onClick={() => navigate(`/clients/${item._id}`)}
+                >
+                  {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                </DataGridRow>
+              )}
+            </DataGridBody>
+          </DataGrid>
+        )}
+      </div>
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}

@@ -356,7 +356,9 @@ export default function ExpenseList() {
           ))}
         </Select>
       </div>
-      {renderGrid()}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {renderGrid()}
+      </div>
       {entries.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>
