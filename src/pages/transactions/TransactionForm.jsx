@@ -35,8 +35,9 @@ import {
   createTableColumn,
   Radio,
   SearchBox,
+  Checkbox,
 } from '@fluentui/react-components';
-import { SaveRegular, AddRegular, LinkRegular } from '@fluentui/react-icons';
+import { SaveRegular, AddRegular, LinkRegular, LinkMultipleRegular } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import { transactionsApi, invoicesApi } from '../../api/index.js';
@@ -82,7 +83,7 @@ const invoiceStatusColors = {
   posted: 'success',
 };
 
-const invoiceColumns = [
+const baseInvoiceColumns = [
   createTableColumn({
     columnId: 'invoiceNumber',
     compare: (a, b) => (a.invoiceNumber || '').localeCompare(b.invoiceNumber || ''),
@@ -150,6 +151,7 @@ export default function TransactionForm() {
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
+  const [showLinkedInvoices, setShowLinkedInvoices] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -220,6 +222,7 @@ export default function TransactionForm() {
     setInvoicePickerOpen(true);
     setInvoiceSearch('');
     setSelectedInvoiceId(null);
+    setShowLinkedInvoices(false);
     setInvoicesLoading(true);
     try {
       const result = await invoicesApi.getAll();
@@ -231,15 +234,45 @@ export default function TransactionForm() {
     }
   }, []);
 
+  const invoiceColumns = useMemo(() => [
+    createTableColumn({
+      columnId: 'linked',
+      compare: (a, b) => {
+        const aLinked = (a.transactions || []).includes(id) ? 1 : 0;
+        const bLinked = (b.transactions || []).includes(id) ? 1 : 0;
+        return aLinked - bLinked;
+      },
+      renderHeaderCell: () => '',
+      renderCell: (item) => {
+        const isLinked = (item.transactions || []).includes(id);
+        if (!isLinked) return null;
+        return (
+          <TableCellLayout>
+            <Tooltip content="This invoice is already linked to this transaction" relationship="label" withArrow>
+              <LinkMultipleRegular style={{ color: tokens.colorBrandForeground1, fontSize: '16px' }} />
+            </Tooltip>
+          </TableCellLayout>
+        );
+      },
+    }),
+    ...baseInvoiceColumns,
+  ], [id]);
+
   const filteredInvoices = useMemo(() => {
-    if (!invoiceSearch) return invoices;
-    const q = invoiceSearch.toLowerCase();
-    return invoices.filter((inv) =>
-      (inv.invoiceNumber || '').toLowerCase().includes(q) ||
-      (inv.clientName || '').toLowerCase().includes(q) ||
-      (inv.status || '').toLowerCase().includes(q)
-    );
-  }, [invoices, invoiceSearch]);
+    let list = invoices;
+    if (!showLinkedInvoices) {
+      list = list.filter((inv) => !(inv.transactions?.length > 0));
+    }
+    if (invoiceSearch) {
+      const q = invoiceSearch.toLowerCase();
+      list = list.filter((inv) =>
+        (inv.invoiceNumber || '').toLowerCase().includes(q) ||
+        (inv.clientName || '').toLowerCase().includes(q) ||
+        (inv.status || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [invoices, invoiceSearch, showLinkedInvoices]);
 
   const handleInvoiceConfirm = async () => {
     if (!selectedInvoiceId) return;
@@ -470,13 +503,20 @@ export default function TransactionForm() {
           <DialogBody>
             <DialogTitle>Link to Invoice</DialogTitle>
             <DialogContent>
-              <div style={{ marginBottom: '12px' }}>
+              <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <SearchBox
                   placeholder="Search by invoice number, client, or status..."
                   value={invoiceSearch}
                   onChange={(e, d) => setInvoiceSearch(d.value)}
                   size="small"
-                  style={{ width: '100%' }}
+                  style={{ flex: 1 }}
+                />
+                <Checkbox
+                  checked={showLinkedInvoices}
+                  onChange={(e, d) => setShowLinkedInvoices(d.checked)}
+                  label="Show linked"
+                  size="medium"
+                  style={{ whiteSpace: 'nowrap' }}
                 />
               </div>
               <div style={{ maxHeight: '400px', overflow: 'auto' }}>
