@@ -89,6 +89,54 @@ useEffect(() => {
 }, [id, isNew, setBase]);
 ```
 
+## GOLDEN RULE: Query String Pre-fill
+
+**Every form MUST support query string parameters.** This is a core platform feature — any form (new or edit, any entity) can be opened with query params that map to entity properties. Pre-filled fields show the blue changed indicator automatically.
+
+**This is built into `useFormTracker`.** The hook's `setBase()` method automatically applies query params from `window.location.search` on its first call. No manual handling is needed.
+
+### How it works (inside `useFormTracker`)
+
+1. On hook init, `parseQueryParams()` reads all URL query params with auto type coercion (booleans, numbers, strings)
+2. On the first `setBase()` call, the base is set (establishing the "clean" state), then query params are applied via `setForm()` on top
+3. Result: overridden fields appear as changed (blue indicator), form is dirty, navigation guard activates
+
+### What this means for form authors
+
+- **Do nothing extra.** Just call `setBase()` as normal with defaults (new) or loaded data (edit). The hook handles query params automatically.
+- **All query params are passed through.** Parameter names map to form property names. No filtering — the developer navigating to the form is responsible for passing valid keys.
+- **Type coercion is automatic:** `"true"`/`"false"` → boolean, numeric strings → `parseFloat()`, everything else → string.
+- **Works in both new and edit modes.** On edit, query params override loaded record values.
+
+### Example: navigating with pre-fill
+
+```jsx
+// From TransactionForm — creates expense pre-filled from transaction data
+const params = new URLSearchParams();
+params.set('date', data.date);
+params.set('amount', String(Math.abs(data.amount)));
+params.set('description', data.description || '');
+params.set('transactionId', id);
+navigate(`/expenses/new?${params.toString()}`);
+```
+
+### Side-effect params (e.g. `transactionId`)
+
+Some query params are not form fields but trigger post-save side effects (e.g. linking an expense to a transaction). Read these separately — do NOT use `useSearchParams` from react-router (it causes re-renders). Use `window.location.search` directly:
+
+```jsx
+const sourceTransactionId = useMemo(() => {
+  if (!isNew) return null;
+  return new URLSearchParams(window.location.search).get('transactionId');
+}, [isNew]);
+```
+
+### NEVER
+
+- **NEVER** manually parse query params and merge them into `setBase()` — this makes them invisible to dirty tracking
+- **NEVER** use `useSearchParams` for form field pre-fill — the hook handles it
+- **NEVER** filter or ignore unknown query params — pass everything through
+
 ## Save Pattern
 
 `saveForm` returns `{ ok: boolean, id?: string }` — it does NOT navigate.

@@ -293,6 +293,7 @@ export default function TransactionForm() {
     params.set('date', data.date);
     params.set('amount', String(Math.abs(data.amount)));
     params.set('description', data.description || '');
+    params.set('transactionId', id);
     navigate(`/expenses/new?${params.toString()}`);
   };
 

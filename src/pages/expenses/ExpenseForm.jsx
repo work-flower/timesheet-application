@@ -20,7 +20,7 @@ import {
   BreadcrumbDivider,
   BreadcrumbButton,
 } from '@fluentui/react-components';
-import { expensesApi, projectsApi, clientsApi } from '../../api/index.js';
+import { expensesApi, projectsApi, clientsApi, transactionsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -65,6 +65,10 @@ export default function ExpenseForm() {
   const navigate = useNavigate();
   const isNew = !id;
   const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const sourceTransactionId = useMemo(() => {
+    if (!isNew) return null;
+    return new URLSearchParams(window.location.search).get('transactionId');
+  }, [isNew]);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -192,6 +196,10 @@ export default function ExpenseForm() {
     try {
       if (isNew) {
         const created = await expensesApi.create(form);
+        if (sourceTransactionId) {
+          await expensesApi.linkTransaction(created._id, sourceTransactionId);
+          await transactionsApi.updateMapping(sourceTransactionId, { status: 'matched' });
+        }
         return { ok: true, id: created._id };
       } else {
         const updated = await expensesApi.update(id, form);
@@ -216,7 +224,7 @@ export default function ExpenseForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, setBase, today]);
+  }, [form, isNew, id, setBase, today, sourceTransactionId]);
 
   const handleSave = async () => {
     const result = await saveForm();
