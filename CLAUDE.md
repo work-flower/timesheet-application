@@ -6,6 +6,16 @@ A single-user desktop timesheet and invoicing application for UK technology cont
 
 No authentication — single user, local app.
 
+## Implementation Guides
+
+Before implementing new features, **always consult `ai-guides/`** for established patterns and conventions:
+
+- [`ai-guides/forms.md`](ai-guides/forms.md) — Form structure, save pattern, locking, dirty tracking, field layout
+- [`ai-guides/list-views.md`](ai-guides/list-views.md) — DataGrid, filters, pagination, search, summary footer
+- [`ai-guides/api-services.md`](ai-guides/api-services.md) — Backend CRUD template, OData support, enrichment, route/API client patterns
+- [`ai-guides/routing-and-navigation.md`](ai-guides/routing-and-navigation.md) — Route registration, sidebar navigation, guards, breadcrumbs
+- [`ai-guides/components.md`](ai-guides/components.md) — Shared component contracts (FormCommandBar, CommandBar, FormSection, FormField, etc.)
+
 ## Tech Stack
 
 - **Frontend:** React 18, React Router v6, Vite, Fluent UI v9 (`@fluentui/react-components`) — **MUST use Fluent UI React components for all UI. Do not replace with HTML tables, custom components, or other libraries unless explicitly asked.**
