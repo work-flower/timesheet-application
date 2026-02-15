@@ -128,31 +128,37 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'clientName',
+    compare: (a, b) => (a.clientName || '').localeCompare(b.clientName || ''),
     renderHeaderCell: () => 'Client',
     renderCell: (item) => <TableCellLayout>{item.clientName}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'projectName',
+    compare: (a, b) => (a.projectName || '').localeCompare(b.projectName || ''),
     renderHeaderCell: () => 'Project',
     renderCell: (item) => <TableCellLayout>{item.projectName}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'hours',
+    compare: (a, b) => (a.hours || 0) - (b.hours || 0),
     renderHeaderCell: () => 'Hours',
     renderCell: (item) => <TableCellLayout>{item.hours}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'days',
+    compare: (a, b) => (a.days || 0) - (b.days || 0),
     renderHeaderCell: () => 'Days',
     renderCell: (item) => <TableCellLayout>{item.days != null ? item.days.toFixed(2) : '—'}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'amount',
+    compare: (a, b) => (a.amount || 0) - (b.amount || 0),
     renderHeaderCell: () => 'Amount',
     renderCell: (item) => <TableCellLayout>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'notes',
+    compare: (a, b) => (a.notes || '').localeCompare(b.notes || ''),
     renderHeaderCell: () => 'Notes',
     renderCell: (item) => <TableCellLayout>{item.notes}</TableCellLayout>,
   }),

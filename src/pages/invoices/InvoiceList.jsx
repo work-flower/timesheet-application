@@ -116,6 +116,7 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'clientName',
+    compare: (a, b) => (a.clientName || '').localeCompare(b.clientName || ''),
     renderHeaderCell: () => 'Client',
     renderCell: (item) => (
       <TableCellLayout>{item.clientName}</TableCellLayout>
@@ -123,6 +124,7 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'period',
+    compare: (a, b) => (a.servicePeriodStart || '').localeCompare(b.servicePeriodStart || ''),
     renderHeaderCell: () => 'Period',
     renderCell: (item) => (
       <TableCellLayout>
@@ -134,6 +136,7 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'status',
+    compare: (a, b) => (a.status || '').localeCompare(b.status || ''),
     renderHeaderCell: () => 'Status',
     renderCell: (item) => (
       <TableCellLayout>
@@ -155,6 +158,7 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'paymentStatus',
+    compare: (a, b) => (a.paymentStatus || '').localeCompare(b.paymentStatus || ''),
     renderHeaderCell: () => 'Payment',
     renderCell: (item) => (
       <TableCellLayout>

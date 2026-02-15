@@ -129,21 +129,25 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'accountName',
+    compare: (a, b) => (a.accountName || '').localeCompare(b.accountName || ''),
     renderHeaderCell: () => 'Account',
     renderCell: (item) => <TableCellLayout>{item.accountName}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'accountNumber',
+    compare: (a, b) => (a.accountNumber || '').localeCompare(b.accountNumber || ''),
     renderHeaderCell: () => 'Account No.',
     renderCell: (item) => <TableCellLayout>{item.accountNumber || '\u2014'}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'description',
+    compare: (a, b) => (a.description || '').localeCompare(b.description || ''),
     renderHeaderCell: () => 'Description',
     renderCell: (item) => <TableCellLayout>{item.description}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'amount',
+    compare: (a, b) => (a.amount || 0) - (b.amount || 0),
     renderHeaderCell: () => 'Amount',
     renderCell: (item) => (
       <TableCellLayout>
@@ -155,16 +159,19 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'balance',
+    compare: (a, b) => (a.balance || 0) - (b.balance || 0),
     renderHeaderCell: () => 'Balance',
     renderCell: (item) => <TableCellLayout>{item.balance != null ? fmtGBP.format(item.balance) : '\u2014'}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'reference',
+    compare: (a, b) => (a.reference || '').localeCompare(b.reference || ''),
     renderHeaderCell: () => 'Reference',
     renderCell: (item) => <TableCellLayout>{item.reference || '\u2014'}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'status',
+    compare: (a, b) => (a.status || '').localeCompare(b.status || ''),
     renderHeaderCell: () => 'Status',
     renderCell: (item) => (
       <TableCellLayout>
@@ -176,11 +183,13 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'clientName',
+    compare: (a, b) => (a.clientName || '').localeCompare(b.clientName || ''),
     renderHeaderCell: () => 'Client',
     renderCell: (item) => <TableCellLayout>{item.clientName || '\u2014'}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'projectName',
+    compare: (a, b) => (a.projectName || '').localeCompare(b.projectName || ''),
     renderHeaderCell: () => 'Project',
     renderCell: (item) => <TableCellLayout>{item.projectName || '\u2014'}</TableCellLayout>,
   }),

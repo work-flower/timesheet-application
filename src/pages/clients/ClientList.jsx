@@ -68,21 +68,25 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'primaryContactName',
+    compare: (a, b) => (a.primaryContactName || '').localeCompare(b.primaryContactName || ''),
     renderHeaderCell: () => 'Primary Contact',
     renderCell: (item) => <TableCellLayout>{item.primaryContactName}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'primaryContactEmail',
+    compare: (a, b) => (a.primaryContactEmail || '').localeCompare(b.primaryContactEmail || ''),
     renderHeaderCell: () => 'Email',
     renderCell: (item) => <TableCellLayout>{item.primaryContactEmail}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'defaultRate',
+    compare: (a, b) => (a.defaultRate || 0) - (b.defaultRate || 0),
     renderHeaderCell: () => 'Default Rate',
     renderCell: (item) => <TableCellLayout>{item.defaultRate ? `£${item.defaultRate}/day` : '—'}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'currency',
+    compare: (a, b) => (a.currency || '').localeCompare(b.currency || ''),
     renderHeaderCell: () => 'Currency',
     renderCell: (item) => <TableCellLayout>{item.currency}</TableCellLayout>,
   }),

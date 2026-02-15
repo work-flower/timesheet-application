@@ -48,21 +48,25 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'clientName',
+    compare: (a, b) => (a.clientName || '').localeCompare(b.clientName || ''),
     renderHeaderCell: () => 'Client',
     renderCell: (item) => <TableCellLayout>{item.clientName}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'ir35Status',
+    compare: (a, b) => (a.ir35Status || '').localeCompare(b.ir35Status || ''),
     renderHeaderCell: () => 'IR35 Status',
     renderCell: (item) => <TableCellLayout>{item.ir35Status?.replace(/_/g, ' ')}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'effectiveRate',
+    compare: (a, b) => (a.effectiveRate || 0) - (b.effectiveRate || 0),
     renderHeaderCell: () => 'Rate',
     renderCell: (item) => <TableCellLayout>{`£${item.effectiveRate}/day`}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'status',
+    compare: (a, b) => (a.status || '').localeCompare(b.status || ''),
     renderHeaderCell: () => 'Status',
     renderCell: (item) => <TableCellLayout>{item.status === 'active' ? 'Active' : 'Archived'}</TableCellLayout>,
   }),

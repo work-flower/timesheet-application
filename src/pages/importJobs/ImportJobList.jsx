@@ -101,6 +101,7 @@ const statusLabels = {
 const columns = [
   createTableColumn({
     columnId: 'filename',
+    compare: (a, b) => (a.filename || '').localeCompare(b.filename || ''),
     renderHeaderCell: () => 'Filename',
     renderCell: (item) => (
       <TableCellLayout>
@@ -112,6 +113,7 @@ const columns = [
   }),
   createTableColumn({
     columnId: 'status',
+    compare: (a, b) => (a.status || '').localeCompare(b.status || ''),
     renderHeaderCell: () => 'Status',
     renderCell: (item) => (
       <TableCellLayout>

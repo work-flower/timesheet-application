@@ -327,9 +327,7 @@ export default function StagedTransactionReview() {
         columnId: sourceField,
         compare: targetField === 'amount' || targetField === 'balance'
           ? (a, b) => (Number(a[sourceField]) || 0) - (Number(b[sourceField]) || 0)
-          : targetField === 'date'
-            ? (a, b) => (a[sourceField] || '').localeCompare(b[sourceField] || '')
-            : undefined,
+          : (a, b) => (String(a[sourceField] ?? '')).localeCompare(String(b[sourceField] ?? '')),
         renderHeaderCell: () => sourceField,
         renderCell: (item) => {
           const value = item[sourceField];
