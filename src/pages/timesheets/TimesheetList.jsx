@@ -193,7 +193,15 @@ export default function TimesheetList() {
 
   useEffect(() => {
     Promise.all([clientsApi.getAll(), projectsApi.getAll()])
-      .then(([c, p]) => { setClients(c); setAllProjects(p); });
+      .then(([c, p]) => {
+        setClients(c);
+        setAllProjects(p);
+        // Clear stale localStorage IDs that no longer exist
+        const clientIds = new Set(c.map((cl) => cl._id));
+        const projectIds = new Set(p.map((pr) => pr._id));
+        setClientId((prev) => clientIds.has(prev) ? prev : '');
+        setProjectId((prev) => projectIds.has(prev) ? prev : '');
+      });
   }, []);
 
   const dateRange = useMemo(() => {

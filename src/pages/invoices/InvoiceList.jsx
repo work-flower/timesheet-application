@@ -189,7 +189,12 @@ export default function InvoiceList() {
   useEffect(() => { localStorage.setItem('invoices.payment', paymentFilter); }, [paymentFilter]);
 
   useEffect(() => {
-    clientsApi.getAll().then(setClients);
+    clientsApi.getAll().then((c) => {
+      setClients(c);
+      // Clear stale localStorage ID that no longer exists
+      const clientIds = new Set(c.map((cl) => cl._id));
+      setClientId((prev) => clientIds.has(prev) ? prev : '');
+    });
   }, []);
 
   useEffect(() => {

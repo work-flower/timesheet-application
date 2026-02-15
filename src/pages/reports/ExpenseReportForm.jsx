@@ -180,7 +180,11 @@ export default function ExpenseReportForm() {
 
   // Load clients on mount
   useEffect(() => {
-    clientsApi.getAll().then(setClients).catch((err) => setError(err.message));
+    clientsApi.getAll().then((c) => {
+      setClients(c);
+      const clientIds = new Set(c.map((cl) => cl._id));
+      setSelectedClientId((prev) => clientIds.has(prev) ? prev : '');
+    }).catch((err) => setError(err.message));
   }, []);
 
   // Track whether this is initial mount to avoid resetting cached selections

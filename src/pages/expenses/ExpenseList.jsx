@@ -210,7 +210,17 @@ export default function ExpenseList() {
 
   useEffect(() => {
     Promise.all([clientsApi.getAll(), projectsApi.getAll(), expensesApi.getTypes()])
-      .then(([c, p, t]) => { setClients(c); setAllProjects(p); setExpenseTypes(t); });
+      .then(([c, p, t]) => {
+        setClients(c);
+        setAllProjects(p);
+        setExpenseTypes(t);
+        // Clear stale localStorage IDs that no longer exist
+        const clientIds = new Set(c.map((cl) => cl._id));
+        const projectIds = new Set(p.map((pr) => pr._id));
+        setClientId((prev) => clientIds.has(prev) ? prev : '');
+        setProjectId((prev) => projectIds.has(prev) ? prev : '');
+        setExpenseType((prev) => t.includes(prev) ? prev : '');
+      });
   }, []);
 
   const dateRange = useMemo(() => {
