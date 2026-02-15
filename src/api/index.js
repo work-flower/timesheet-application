@@ -238,6 +238,8 @@ export const stagedTransactionsApi = {
   create: (data) => request('/staged-transactions', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/staged-transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/staged-transactions/${id}`, { method: 'DELETE' }),
+  submit: (importJobId, fieldMapping) => request('/staged-transactions/submit', { method: 'POST', body: JSON.stringify({ importJobId, fieldMapping }) }),
+  checkDuplicates: (importJobId) => request('/staged-transactions/check-duplicates', { method: 'POST', body: JSON.stringify({ importJobId }) }),
 };
 
 // AI Config

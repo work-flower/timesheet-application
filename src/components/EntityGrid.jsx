@@ -50,6 +50,7 @@ export default function EntityGrid({
   onSelectionChange,
   getRowId = (item) => item._id,
   sortable = true,
+  scrollable = false,
 }) {
   const styles = useStyles();
 
@@ -81,7 +82,7 @@ export default function EntityGrid({
   );
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} style={scrollable ? { overflow: 'auto' } : undefined}>
       <DataGrid
         items={items}
         columns={gridColumns}

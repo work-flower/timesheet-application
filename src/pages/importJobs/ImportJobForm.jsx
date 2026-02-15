@@ -107,7 +107,7 @@ const fmtGBP = (v) => new Intl.NumberFormat('en-GB', { style: 'currency', curren
 const terminalStatuses = new Set(['abandoned', 'failed']);
 
 // Keys to exclude from dynamic staged transaction columns
-const EXCLUDED_KEYS = new Set(['_id', 'importJobId', 'createdAt', 'updatedAt', 'compositeHash']);
+const EXCLUDED_KEYS = new Set(['_id', 'importJobId', 'createdAt', 'updatedAt', 'compositeHash', 'action']);
 
 export default function ImportJobForm() {
   const styles = useStyles();
@@ -516,6 +516,7 @@ export default function ImportJobForm() {
               items={stagedTransactions}
               emptyMessage="No staged transactions."
               getRowId={(item) => item._id}
+              scrollable
             />
           </>
         )}

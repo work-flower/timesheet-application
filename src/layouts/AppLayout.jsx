@@ -18,6 +18,9 @@ import {
   DocumentBulletListRegular,
   DatabaseRegular,
   ArrowImportRegular,
+  TableRegular,
+  WalletRegular,
+  ArrowSwapRegular,
   SettingsRegular,
   NavigationRegular,
   ChevronDownRegular,
@@ -199,11 +202,20 @@ const navItems = [
   { to: '/expenses', label: 'Expenses', icon: <ReceiptRegular /> },
   { to: '/invoices', label: 'Invoices', icon: <MoneyRegular /> },
   {
+    label: 'Banking',
+    icon: <WalletRegular />,
+    prefix: '/transactions',
+    children: [
+      { to: '/transactions', label: 'Transactions', icon: <ArrowSwapRegular /> },
+    ],
+  },
+  {
     label: 'Data Management',
     icon: <DatabaseRegular />,
-    prefix: '/import-jobs',
+    prefix: ['/import-jobs', '/staged-transactions'],
     children: [
       { to: '/import-jobs', label: 'Import Transactions', icon: <ArrowImportRegular /> },
+      { to: '/staged-transactions', label: 'Staged Transactions', icon: <TableRegular /> },
     ],
   },
   {
@@ -223,18 +235,25 @@ export default function AppLayout() {
   const { guardedNavigate } = useUnsavedChanges();
   const [collapsed, setCollapsed] = useState(false);
 
-  const isChildRouteActive = (prefix) => location.pathname.startsWith(prefix);
+  const isChildRouteActive = (prefix) => {
+    if (Array.isArray(prefix)) return prefix.some((p) => location.pathname.startsWith(p));
+    return location.pathname.startsWith(prefix);
+  };
 
   const [reportsExpanded, setReportsExpanded] = useState(
     () => isChildRouteActive('/reports'),
   );
+  const [bankingExpanded, setBankingExpanded] = useState(
+    () => isChildRouteActive('/transactions'),
+  );
   const [dataExpanded, setDataExpanded] = useState(
-    () => isChildRouteActive('/import-jobs'),
+    () => isChildRouteActive(['/import-jobs', '/staged-transactions']),
   );
 
   const expandState = {
-    '/reports': [reportsExpanded, setReportsExpanded],
-    '/import-jobs': [dataExpanded, setDataExpanded],
+    Reports: [reportsExpanded, setReportsExpanded],
+    Banking: [bankingExpanded, setBankingExpanded],
+    'Data Management': [dataExpanded, setDataExpanded],
   };
 
   function isActive(item) {
@@ -287,11 +306,11 @@ export default function AppLayout() {
       });
     }
 
-    const [isExpanded, setIsExpanded] = expandState[item.prefix] || [false, () => {}];
+    const [isExpanded, setIsExpanded] = expandState[item.label] || [false, () => {}];
     const expanded = isExpanded || parentActive;
 
     return (
-      <div key={item.prefix}>
+      <div key={item.label}>
         <div
           className={parentActive ? styles.navParentActive : styles.navParent}
           onClick={() => setIsExpanded((v) => !v)}

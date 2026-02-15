@@ -41,6 +41,29 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+router.post('/submit', async (req, res) => {
+  try {
+    const { importJobId, fieldMapping } = req.body;
+    if (!importJobId) return res.status(400).json({ error: 'importJobId is required' });
+    if (!fieldMapping) return res.status(400).json({ error: 'fieldMapping is required' });
+    const result = await stagedTransactionService.submit(importJobId, fieldMapping);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/check-duplicates', async (req, res) => {
+  try {
+    const { importJobId } = req.body;
+    if (!importJobId) return res.status(400).json({ error: 'importJobId is required' });
+    const result = await stagedTransactionService.checkDuplicates(importJobId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', async (req, res) => {
   try {
     await stagedTransactionService.remove(req.params.id);

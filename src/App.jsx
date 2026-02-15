@@ -17,6 +17,8 @@ import InvoiceForm from './pages/invoices/InvoiceForm.jsx';
 import Settings from './pages/settings/Settings.jsx';
 import ImportJobList from './pages/importJobs/ImportJobList.jsx';
 import ImportJobForm from './pages/importJobs/ImportJobForm.jsx';
+import StagedTransactionReview from './pages/stagedTransactions/StagedTransactionReview.jsx';
+import TransactionList from './pages/transactions/TransactionList.jsx';
 import ReportForm from './pages/reports/ReportForm.jsx';
 import ExpenseReportForm from './pages/reports/ExpenseReportForm.jsx';
 
@@ -46,6 +48,8 @@ export default function App() {
               <Route path="/import-jobs" element={<ImportJobList />} />
               <Route path="/import-jobs/new" element={<ImportJobForm />} />
               <Route path="/import-jobs/:id" element={<ImportJobForm />} />
+              <Route path="/staged-transactions" element={<StagedTransactionReview />} />
+              <Route path="/transactions" element={<TransactionList />} />
               <Route path="/reports" element={<Navigate to="/reports/timesheets" replace />} />
               <Route path="/reports/timesheets" element={<ReportForm />} />
               <Route path="/reports/expenses" element={<ExpenseReportForm />} />

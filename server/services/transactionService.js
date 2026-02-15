@@ -68,10 +68,12 @@ export async function create(data) {
   const now = new Date().toISOString();
   return transactions.insert({
     accountName: data.accountName || '',
+    accountNumber: data.accountNumber || '',
     date: data.date,
     description: data.description,
     amount: Number(data.amount),
     balance: data.balance != null ? Number(data.balance) : null,
+    reference: data.reference || null,
     importJobId: data.importJobId,
     source: data.source || null,
     status: 'unmatched',
@@ -80,6 +82,8 @@ export async function create(data) {
     expenseId: data.expenseId || null,
     clientId: data.clientId || null,
     projectId: data.projectId || null,
+    isLocked: true,
+    isLockedReason: 'Transactions are read-only by default',
     createdAt: now,
     updatedAt: now,
   });
