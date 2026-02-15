@@ -6,9 +6,17 @@ import {
   Text,
   Select,
   Badge,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
+  Spinner,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import { importJobsApi } from '../../api/index.js';
 
@@ -53,6 +61,25 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase400,
   },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
+  row: {
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
 });
 
 const statusColors = {
@@ -70,30 +97,38 @@ const statusLabels = {
 };
 
 const columns = [
-  {
-    key: 'filename',
-    label: 'Filename',
-    render: (item) => (
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-        {item.filename}
-      </span>
+  createTableColumn({
+    columnId: 'filename',
+    renderHeaderCell: () => 'Filename',
+    renderCell: (item) => (
+      <TableCellLayout>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+          {item.filename}
+        </span>
+      </TableCellLayout>
     ),
-  },
-  {
-    key: 'status',
-    label: 'Status',
-    render: (item) => (
-      <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
-        {statusLabels[item.status] || item.status}
-      </Badge>
+  }),
+  createTableColumn({
+    columnId: 'status',
+    renderHeaderCell: () => 'Status',
+    renderCell: (item) => (
+      <TableCellLayout>
+        <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
+          {statusLabels[item.status] || item.status}
+        </Badge>
+      </TableCellLayout>
     ),
-  },
-  {
-    key: 'createdAt',
-    label: 'Created',
+  }),
+  createTableColumn({
+    columnId: 'createdAt',
     compare: (a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''),
-    render: (item) => item.createdAt ? new Date(item.createdAt).toLocaleDateString('en-GB') : '—',
-  },
+    renderHeaderCell: () => 'Created',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.createdAt ? new Date(item.createdAt).toLocaleDateString('en-GB') : '—'}
+      </TableCellLayout>
+    ),
+  }),
 ];
 
 const terminalStatuses = new Set(['abandoned', 'failed']);
@@ -161,15 +196,45 @@ export default function ImportJobList() {
           <option value="failed">Failed</option>
         </Select>
       </div>
-      <EntityGrid
-        columns={columns}
-        items={jobs}
-        loading={loading}
-        emptyMessage="No import jobs found."
-        onRowClick={(item) => navigate(`/import-jobs/${item._id}`)}
-        selectedIds={selected}
-        onSelectionChange={setSelected}
-      />
+      {loading ? (
+        <div className={styles.loading}>
+          <Spinner label="Loading..." />
+        </div>
+      ) : !jobs || jobs.length === 0 ? (
+        <div className={styles.empty}>
+          <Text>No import jobs found.</Text>
+        </div>
+      ) : (
+        <DataGrid
+          items={jobs}
+          columns={columns}
+          sortable
+          getRowId={(item) => item._id}
+          selectionMode="multiselect"
+          selectedItems={selected}
+          onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+          style={{ width: '100%' }}
+        >
+          <DataGridHeader>
+            <DataGridRow>
+              {({ renderHeaderCell }) => (
+                <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
+              )}
+            </DataGridRow>
+          </DataGridHeader>
+          <DataGridBody>
+            {({ item, rowId }) => (
+              <DataGridRow
+                key={rowId}
+                className={styles.row}
+                onClick={() => navigate(`/import-jobs/${item._id}`)}
+              >
+                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+              </DataGridRow>
+            )}
+          </DataGridBody>
+        </DataGrid>
+      )}
       {jobs.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

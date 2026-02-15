@@ -6,9 +6,17 @@ import {
   ToggleButton,
   Select,
   Badge,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
+  Spinner,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import { transactionsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -64,6 +72,19 @@ const useStyles = makeStyles({
       borderColor: tokens.colorBrandStroke1,
     },
   },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
 });
 
 function getWeekRange() {
@@ -98,52 +119,69 @@ const statusColors = {
 };
 
 const columns = [
-  { key: 'date', label: 'Date', compare: (a, b) => a.date.localeCompare(b.date) },
-  { key: 'accountName', label: 'Account' },
-  {
-    key: 'accountNumber',
-    label: 'Account No.',
-    render: (item) => item.accountNumber || '—',
-  },
-  { key: 'description', label: 'Description' },
-  {
-    key: 'amount',
-    label: 'Amount',
-    render: (item) => (
-      <span style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
-        {fmtGBP.format(item.amount)}
-      </span>
+  createTableColumn({
+    columnId: 'date',
+    compare: (a, b) => a.date.localeCompare(b.date),
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'accountName',
+    renderHeaderCell: () => 'Account',
+    renderCell: (item) => <TableCellLayout>{item.accountName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'accountNumber',
+    renderHeaderCell: () => 'Account No.',
+    renderCell: (item) => <TableCellLayout>{item.accountNumber || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'description',
+    renderHeaderCell: () => 'Description',
+    renderCell: (item) => <TableCellLayout>{item.description}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'amount',
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => (
+      <TableCellLayout>
+        <span style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
+          {fmtGBP.format(item.amount)}
+        </span>
+      </TableCellLayout>
     ),
-  },
-  {
-    key: 'balance',
-    label: 'Balance',
-    render: (item) => item.balance != null ? fmtGBP.format(item.balance) : '—',
-  },
-  {
-    key: 'reference',
-    label: 'Reference',
-    render: (item) => item.reference || '—',
-  },
-  {
-    key: 'status',
-    label: 'Status',
-    render: (item) => (
-      <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
-        {item.status}
-      </Badge>
+  }),
+  createTableColumn({
+    columnId: 'balance',
+    renderHeaderCell: () => 'Balance',
+    renderCell: (item) => <TableCellLayout>{item.balance != null ? fmtGBP.format(item.balance) : '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'reference',
+    renderHeaderCell: () => 'Reference',
+    renderCell: (item) => <TableCellLayout>{item.reference || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'status',
+    renderHeaderCell: () => 'Status',
+    renderCell: (item) => (
+      <TableCellLayout>
+        <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
+          {item.status}
+        </Badge>
+      </TableCellLayout>
     ),
-  },
-  {
-    key: 'clientName',
-    label: 'Client',
-    render: (item) => item.clientName || '—',
-  },
-  {
-    key: 'projectName',
-    label: 'Project',
-    render: (item) => item.projectName || '—',
-  },
+  }),
+  createTableColumn({
+    columnId: 'clientName',
+    renderHeaderCell: () => 'Client',
+    renderCell: (item) => <TableCellLayout>{item.clientName || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'projectName',
+    renderHeaderCell: () => 'Project',
+    renderCell: (item) => <TableCellLayout>{item.projectName || '\u2014'}</TableCellLayout>,
+  }),
 ];
 
 export default function TransactionList() {
@@ -263,12 +301,26 @@ export default function TransactionList() {
           </>
         )}
       </div>
-      <EntityGrid
-        columns={columns}
-        items={filtered}
-        loading={loading}
-        emptyMessage="No transactions found."
-      />
+      {loading ? (
+        <div className={styles.loading}><Spinner label="Loading..." /></div>
+      ) : filtered.length === 0 ? (
+        <div className={styles.empty}><Text>No transactions found.</Text></div>
+      ) : (
+        <DataGrid items={filtered} columns={columns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+          <DataGridHeader>
+            <DataGridRow>
+              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+            </DataGridRow>
+          </DataGridHeader>
+          <DataGridBody>
+            {({ item, rowId }) => (
+              <DataGridRow key={rowId}>
+                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+              </DataGridRow>
+            )}
+          </DataGridBody>
+        </DataGrid>
+      )}
       {filtered.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

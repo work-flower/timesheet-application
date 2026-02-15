@@ -4,9 +4,17 @@ import {
   makeStyles,
   tokens,
   Text,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
+  Spinner,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import { clientsApi } from '../../api/index.js';
 
@@ -23,14 +31,59 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase500,
   },
+  gridContainer: {
+    flex: 1,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
+  row: {
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
 });
 
 const columns = [
-  { key: 'companyName', label: 'Company Name', compare: (a, b) => a.companyName.localeCompare(b.companyName) },
-  { key: 'primaryContactName', label: 'Primary Contact' },
-  { key: 'primaryContactEmail', label: 'Email' },
-  { key: 'defaultRate', label: 'Default Rate', render: (item) => item.defaultRate ? `£${item.defaultRate}/day` : '—' },
-  { key: 'currency', label: 'Currency' },
+  createTableColumn({
+    columnId: 'companyName',
+    compare: (a, b) => a.companyName.localeCompare(b.companyName),
+    renderHeaderCell: () => 'Company Name',
+    renderCell: (item) => <TableCellLayout>{item.companyName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'primaryContactName',
+    renderHeaderCell: () => 'Primary Contact',
+    renderCell: (item) => <TableCellLayout>{item.primaryContactName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'primaryContactEmail',
+    renderHeaderCell: () => 'Email',
+    renderCell: (item) => <TableCellLayout>{item.primaryContactEmail}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'defaultRate',
+    renderHeaderCell: () => 'Default Rate',
+    renderCell: (item) => <TableCellLayout>{item.defaultRate ? `£${item.defaultRate}/day` : '—'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'currency',
+    renderHeaderCell: () => 'Currency',
+    renderCell: (item) => <TableCellLayout>{item.currency}</TableCellLayout>,
+  }),
 ];
 
 export default function ClientList() {
@@ -76,15 +129,39 @@ export default function ClientList() {
         searchValue={search}
         onSearchChange={setSearch}
       />
-      <EntityGrid
-        columns={columns}
-        items={filtered}
-        loading={loading}
-        emptyMessage="No clients found. Click 'New Client' to create one."
-        onRowClick={(item) => navigate(`/clients/${item._id}`)}
-        selectedIds={selected}
-        onSelectionChange={setSelected}
-      />
+      {loading ? (
+        <div className={styles.loading}><Spinner label="Loading..." /></div>
+      ) : filtered.length === 0 ? (
+        <div className={styles.empty}><Text>No clients found. Click 'New Client' to create one.</Text></div>
+      ) : (
+        <DataGrid
+          items={filtered}
+          columns={columns}
+          sortable
+          getRowId={(item) => item._id}
+          selectionMode="multiselect"
+          selectedItems={selected}
+          onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+          style={{ width: '100%' }}
+        >
+          <DataGridHeader>
+            <DataGridRow>
+              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+            </DataGridRow>
+          </DataGridHeader>
+          <DataGridBody>
+            {({ item, rowId }) => (
+              <DataGridRow
+                key={rowId}
+                className={styles.row}
+                onClick={() => navigate(`/clients/${item._id}`)}
+              >
+                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+              </DataGridRow>
+            )}
+          </DataGridBody>
+        </DataGrid>
+      )}
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}

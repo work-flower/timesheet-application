@@ -12,13 +12,20 @@ import {
   MessageBarBody,
   Tooltip,
   ToggleButton,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
 } from '@fluentui/react-components';
 import {
   SendRegular,
   DismissCircleRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import FieldMappingConfig, { autoDetectMapping, getMissingRequiredTargets } from './FieldMappingConfig.jsx';
 import { importJobsApi, stagedTransactionsApi } from '../../api/index.js';
@@ -91,6 +98,19 @@ const useStyles = makeStyles({
   unmappedCell: {
     color: tokens.colorNeutralForeground3,
     fontSize: tokens.fontSizeBase200,
+  },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
   },
 });
 
@@ -299,53 +319,56 @@ export default function StagedTransactionReview() {
       const targetField = fieldMapping[sourceField];
       const isMapped = !!targetField;
 
-      cols.push({
-        key: sourceField,
-        label: sourceField,
+      cols.push(createTableColumn({
+        columnId: sourceField,
         compare: targetField === 'amount' || targetField === 'balance'
           ? (a, b) => (Number(a[sourceField]) || 0) - (Number(b[sourceField]) || 0)
           : targetField === 'date'
             ? (a, b) => (a[sourceField] || '').localeCompare(b[sourceField] || '')
             : undefined,
-        render: (item) => {
+        renderHeaderCell: () => sourceField,
+        renderCell: (item) => {
           const value = item[sourceField];
           const isDuplicate = duplicateMap[item._id];
-
           return (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              {sourceField === sourceFields[0] && isDuplicate && (
-                <Tooltip content="Potential duplicate — a transaction with the same hash already exists" relationship="label">
-                  <WarningRegular style={{ color: tokens.colorPaletteYellowForeground1, fontSize: '16px', flexShrink: 0 }} />
-                </Tooltip>
-              )}
-              <span className={!isMapped ? styles.unmappedCell : undefined}>{value ?? '—'}</span>
-            </span>
+            <TableCellLayout>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {sourceField === sourceFields[0] && isDuplicate && (
+                  <Tooltip content="Potential duplicate — a transaction with the same hash already exists" relationship="label">
+                    <WarningRegular style={{ color: tokens.colorPaletteYellowForeground1, fontSize: '16px', flexShrink: 0 }} />
+                  </Tooltip>
+                )}
+                <span className={!isMapped ? styles.unmappedCell : undefined}>{value ?? '—'}</span>
+              </span>
+            </TableCellLayout>
           );
         },
-      });
+      }));
     }
 
     // Mark as column (last)
-    cols.push({
-      key: '_action',
-      label: 'Mark as',
-      render: (item) => {
+    cols.push(createTableColumn({
+      columnId: '_action',
+      renderHeaderCell: () => 'Mark as',
+      renderCell: (item) => {
         const action = item.action || 'unmarked';
         return (
-          <Tooltip content={ACTION_TOOLTIPS[action]} relationship="label">
-            <InteractionTag
-              size="small"
-              appearance="outline"
-              shape="circular"
-              onClick={(e) => { e.stopPropagation(); handleCycleAction(item._id, action); }}
-              style={{ cursor: 'pointer', ...ACTION_TAG_STYLES[action] }}
-            >
-              <InteractionTagPrimary style={ACTION_TAG_STYLES[action]}>{ACTION_LABELS[action]}</InteractionTagPrimary>
-            </InteractionTag>
-          </Tooltip>
+          <TableCellLayout>
+            <Tooltip content={ACTION_TOOLTIPS[action]} relationship="label">
+              <InteractionTag
+                size="small"
+                appearance="outline"
+                shape="circular"
+                onClick={(e) => { e.stopPropagation(); handleCycleAction(item._id, action); }}
+                style={{ cursor: 'pointer', ...ACTION_TAG_STYLES[action] }}
+              >
+                <InteractionTagPrimary style={ACTION_TAG_STYLES[action]}>{ACTION_LABELS[action]}</InteractionTagPrimary>
+              </InteractionTag>
+            </Tooltip>
+          </TableCellLayout>
         );
       },
-    });
+    }));
 
     return cols;
   }, [fieldMapping, duplicateMap, sourceFields, styles.unmappedCell]);
@@ -438,16 +461,32 @@ export default function StagedTransactionReview() {
         <div style={{ padding: '48px', textAlign: 'center' }}>
           <Text style={{ color: tokens.colorNeutralForeground3 }}>Select an import job to review staged transactions.</Text>
         </div>
+      ) : loading ? (
+        <div className={styles.loading}><Spinner label="Loading..." /></div>
+      ) : filteredTxs.length === 0 ? (
+        <div className={styles.empty}><Text>No staged transactions found.</Text></div>
       ) : (
         <div className={styles.gridWrapper}>
-          <EntityGrid
-            columns={columns}
+          <DataGrid
             items={filteredTxs}
-            loading={loading}
-            emptyMessage="No staged transactions found."
+            columns={columns}
+            sortable
             getRowId={(item) => item._id}
-            scrollable
-          />
+            style={{ width: '100%' }}
+          >
+            <DataGridHeader>
+              <DataGridRow>
+                {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+              </DataGridRow>
+            </DataGridHeader>
+            <DataGridBody>
+              {({ item, rowId }) => (
+                <DataGridRow key={rowId}>
+                  {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                </DataGridRow>
+              )}
+            </DataGridBody>
+          </DataGrid>
         </div>
       )}
 

@@ -7,9 +7,17 @@ import {
   ToggleButton,
   Select,
   Badge,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
+  Spinner,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import { invoicesApi, clientsApi } from '../../api/index.js';
 
@@ -54,6 +62,25 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase400,
   },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
+  row: {
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
 });
 
 const statusColors = {
@@ -69,45 +96,74 @@ const paymentColors = {
 };
 
 const columns = [
-  {
-    key: 'invoiceNumber',
-    label: 'Invoice #',
+  createTableColumn({
+    columnId: 'invoiceNumber',
     compare: (a, b) => (a.invoiceNumber || '').localeCompare(b.invoiceNumber || ''),
-    render: (item) => item.invoiceNumber || 'Draft',
-  },
-  { key: 'invoiceDate', label: 'Date', compare: (a, b) => (a.invoiceDate || '').localeCompare(b.invoiceDate || '') },
-  { key: 'clientName', label: 'Client' },
-  {
-    key: 'period',
-    label: 'Period',
-    render: (item) => item.servicePeriodStart && item.servicePeriodEnd
-      ? `${item.servicePeriodStart} – ${item.servicePeriodEnd}`
-      : '—',
-  },
-  {
-    key: 'status',
-    label: 'Status',
-    render: (item) => (
-      <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
-        {item.status?.charAt(0).toUpperCase() + item.status?.slice(1)}
-      </Badge>
+    renderHeaderCell: () => 'Invoice #',
+    renderCell: (item) => (
+      <TableCellLayout>{item.invoiceNumber || 'Draft'}</TableCellLayout>
     ),
-  },
-  {
-    key: 'total',
-    label: 'Amount',
+  }),
+  createTableColumn({
+    columnId: 'invoiceDate',
+    compare: (a, b) => (a.invoiceDate || '').localeCompare(b.invoiceDate || ''),
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => (
+      <TableCellLayout>{item.invoiceDate}</TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'clientName',
+    renderHeaderCell: () => 'Client',
+    renderCell: (item) => (
+      <TableCellLayout>{item.clientName}</TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'period',
+    renderHeaderCell: () => 'Period',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.servicePeriodStart && item.servicePeriodEnd
+          ? `${item.servicePeriodStart} – ${item.servicePeriodEnd}`
+          : '—'}
+      </TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'status',
+    renderHeaderCell: () => 'Status',
+    renderCell: (item) => (
+      <TableCellLayout>
+        <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
+          {item.status?.charAt(0).toUpperCase() + item.status?.slice(1)}
+        </Badge>
+      </TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'total',
     compare: (a, b) => (a.total || 0) - (b.total || 0),
-    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0),
-  },
-  {
-    key: 'paymentStatus',
-    label: 'Payment',
-    render: (item) => item.status === 'posted' ? (
-      <Badge appearance="filled" color={paymentColors[item.paymentStatus] || 'informative'} size="small">
-        {item.paymentStatus?.charAt(0).toUpperCase() + item.paymentStatus?.slice(1)}
-      </Badge>
-    ) : '—',
-  },
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0)}
+      </TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'paymentStatus',
+    renderHeaderCell: () => 'Payment',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.status === 'posted' ? (
+          <Badge appearance="filled" color={paymentColors[item.paymentStatus] || 'informative'} size="small">
+            {item.paymentStatus?.charAt(0).toUpperCase() + item.paymentStatus?.slice(1)}
+          </Badge>
+        ) : '—'}
+      </TableCellLayout>
+    ),
+  }),
 ];
 
 export default function InvoiceList() {
@@ -217,15 +273,35 @@ export default function InvoiceList() {
           <option value="overdue">Overdue</option>
         </Select>
       </div>
-      <EntityGrid
-        columns={columns}
-        items={filteredInvoices}
-        loading={loading}
-        emptyMessage="No invoices found."
-        onRowClick={(item) => navigate(`/invoices/${item._id}`)}
-        selectedIds={selected}
-        onSelectionChange={setSelected}
-      />
+      {loading ? (
+        <div className={styles.loading}><Spinner label="Loading..." /></div>
+      ) : filteredInvoices.length === 0 ? (
+        <div className={styles.empty}><Text>No invoices found.</Text></div>
+      ) : (
+        <DataGrid
+          items={filteredInvoices}
+          columns={columns}
+          sortable
+          getRowId={(item) => item._id}
+          selectionMode="multiselect"
+          selectedItems={selected}
+          onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+          style={{ width: '100%' }}
+        >
+          <DataGridHeader>
+            <DataGridRow>
+              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+            </DataGridRow>
+          </DataGridHeader>
+          <DataGridBody>
+            {({ item, rowId }) => (
+              <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/invoices/${item._id}`)}>
+                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+              </DataGridRow>
+            )}
+          </DataGridBody>
+        </DataGrid>
+      )}
       {filteredInvoices.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

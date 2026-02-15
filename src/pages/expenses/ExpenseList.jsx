@@ -6,9 +6,17 @@ import {
   Text,
   ToggleButton,
   Select,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
+  Spinner,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import { expensesApi, clientsApi, projectsApi } from '../../api/index.js';
 
@@ -65,6 +73,25 @@ const useStyles = makeStyles({
       borderColor: tokens.colorBrandStroke1,
     },
   },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
+  row: {
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
 });
 
 function getWeekRange() {
@@ -92,32 +119,53 @@ function getMonthRange() {
 
 const fmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
 
-const columns = [
-  { key: 'date', label: 'Date', compare: (a, b) => a.date.localeCompare(b.date) },
-  { key: 'clientName', label: 'Client' },
-  { key: 'projectName', label: 'Project' },
-  { key: 'expenseType', label: 'Type' },
-  { key: 'description', label: 'Description' },
-  {
-    key: 'amount',
-    label: 'Amount',
-    render: (item) => fmt.format(item.amount || 0),
-  },
-  {
-    key: 'vatAmount',
-    label: 'VAT',
-    render: (item) => item.vatAmount ? fmt.format(item.vatAmount) : '—',
-  },
-  {
-    key: 'billable',
-    label: 'Billable',
-    render: (item) => item.billable ? 'Yes' : 'No',
-  },
-  {
-    key: 'attachments',
-    label: 'Attachments',
-    render: (item) => (item.attachments?.length || 0).toString(),
-  },
+const gridColumns = [
+  createTableColumn({
+    columnId: 'date',
+    compare: (a, b) => a.date.localeCompare(b.date),
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'clientName',
+    renderHeaderCell: () => 'Client',
+    renderCell: (item) => <TableCellLayout>{item.clientName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'projectName',
+    renderHeaderCell: () => 'Project',
+    renderCell: (item) => <TableCellLayout>{item.projectName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'expenseType',
+    renderHeaderCell: () => 'Type',
+    renderCell: (item) => <TableCellLayout>{item.expenseType}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'description',
+    renderHeaderCell: () => 'Description',
+    renderCell: (item) => <TableCellLayout>{item.description}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'amount',
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => <TableCellLayout>{fmt.format(item.amount || 0)}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'vatAmount',
+    renderHeaderCell: () => 'VAT',
+    renderCell: (item) => <TableCellLayout>{item.vatAmount ? fmt.format(item.vatAmount) : '—'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'billable',
+    renderHeaderCell: () => 'Billable',
+    renderCell: (item) => <TableCellLayout>{item.billable ? 'Yes' : 'No'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'attachments',
+    renderHeaderCell: () => 'Attachments',
+    renderCell: (item) => <TableCellLayout>{(item.attachments?.length || 0).toString()}</TableCellLayout>,
+  }),
 ];
 
 export default function ExpenseList() {
@@ -188,6 +236,54 @@ export default function ExpenseList() {
   };
 
   const selectedId = selected.size === 1 ? [...selected][0] : null;
+
+  const renderGrid = () => {
+    if (loading) {
+      return (
+        <div className={styles.loading}>
+          <Spinner label="Loading..." />
+        </div>
+      );
+    }
+    if (!entries || entries.length === 0) {
+      return (
+        <div className={styles.empty}>
+          <Text>No expenses found for this period.</Text>
+        </div>
+      );
+    }
+    return (
+      <DataGrid
+        items={entries}
+        columns={gridColumns}
+        sortable
+        getRowId={(item) => item._id}
+        selectionMode="multiselect"
+        selectedItems={selected}
+        onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+        style={{ width: '100%' }}
+      >
+        <DataGridHeader>
+          <DataGridRow>
+            {({ renderHeaderCell }) => (
+              <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
+            )}
+          </DataGridRow>
+        </DataGridHeader>
+        <DataGridBody>
+          {({ item, rowId }) => (
+            <DataGridRow
+              key={rowId}
+              className={styles.row}
+              onClick={() => navigate(`/expenses/${item._id}`)}
+            >
+              {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+            </DataGridRow>
+          )}
+        </DataGridBody>
+      </DataGrid>
+    );
+  };
 
   return (
     <div className={styles.page}>
@@ -260,15 +356,7 @@ export default function ExpenseList() {
           ))}
         </Select>
       </div>
-      <EntityGrid
-        columns={columns}
-        items={entries}
-        loading={loading}
-        emptyMessage="No expenses found for this period."
-        onRowClick={(item) => navigate(`/expenses/${item._id}`)}
-        selectedIds={selected}
-        onSelectionChange={setSelected}
-      />
+      {renderGrid()}
       {entries.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

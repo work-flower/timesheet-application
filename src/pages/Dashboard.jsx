@@ -7,6 +7,14 @@ import {
   Card,
   CardHeader,
   Spinner,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
 } from '@fluentui/react-components';
 import {
   ClockRegular,
@@ -17,7 +25,6 @@ import {
   DocumentTextRegular,
 } from '@fluentui/react-icons';
 import { timesheetsApi, projectsApi, expensesApi, invoicesApi } from '../api/index.js';
-import EntityGrid from '../components/EntityGrid.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -58,6 +65,19 @@ const useStyles = makeStyles({
     display: 'block',
     marginBottom: '12px',
   },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
+  row: {
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
 });
 
 function getWeekRange() {
@@ -84,15 +104,31 @@ function getMonthRange() {
 }
 
 const recentColumns = [
-  { key: 'date', label: 'Date' },
-  { key: 'clientName', label: 'Client' },
-  { key: 'projectName', label: 'Project' },
-  { key: 'hours', label: 'Hours' },
-  {
-    key: 'amount',
-    label: 'Amount',
-    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0),
-  },
+  createTableColumn({
+    columnId: 'date',
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'clientName',
+    renderHeaderCell: () => 'Client',
+    renderCell: (item) => <TableCellLayout>{item.clientName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'projectName',
+    renderHeaderCell: () => 'Project',
+    renderCell: (item) => <TableCellLayout>{item.projectName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'hours',
+    renderHeaderCell: () => 'Hours',
+    renderCell: (item) => <TableCellLayout>{item.hours}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'amount',
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => <TableCellLayout>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}</TableCellLayout>,
+  }),
 ];
 
 export default function Dashboard() {
@@ -190,12 +226,30 @@ export default function Dashboard() {
       </div>
 
       <Text className={styles.sectionTitle}>Recent Timesheet Entries</Text>
-      <EntityGrid
-        columns={recentColumns}
-        items={recentEntries}
-        emptyMessage="No timesheet entries yet. Start logging your work!"
-        onRowClick={(item) => navigate(`/timesheets/${item._id}`)}
-      />
+      {recentEntries.length === 0 ? (
+        <div className={styles.empty}><Text>No timesheet entries yet. Start logging your work!</Text></div>
+      ) : (
+        <DataGrid
+          items={recentEntries}
+          columns={recentColumns}
+          sortable
+          getRowId={(item) => item._id}
+          style={{ width: '100%' }}
+        >
+          <DataGridHeader>
+            <DataGridRow>
+              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+            </DataGridRow>
+          </DataGridHeader>
+          <DataGridBody>
+            {({ item, rowId }) => (
+              <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/timesheets/${item._id}`)}>
+                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+              </DataGridRow>
+            )}
+          </DataGridBody>
+        </DataGrid>
+      )}
     </div>
   );
 }

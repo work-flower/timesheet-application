@@ -22,6 +22,14 @@ import {
   ToolbarDivider,
   Tooltip,
   Switch,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
 } from '@fluentui/react-components';
 import {
   ArrowLeftRegular,
@@ -39,7 +47,6 @@ import {
 } from '@fluentui/react-icons';
 import { invoicesApi, clientsApi, timesheetsApi, expensesApi, reportsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import ItemPickerDialog from '../../components/ItemPickerDialog.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
@@ -128,6 +135,13 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     borderRadius: tokens.borderRadiusMedium,
   },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
 });
 
 const statusColors = { draft: 'informative', confirmed: 'warning', posted: 'success' };
@@ -163,80 +177,127 @@ const fmtGBP = (v) => new Intl.NumberFormat('en-GB', { style: 'currency', curren
 const typeLabels = { timesheet: 'Timesheet', expense: 'Expense', 'write-in': 'Write-in' };
 
 const makeUnifiedColumns = (onRemove, onUpdateWriteIn, isReadOnly, errorMap, warningMap) => [
-  { key: 'type', label: 'Type',
+  createTableColumn({
+    columnId: 'type',
     compare: (a, b) => (a.type || '').localeCompare(b.type || ''),
-    render: (item) => {
+    renderHeaderCell: () => 'Type',
+    renderCell: (item) => {
       const errMsgs = errorMap?.get(item.id);
       const warnMsgs = warningMap?.get(item.id);
       if (errMsgs?.length) {
         const tip = errMsgs.join('\n') + '\n\nUse Recalculate to realign with source data.';
         return (
-          <Tooltip content={tip} relationship="description" withArrow>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <ErrorCircleRegular style={{ color: '#d13438' }} />
-              {typeLabels[item.type] || item.type}
-            </span>
-          </Tooltip>
+          <TableCellLayout>
+            <Tooltip content={tip} relationship="description" withArrow>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <ErrorCircleRegular style={{ color: '#d13438' }} />
+                {typeLabels[item.type] || item.type}
+              </span>
+            </Tooltip>
+          </TableCellLayout>
         );
       }
       if (warnMsgs?.length) {
         const tip = warnMsgs.join('\n');
         return (
-          <Tooltip content={tip} relationship="description" withArrow>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <WarningRegular style={{ color: '#e8a317' }} />
-              {typeLabels[item.type] || item.type}
-            </span>
-          </Tooltip>
+          <TableCellLayout>
+            <Tooltip content={tip} relationship="description" withArrow>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <WarningRegular style={{ color: '#e8a317' }} />
+                {typeLabels[item.type] || item.type}
+              </span>
+            </Tooltip>
+          </TableCellLayout>
         );
       }
-      return typeLabels[item.type] || item.type;
+      return <TableCellLayout>{typeLabels[item.type] || item.type}</TableCellLayout>;
     },
-  },
-  { key: 'date', label: 'Date',
+  }),
+  createTableColumn({
+    columnId: 'date',
     compare: (a, b) => (a.date || '').localeCompare(b.date || ''),
-    render: (item) => item.date || '—',
-  },
-  { key: 'description', label: 'Description',
-    render: (item) => item.type === 'write-in' && !isReadOnly
-      ? <Input value={item.description} onChange={(e) => onUpdateWriteIn(item.id, 'description', e.target.value)} size="small" appearance="underline" placeholder="Description" />
-      : item.description,
-  },
-  { key: 'quantity', label: 'Qty',
-    render: (item) => item.type === 'write-in' && !isReadOnly
-      ? <Input type="number" value={String(item.quantity)} onChange={(e) => onUpdateWriteIn(item.id, 'quantity', parseFloat(e.target.value) || 0)} size="small" appearance="underline" />
-      : (item.quantity != null ? Number(item.quantity).toFixed(2) : '—'),
-  },
-  { key: 'unit', label: 'Unit',
-    render: (item) => item.type === 'write-in' && !isReadOnly
-      ? <Input value={item.unit} onChange={(e) => onUpdateWriteIn(item.id, 'unit', e.target.value)} size="small" appearance="underline" />
-      : item.unit,
-  },
-  { key: 'unitPrice', label: 'Unit Price',
-    render: (item) => item.type === 'write-in' && !isReadOnly
-      ? <Input type="number" value={String(item.unitPrice)} onChange={(e) => onUpdateWriteIn(item.id, 'unitPrice', parseFloat(e.target.value) || 0)} size="small" appearance="underline" />
-      : fmtGBP(item.unitPrice),
-  },
-  { key: 'vatPercent', label: 'VAT %',
-    render: (item) => item.type === 'write-in' && !isReadOnly
-      ? <Input type="number" value={String(item.vatPercent ?? '')} onChange={(e) => { const v = e.target.value; onUpdateWriteIn(item.id, 'vatPercent', v === '' ? null : parseFloat(v)); }} size="small" appearance="underline" />
-      : (item.vatPercent != null ? `${item.vatPercent}%` : 'N/A'),
-  },
-  { key: 'vatAmount', label: 'VAT',
-    render: (item) => fmtGBP(item.vatAmount),
-  },
-  { key: 'netAmount', label: 'Net',
-    render: (item) => fmtGBP(item.netAmount),
-  },
-  { key: 'grossAmount', label: 'Gross',
-    render: (item) => fmtGBP(item.grossAmount),
-  },
-  ...(onRemove ? [{
-    key: '_remove', label: '',
-    render: (item) => (
-      <Button appearance="subtle" icon={<DeleteRegular />} size="small" onClick={(e) => { e.stopPropagation(); onRemove(item.id); }} />
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date || '—'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'description',
+    renderHeaderCell: () => 'Description',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.type === 'write-in' && !isReadOnly
+          ? <Input value={item.description} onChange={(e) => onUpdateWriteIn(item.id, 'description', e.target.value)} size="small" appearance="underline" placeholder="Description" />
+          : item.description}
+      </TableCellLayout>
     ),
-  }] : []),
+  }),
+  createTableColumn({
+    columnId: 'quantity',
+    renderHeaderCell: () => 'Qty',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.type === 'write-in' && !isReadOnly
+          ? <Input type="number" value={String(item.quantity)} onChange={(e) => onUpdateWriteIn(item.id, 'quantity', parseFloat(e.target.value) || 0)} size="small" appearance="underline" />
+          : (item.quantity != null ? Number(item.quantity).toFixed(2) : '—')}
+      </TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'unit',
+    renderHeaderCell: () => 'Unit',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.type === 'write-in' && !isReadOnly
+          ? <Input value={item.unit} onChange={(e) => onUpdateWriteIn(item.id, 'unit', e.target.value)} size="small" appearance="underline" />
+          : item.unit}
+      </TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'unitPrice',
+    renderHeaderCell: () => 'Unit Price',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.type === 'write-in' && !isReadOnly
+          ? <Input type="number" value={String(item.unitPrice)} onChange={(e) => onUpdateWriteIn(item.id, 'unitPrice', parseFloat(e.target.value) || 0)} size="small" appearance="underline" />
+          : fmtGBP(item.unitPrice)}
+      </TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'vatPercent',
+    renderHeaderCell: () => 'VAT %',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.type === 'write-in' && !isReadOnly
+          ? <Input type="number" value={String(item.vatPercent ?? '')} onChange={(e) => { const v = e.target.value; onUpdateWriteIn(item.id, 'vatPercent', v === '' ? null : parseFloat(v)); }} size="small" appearance="underline" />
+          : (item.vatPercent != null ? `${item.vatPercent}%` : 'N/A')}
+      </TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'vatAmount',
+    renderHeaderCell: () => 'VAT',
+    renderCell: (item) => <TableCellLayout>{fmtGBP(item.vatAmount)}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'netAmount',
+    renderHeaderCell: () => 'Net',
+    renderCell: (item) => <TableCellLayout>{fmtGBP(item.netAmount)}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'grossAmount',
+    renderHeaderCell: () => 'Gross',
+    renderCell: (item) => <TableCellLayout>{fmtGBP(item.grossAmount)}</TableCellLayout>,
+  }),
+  ...(onRemove ? [createTableColumn({
+    columnId: '_remove',
+    renderHeaderCell: () => '',
+    renderCell: (item) => (
+      <TableCellLayout>
+        <Button appearance="subtle" icon={<DeleteRegular />} size="small" onClick={(e) => { e.stopPropagation(); onRemove(item.id); }} />
+      </TableCellLayout>
+    ),
+  })] : []),
 ];
 
 function round2(n) {
@@ -1092,12 +1153,30 @@ export default function InvoiceForm() {
                       </div>
                     )}
                   </div>
-                  <EntityGrid
-                    columns={makeUnifiedColumns(!isReadOnly ? removeLine : null, updateWriteInLine, isReadOnly, errorMap, warningMap)}
-                    items={sortedLines}
-                    emptyMessage="No lines added to this invoice."
-                    getRowId={(item) => item.id}
-                  />
+                  {sortedLines.length === 0 ? (
+                    <div className={styles.empty}><Text>No lines added to this invoice.</Text></div>
+                  ) : (
+                    <DataGrid
+                      items={sortedLines}
+                      columns={makeUnifiedColumns(!isReadOnly ? removeLine : null, updateWriteInLine, isReadOnly, errorMap, warningMap)}
+                      sortable
+                      getRowId={(item) => item.id}
+                      style={{ width: '100%' }}
+                    >
+                      <DataGridHeader>
+                        <DataGridRow>
+                          {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                        </DataGridRow>
+                      </DataGridHeader>
+                      <DataGridBody>
+                        {({ item, rowId }) => (
+                          <DataGridRow key={rowId}>
+                            {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                          </DataGridRow>
+                        )}
+                      </DataGridBody>
+                    </DataGrid>
+                  )}
                 </div>
 
                 {/* Totals — computed live from form.lines */}

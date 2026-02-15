@@ -18,11 +18,18 @@ import {
   BreadcrumbItem,
   BreadcrumbDivider,
   BreadcrumbButton,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
 } from '@fluentui/react-components';
 import { clientsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
@@ -50,49 +57,126 @@ const useStyles = makeStyles({
   message: {
     marginBottom: '16px',
   },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
+  row: {
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
 });
 
 const projectColumns = [
-  { key: 'name', label: 'Project Name' },
-  { key: 'ir35Status', label: 'IR35 Status', render: (item) => item.ir35Status?.replace('_', ' ') },
-  { key: 'rate', label: 'Rate', render: (item) => item.rate != null ? `£${item.rate}/day` : 'Inherited' },
-  { key: 'status', label: 'Status' },
+  createTableColumn({
+    columnId: 'name',
+    renderHeaderCell: () => 'Project Name',
+    renderCell: (item) => <TableCellLayout>{item.name}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'ir35Status',
+    renderHeaderCell: () => 'IR35 Status',
+    renderCell: (item) => <TableCellLayout>{item.ir35Status?.replace('_', ' ')}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'rate',
+    renderHeaderCell: () => 'Rate',
+    renderCell: (item) => <TableCellLayout>{item.rate != null ? `£${item.rate}/day` : 'Inherited'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'status',
+    renderHeaderCell: () => 'Status',
+    renderCell: (item) => <TableCellLayout>{item.status}</TableCellLayout>,
+  }),
 ];
 
 const timesheetColumns = [
-  { key: 'date', label: 'Date' },
-  { key: 'projectName', label: 'Project' },
-  { key: 'hours', label: 'Hours' },
-  { key: 'notes', label: 'Notes' },
+  createTableColumn({
+    columnId: 'date',
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'projectName',
+    renderHeaderCell: () => 'Project',
+    renderCell: (item) => <TableCellLayout>{item.projectName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'hours',
+    renderHeaderCell: () => 'Hours',
+    renderCell: (item) => <TableCellLayout>{item.hours}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'notes',
+    renderHeaderCell: () => 'Notes',
+    renderCell: (item) => <TableCellLayout>{item.notes}</TableCellLayout>,
+  }),
 ];
 
 const expenseColumns = [
-  { key: 'date', label: 'Date' },
-  { key: 'projectName', label: 'Project' },
-  { key: 'expenseType', label: 'Type' },
-  {
-    key: 'amount',
-    label: 'Amount',
-    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0),
-  },
-  {
-    key: 'billable',
-    label: 'Billable',
-    render: (item) => item.billable ? 'Yes' : 'No',
-  },
+  createTableColumn({
+    columnId: 'date',
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'projectName',
+    renderHeaderCell: () => 'Project',
+    renderCell: (item) => <TableCellLayout>{item.projectName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'expenseType',
+    renderHeaderCell: () => 'Type',
+    renderCell: (item) => <TableCellLayout>{item.expenseType}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'amount',
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => <TableCellLayout>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'billable',
+    renderHeaderCell: () => 'Billable',
+    renderCell: (item) => <TableCellLayout>{item.billable ? 'Yes' : 'No'}</TableCellLayout>,
+  }),
 ];
 
 const invoiceColumns = [
-  { key: 'invoiceNumber', label: 'Invoice #', render: (item) => item.invoiceNumber || 'Draft' },
-  { key: 'invoiceDate', label: 'Date' },
-  { key: 'period', label: 'Period', render: (item) => item.servicePeriodStart && item.servicePeriodEnd ? `${item.servicePeriodStart} to ${item.servicePeriodEnd}` : '—' },
-  { key: 'status', label: 'Status', render: (item) => item.status?.charAt(0).toUpperCase() + item.status?.slice(1) },
-  {
-    key: 'total',
-    label: 'Amount',
-    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0),
-  },
-  { key: 'paymentStatus', label: 'Payment', render: (item) => item.paymentStatus?.charAt(0).toUpperCase() + item.paymentStatus?.slice(1) },
+  createTableColumn({
+    columnId: 'invoiceNumber',
+    renderHeaderCell: () => 'Invoice #',
+    renderCell: (item) => <TableCellLayout>{item.invoiceNumber || 'Draft'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'invoiceDate',
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.invoiceDate}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'period',
+    renderHeaderCell: () => 'Period',
+    renderCell: (item) => <TableCellLayout>{item.servicePeriodStart && item.servicePeriodEnd ? `${item.servicePeriodStart} to ${item.servicePeriodEnd}` : '—'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'status',
+    renderHeaderCell: () => 'Status',
+    renderCell: (item) => <TableCellLayout>{item.status?.charAt(0).toUpperCase() + item.status?.slice(1)}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'total',
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => <TableCellLayout>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0)}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'paymentStatus',
+    renderHeaderCell: () => 'Payment',
+    renderCell: (item) => <TableCellLayout>{item.paymentStatus?.charAt(0).toUpperCase() + item.paymentStatus?.slice(1)}</TableCellLayout>,
+  }),
 ];
 
 export default function ClientForm() {
@@ -341,39 +425,87 @@ export default function ClientForm() {
           )}
 
           {tab === 'projects' && clientData && (
-            <EntityGrid
-              columns={projectColumns}
-              items={clientData.projects || []}
-              emptyMessage="No projects for this client."
-              onRowClick={(item) => guardedNavigate(`/projects/${item._id}`)}
-            />
+            (clientData.projects || []).length === 0 ? (
+              <div className={styles.empty}><Text>No projects for this client.</Text></div>
+            ) : (
+              <DataGrid items={clientData.projects || []} columns={projectColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+                <DataGridHeader>
+                  <DataGridRow>
+                    {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                  </DataGridRow>
+                </DataGridHeader>
+                <DataGridBody>
+                  {({ item, rowId }) => (
+                    <DataGridRow key={rowId} className={styles.row} onClick={() => guardedNavigate(`/projects/${item._id}`)}>
+                      {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                    </DataGridRow>
+                  )}
+                </DataGridBody>
+              </DataGrid>
+            )
           )}
 
           {tab === 'timesheets' && clientData && (
-            <EntityGrid
-              columns={timesheetColumns}
-              items={clientData.timesheets || []}
-              emptyMessage="No timesheet entries for this client."
-              onRowClick={(item) => guardedNavigate(`/timesheets/${item._id}`)}
-            />
+            (clientData.timesheets || []).length === 0 ? (
+              <div className={styles.empty}><Text>No timesheet entries for this client.</Text></div>
+            ) : (
+              <DataGrid items={clientData.timesheets || []} columns={timesheetColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+                <DataGridHeader>
+                  <DataGridRow>
+                    {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                  </DataGridRow>
+                </DataGridHeader>
+                <DataGridBody>
+                  {({ item, rowId }) => (
+                    <DataGridRow key={rowId} className={styles.row} onClick={() => guardedNavigate(`/timesheets/${item._id}`)}>
+                      {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                    </DataGridRow>
+                  )}
+                </DataGridBody>
+              </DataGrid>
+            )
           )}
 
           {tab === 'expenses' && clientData && (
-            <EntityGrid
-              columns={expenseColumns}
-              items={clientData.expenses || []}
-              emptyMessage="No expenses for this client."
-              onRowClick={(item) => guardedNavigate(`/expenses/${item._id}`)}
-            />
+            (clientData.expenses || []).length === 0 ? (
+              <div className={styles.empty}><Text>No expenses for this client.</Text></div>
+            ) : (
+              <DataGrid items={clientData.expenses || []} columns={expenseColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+                <DataGridHeader>
+                  <DataGridRow>
+                    {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                  </DataGridRow>
+                </DataGridHeader>
+                <DataGridBody>
+                  {({ item, rowId }) => (
+                    <DataGridRow key={rowId} className={styles.row} onClick={() => guardedNavigate(`/expenses/${item._id}`)}>
+                      {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                    </DataGridRow>
+                  )}
+                </DataGridBody>
+              </DataGrid>
+            )
           )}
 
           {tab === 'invoices' && clientData && (
-            <EntityGrid
-              columns={invoiceColumns}
-              items={clientData.invoices || []}
-              emptyMessage="No invoices for this client."
-              onRowClick={(item) => guardedNavigate(`/invoices/${item._id}`)}
-            />
+            (clientData.invoices || []).length === 0 ? (
+              <div className={styles.empty}><Text>No invoices for this client.</Text></div>
+            ) : (
+              <DataGrid items={clientData.invoices || []} columns={invoiceColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+                <DataGridHeader>
+                  <DataGridRow>
+                    {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                  </DataGridRow>
+                </DataGridHeader>
+                <DataGridBody>
+                  {({ item, rowId }) => (
+                    <DataGridRow key={rowId} className={styles.row} onClick={() => guardedNavigate(`/invoices/${item._id}`)}>
+                      {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                    </DataGridRow>
+                  )}
+                </DataGridBody>
+              </DataGrid>
+            )
           )}
         </div>
       </div>

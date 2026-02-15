@@ -16,6 +16,14 @@ import {
   BreadcrumbDivider,
   BreadcrumbButton,
   ToolbarDivider,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
 } from '@fluentui/react-components';
 import {
   ArrowLeftRegular,
@@ -26,7 +34,6 @@ import {
 } from '@fluentui/react-icons';
 import { importJobsApi, stagedTransactionsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
@@ -85,6 +92,13 @@ const useStyles = makeStyles({
     gap: '12px',
     padding: '24px',
     justifyContent: 'center',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
   },
 });
 
@@ -296,9 +310,9 @@ export default function ImportJobForm() {
   const stagedColumns = useMemo(() => {
     if (stagedTransactions.length === 0) {
       return [
-        { key: 'date', label: 'Date' },
-        { key: 'description', label: 'Description' },
-        { key: 'amount', label: 'Amount', render: (item) => fmtGBP(item.amount) },
+        createTableColumn({ columnId: 'date', renderHeaderCell: () => 'Date', renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout> }),
+        createTableColumn({ columnId: 'description', renderHeaderCell: () => 'Description', renderCell: (item) => <TableCellLayout>{item.description}</TableCellLayout> }),
+        createTableColumn({ columnId: 'amount', renderHeaderCell: () => 'Amount', renderCell: (item) => <TableCellLayout>{fmtGBP(item.amount)}</TableCellLayout> }),
       ];
     }
 
@@ -325,20 +339,23 @@ export default function ImportJobForm() {
     }
 
     const cols = orderedKeys.map((key) => {
-      const col = {
-        key,
-        label: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
-      };
+      const colDef = { columnId: key };
 
-      // Format known numeric fields
       if (key === 'amount' || key === 'balance') {
-        col.compare = (a, b) => (Number(a[key]) || 0) - (Number(b[key]) || 0);
-        col.render = (item) => item[key] != null ? fmtGBP(item[key]) : '—';
+        colDef.compare = (a, b) => (Number(a[key]) || 0) - (Number(b[key]) || 0);
       } else if (key === 'date') {
-        col.compare = (a, b) => (a.date || '').localeCompare(b.date || '');
+        colDef.compare = (a, b) => (a.date || '').localeCompare(b.date || '');
       }
 
-      return col;
+      colDef.renderHeaderCell = () => key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1');
+
+      if (key === 'amount' || key === 'balance') {
+        colDef.renderCell = (item) => <TableCellLayout>{item[key] != null ? fmtGBP(item[key]) : '\u2014'}</TableCellLayout>;
+      } else {
+        colDef.renderCell = (item) => <TableCellLayout>{item[key] ?? '\u2014'}</TableCellLayout>;
+      }
+
+      return createTableColumn(colDef);
     });
 
     return cols;
@@ -351,7 +368,7 @@ export default function ImportJobForm() {
   };
 
   const fmtDatetime = (iso) => {
-    if (!iso) return '—';
+    if (!iso) return '\u2014';
     return new Date(iso).toLocaleString('en-GB');
   };
 
@@ -511,13 +528,32 @@ export default function ImportJobForm() {
                 Staged Transactions ({stagedTransactions.length})
               </Text>
             </div>
-            <EntityGrid
-              columns={stagedColumns}
-              items={stagedTransactions}
-              emptyMessage="No staged transactions."
-              getRowId={(item) => item._id}
-              scrollable
-            />
+            {stagedTransactions.length === 0 ? (
+              <div className={styles.empty}><Text>No staged transactions.</Text></div>
+            ) : (
+              <div style={{ overflow: 'auto' }}>
+                <DataGrid
+                  items={stagedTransactions}
+                  columns={stagedColumns}
+                  sortable
+                  getRowId={(item) => item._id}
+                  style={{ width: '100%' }}
+                >
+                  <DataGridHeader>
+                    <DataGridRow>
+                      {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                    </DataGridRow>
+                  </DataGridHeader>
+                  <DataGridBody>
+                    {({ item, rowId }) => (
+                      <DataGridRow key={rowId}>
+                        {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                      </DataGridRow>
+                    )}
+                  </DataGridBody>
+                </DataGrid>
+              </div>
+            )}
           </>
         )}
 

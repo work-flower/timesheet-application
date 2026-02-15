@@ -6,9 +6,17 @@ import {
   Text,
   ToggleButton,
   Select,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
+  Spinner,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import { timesheetsApi, clientsApi, projectsApi } from '../../api/index.js';
 
@@ -65,6 +73,25 @@ const useStyles = makeStyles({
       borderColor: tokens.colorBrandStroke1,
     },
   },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
+  },
+  row: {
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
 });
 
 function getWeekRange() {
@@ -91,21 +118,42 @@ function getMonthRange() {
 }
 
 const columns = [
-  { key: 'date', label: 'Date', compare: (a, b) => a.date.localeCompare(b.date) },
-  { key: 'clientName', label: 'Client' },
-  { key: 'projectName', label: 'Project' },
-  { key: 'hours', label: 'Hours' },
-  {
-    key: 'days',
-    label: 'Days',
-    render: (item) => (item.days != null ? item.days.toFixed(2) : '—'),
-  },
-  {
-    key: 'amount',
-    label: 'Amount',
-    render: (item) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0),
-  },
-  { key: 'notes', label: 'Notes' },
+  createTableColumn({
+    columnId: 'date',
+    compare: (a, b) => a.date.localeCompare(b.date),
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'clientName',
+    renderHeaderCell: () => 'Client',
+    renderCell: (item) => <TableCellLayout>{item.clientName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'projectName',
+    renderHeaderCell: () => 'Project',
+    renderCell: (item) => <TableCellLayout>{item.projectName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'hours',
+    renderHeaderCell: () => 'Hours',
+    renderCell: (item) => <TableCellLayout>{item.hours}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'days',
+    renderHeaderCell: () => 'Days',
+    renderCell: (item) => <TableCellLayout>{item.days != null ? item.days.toFixed(2) : '—'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'amount',
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => <TableCellLayout>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'notes',
+    renderHeaderCell: () => 'Notes',
+    renderCell: (item) => <TableCellLayout>{item.notes}</TableCellLayout>,
+  }),
 ];
 
 export default function TimesheetList() {
@@ -234,15 +282,35 @@ export default function TimesheetList() {
           ))}
         </Select>
       </div>
-      <EntityGrid
-        columns={columns}
-        items={entries}
-        loading={loading}
-        emptyMessage="No timesheet entries found for this period."
-        onRowClick={(item) => navigate(`/timesheets/${item._id}`)}
-        selectedIds={selected}
-        onSelectionChange={setSelected}
-      />
+      {loading ? (
+        <div className={styles.loading}><Spinner label="Loading..." /></div>
+      ) : entries.length === 0 ? (
+        <div className={styles.empty}><Text>No timesheet entries found for this period.</Text></div>
+      ) : (
+        <DataGrid
+          items={entries}
+          columns={columns}
+          sortable
+          getRowId={(item) => item._id}
+          selectionMode="multiselect"
+          selectedItems={selected}
+          onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+          style={{ width: '100%' }}
+        >
+          <DataGridHeader>
+            <DataGridRow>
+              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+            </DataGridRow>
+          </DataGridHeader>
+          <DataGridBody>
+            {({ item, rowId }) => (
+              <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/timesheets/${item._id}`)}>
+                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+              </DataGridRow>
+            )}
+          </DataGridBody>
+        </DataGrid>
+      )}
       {entries.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

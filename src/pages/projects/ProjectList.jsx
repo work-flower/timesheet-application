@@ -4,9 +4,17 @@ import {
   makeStyles,
   tokens,
   Text,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
+  Spinner,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import { projectsApi } from '../../api/index.js';
 
@@ -23,14 +31,39 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase500,
   },
+  gridContainer: { flex: 1, overflow: 'hidden', width: '100%' },
+  loading: { display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '48px' },
+  empty: { display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '48px', color: tokens.colorNeutralForeground3 },
+  row: { cursor: 'pointer', '&:hover': { backgroundColor: tokens.colorNeutralBackground1Hover } },
 });
 
 const columns = [
-  { key: 'name', label: 'Project Name', compare: (a, b) => a.name.localeCompare(b.name) },
-  { key: 'clientName', label: 'Client' },
-  { key: 'ir35Status', label: 'IR35 Status', render: (item) => item.ir35Status?.replace(/_/g, ' ') },
-  { key: 'effectiveRate', label: 'Rate', render: (item) => `£${item.effectiveRate}/day` },
-  { key: 'status', label: 'Status', render: (item) => item.status === 'active' ? 'Active' : 'Archived' },
+  createTableColumn({
+    columnId: 'name',
+    compare: (a, b) => a.name.localeCompare(b.name),
+    renderHeaderCell: () => 'Project Name',
+    renderCell: (item) => <TableCellLayout>{item.name}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'clientName',
+    renderHeaderCell: () => 'Client',
+    renderCell: (item) => <TableCellLayout>{item.clientName}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'ir35Status',
+    renderHeaderCell: () => 'IR35 Status',
+    renderCell: (item) => <TableCellLayout>{item.ir35Status?.replace(/_/g, ' ')}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'effectiveRate',
+    renderHeaderCell: () => 'Rate',
+    renderCell: (item) => <TableCellLayout>{`£${item.effectiveRate}/day`}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'status',
+    renderHeaderCell: () => 'Status',
+    renderCell: (item) => <TableCellLayout>{item.status === 'active' ? 'Active' : 'Archived'}</TableCellLayout>,
+  }),
 ];
 
 export default function ProjectList() {
@@ -94,15 +127,35 @@ export default function ProjectList() {
           <Text style={{ color: tokens.colorPaletteRedForeground1 }}>{deleteError}</Text>
         </div>
       )}
-      <EntityGrid
-        columns={columns}
-        items={filtered}
-        loading={loading}
-        emptyMessage="No projects found. Click 'New Project' to create one."
-        onRowClick={(item) => navigate(`/projects/${item._id}`)}
-        selectedIds={selected}
-        onSelectionChange={setSelected}
-      />
+      {loading ? (
+        <div className={styles.loading}><Spinner label="Loading..." /></div>
+      ) : filtered.length === 0 ? (
+        <div className={styles.empty}><Text>No projects found. Click 'New Project' to create one.</Text></div>
+      ) : (
+        <DataGrid
+          items={filtered}
+          columns={columns}
+          sortable
+          getRowId={(item) => item._id}
+          selectionMode="multiselect"
+          selectedItems={selected}
+          onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+          style={{ width: '100%' }}
+        >
+          <DataGridHeader>
+            <DataGridRow>
+              {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+            </DataGridRow>
+          </DataGridHeader>
+          <DataGridBody>
+            {({ item, rowId }) => (
+              <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/projects/${item._id}`)}>
+                {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+              </DataGridRow>
+            )}
+          </DataGridBody>
+        </DataGrid>
+      )}
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}

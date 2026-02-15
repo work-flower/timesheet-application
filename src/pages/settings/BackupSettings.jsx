@@ -10,6 +10,14 @@ import {
   MessageBar,
   MessageBarBody,
   Select,
+  DataGrid,
+  DataGridHeader,
+  DataGridHeaderCell,
+  DataGridBody,
+  DataGridRow,
+  DataGridCell,
+  TableCellLayout,
+  createTableColumn,
 } from '@fluentui/react-components';
 import {
   ArrowSyncRegular,
@@ -21,7 +29,6 @@ import {
 } from '@fluentui/react-icons';
 import { backupApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
-import EntityGrid from '../../components/EntityGrid.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 
 const useStyles = makeStyles({
@@ -43,6 +50,19 @@ const useStyles = makeStyles({
   },
   reloadBanner: {
     marginTop: '16px',
+  },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+  },
+  empty: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '48px',
+    color: tokens.colorNeutralForeground3,
   },
 });
 
@@ -222,48 +242,50 @@ export default function BackupSettings() {
   };
 
   const backupColumns = [
-    {
-      key: 'name',
-      label: 'Name',
+    createTableColumn({
+      columnId: 'name',
       compare: (a, b) => a.key.localeCompare(b.key),
-      render: (item) => item.key.replace(/^.*\//, ''),
-    },
-    {
-      key: 'size',
-      label: 'Size',
+      renderHeaderCell: () => 'Name',
+      renderCell: (item) => <TableCellLayout>{item.key.replace(/^.*\//, '')}</TableCellLayout>,
+    }),
+    createTableColumn({
+      columnId: 'size',
       compare: (a, b) => (a.size || 0) - (b.size || 0),
-      render: (item) => formatSize(item.size),
-    },
-    {
-      key: 'lastModified',
-      label: 'Date',
+      renderHeaderCell: () => 'Size',
+      renderCell: (item) => <TableCellLayout>{formatSize(item.size)}</TableCellLayout>,
+    }),
+    createTableColumn({
+      columnId: 'lastModified',
       compare: (a, b) => new Date(a.lastModified) - new Date(b.lastModified),
-      render: (item) => formatDate(item.lastModified),
-    },
-    {
-      key: 'actions',
-      label: 'Actions',
-      render: (item) => (
-        <div style={{ display: 'flex', gap: 4 }}>
-          <Button
-            size="small"
-            appearance="subtle"
-            icon={<ArrowDownloadRegular />}
-            onClick={(e) => { e.stopPropagation(); setRestoreTarget(item); }}
-          >
-            Restore
-          </Button>
-          <Button
-            size="small"
-            appearance="subtle"
-            icon={<DeleteRegular />}
-            onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }}
-          >
-            Delete
-          </Button>
-        </div>
+      renderHeaderCell: () => 'Date',
+      renderCell: (item) => <TableCellLayout>{formatDate(item.lastModified)}</TableCellLayout>,
+    }),
+    createTableColumn({
+      columnId: 'actions',
+      renderHeaderCell: () => 'Actions',
+      renderCell: (item) => (
+        <TableCellLayout>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<ArrowDownloadRegular />}
+              onClick={(e) => { e.stopPropagation(); setRestoreTarget(item); }}
+            >
+              Restore
+            </Button>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<DeleteRegular />}
+              onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }}
+            >
+              Delete
+            </Button>
+          </div>
+        </TableCellLayout>
       ),
-    },
+    }),
   ];
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
@@ -373,14 +395,26 @@ export default function BackupSettings() {
               Refresh
             </Button>
           </div>
-          <EntityGrid
-            columns={backupColumns}
-            items={backups}
-            loading={loadingBackups}
-            emptyMessage="No backups found"
-            getRowId={(item) => item.key}
-            sortable={false}
-          />
+          {loadingBackups ? (
+            <div className={styles.loading}><Spinner label="Loading..." /></div>
+          ) : backups.length === 0 ? (
+            <div className={styles.empty}><Text>No backups found</Text></div>
+          ) : (
+            <DataGrid items={backups} columns={backupColumns} getRowId={(item) => item.key} style={{ width: '100%' }}>
+              <DataGridHeader>
+                <DataGridRow>
+                  {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                </DataGridRow>
+              </DataGridHeader>
+              <DataGridBody>
+                {({ item, rowId }) => (
+                  <DataGridRow key={rowId}>
+                    {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                  </DataGridRow>
+                )}
+              </DataGridBody>
+            </DataGrid>
+          )}
         </FormField>
       </FormSection>
 
