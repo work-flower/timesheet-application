@@ -17,6 +17,8 @@ import {
   Spinner,
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
+import PaginationControls from '../../components/PaginationControls.jsx';
+import { usePagination } from '../../hooks/usePagination.js';
 import { transactionsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -238,6 +240,8 @@ export default function TransactionList() {
     );
   }, [entries, search]);
 
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered);
+
   const totals = useMemo(() => {
     const credits = filtered.filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0);
     const debits = filtered.filter((e) => e.amount < 0).reduce((sum, e) => sum + e.amount, 0);
@@ -307,7 +311,7 @@ export default function TransactionList() {
         ) : filtered.length === 0 ? (
           <div className={styles.empty}><Text>No transactions found.</Text></div>
         ) : (
-          <DataGrid items={filtered} columns={columns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+          <DataGrid items={pageItems} columns={columns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
             <DataGridHeader>
               <DataGridRow>
                 {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
@@ -323,6 +327,10 @@ export default function TransactionList() {
           </DataGrid>
         )}
       </div>
+      <PaginationControls
+        page={page} pageSize={pageSize} totalItems={totalItems}
+        totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
+      />
       {filtered.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

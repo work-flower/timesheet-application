@@ -19,6 +19,8 @@ import {
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import PaginationControls from '../../components/PaginationControls.jsx';
+import { usePagination } from '../../hooks/usePagination.js';
 import { invoicesApi, clientsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -224,6 +226,8 @@ export default function InvoiceList() {
     setSelected(new Set());
   };
 
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredInvoices);
+
   const selectedId = selected.size === 1 ? [...selected][0] : null;
   const selectedInvoice = selectedId ? invoices.find(i => i._id === selectedId) : null;
   const canDelete = selectedInvoice?.status === 'draft';
@@ -280,7 +284,7 @@ export default function InvoiceList() {
           <div className={styles.empty}><Text>No invoices found.</Text></div>
         ) : (
           <DataGrid
-            items={filteredInvoices}
+            items={pageItems}
             columns={columns}
             sortable
             getRowId={(item) => item._id}
@@ -304,6 +308,10 @@ export default function InvoiceList() {
           </DataGrid>
         )}
       </div>
+      <PaginationControls
+        page={page} pageSize={pageSize} totalItems={totalItems}
+        totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
+      />
       {filteredInvoices.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

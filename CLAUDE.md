@@ -500,3 +500,4 @@ Container stores no data — all `.db` files and PDFs live on the host volume.
 
 - **Timesheet approval workflow:** May add `status` field to timesheets (draft/submitted/approved)
 - **CSV export:** CSV export of timesheets (PDF export already exists via Reports)
+- **Server-side pagination:** All list views currently use client-side pagination (`usePagination` hook slices the full array). A future `useServerPagination` hook can swap in server-side pagination via `$top`/`$skip`/`$count` OData params without changing the `PaginationControls` UI component.

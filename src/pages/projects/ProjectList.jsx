@@ -16,6 +16,8 @@ import {
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import PaginationControls from '../../components/PaginationControls.jsx';
+import { usePagination } from '../../hooks/usePagination.js';
 import { projectsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -100,6 +102,8 @@ export default function ProjectList() {
     }
   };
 
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered);
+
   const selectedId = selected.size === 1 ? [...selected][0] : null;
   const selectedProject = selectedId ? projects.find((p) => p._id === selectedId) : null;
 
@@ -134,7 +138,7 @@ export default function ProjectList() {
           <div className={styles.empty}><Text>No projects found. Click 'New Project' to create one.</Text></div>
         ) : (
           <DataGrid
-            items={filtered}
+            items={pageItems}
             columns={columns}
             sortable
             getRowId={(item) => item._id}
@@ -158,6 +162,10 @@ export default function ProjectList() {
           </DataGrid>
         )}
       </div>
+      <PaginationControls
+        page={page} pageSize={pageSize} totalItems={totalItems}
+        totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
+      />
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}

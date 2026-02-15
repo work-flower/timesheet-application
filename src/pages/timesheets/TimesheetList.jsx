@@ -18,6 +18,8 @@ import {
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import PaginationControls from '../../components/PaginationControls.jsx';
+import { usePagination } from '../../hooks/usePagination.js';
 import { timesheetsApi, clientsApi, projectsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -220,6 +222,8 @@ export default function TimesheetList() {
     setSelected(new Set());
   };
 
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(entries);
+
   const selectedId = selected.size === 1 ? [...selected][0] : null;
   const fmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
 
@@ -289,7 +293,7 @@ export default function TimesheetList() {
           <div className={styles.empty}><Text>No timesheet entries found for this period.</Text></div>
         ) : (
           <DataGrid
-            items={entries}
+            items={pageItems}
             columns={columns}
             sortable
             getRowId={(item) => item._id}
@@ -313,6 +317,10 @@ export default function TimesheetList() {
           </DataGrid>
         )}
       </div>
+      <PaginationControls
+        page={page} pageSize={pageSize} totalItems={totalItems}
+        totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
+      />
       {entries.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

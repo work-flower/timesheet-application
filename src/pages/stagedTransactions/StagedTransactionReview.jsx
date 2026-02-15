@@ -27,6 +27,8 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import PaginationControls from '../../components/PaginationControls.jsx';
+import { usePagination } from '../../hooks/usePagination.js';
 import FieldMappingConfig, { autoDetectMapping, getMissingRequiredTargets } from './FieldMappingConfig.jsx';
 import { importJobsApi, stagedTransactionsApi } from '../../api/index.js';
 
@@ -224,6 +226,8 @@ export default function StagedTransactionReview() {
     if (actionFilter === 'all') return stagedTxs;
     return stagedTxs.filter((tx) => tx.action === actionFilter);
   }, [stagedTxs, actionFilter]);
+
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredTxs);
 
   // Counts
   const unmarkedCount = stagedTxs.filter((tx) => tx.action === 'unmarked').length;
@@ -468,7 +472,7 @@ export default function StagedTransactionReview() {
           <div className={styles.empty}><Text>No staged transactions found.</Text></div>
         ) : (
           <DataGrid
-            items={filteredTxs}
+            items={pageItems}
             columns={columns}
             sortable
             getRowId={(item) => item._id}
@@ -490,6 +494,10 @@ export default function StagedTransactionReview() {
         )}
       </div>
 
+      <PaginationControls
+        page={page} pageSize={pageSize} totalItems={totalItems}
+        totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
+      />
       {/* Summary */}
       {selectedJobId && stagedTxs.length > 0 && (
         <div className={styles.summary}>

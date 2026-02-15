@@ -18,6 +18,8 @@ import {
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import PaginationControls from '../../components/PaginationControls.jsx';
+import { usePagination } from '../../hooks/usePagination.js';
 import { expensesApi, clientsApi, projectsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -235,6 +237,8 @@ export default function ExpenseList() {
     setSelected(new Set());
   };
 
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(entries);
+
   const selectedId = selected.size === 1 ? [...selected][0] : null;
 
   const renderGrid = () => {
@@ -254,7 +258,7 @@ export default function ExpenseList() {
     }
     return (
       <DataGrid
-        items={entries}
+        items={pageItems}
         columns={gridColumns}
         sortable
         getRowId={(item) => item._id}
@@ -359,6 +363,10 @@ export default function ExpenseList() {
       <div style={{ flex: 1, overflow: 'auto' }}>
         {renderGrid()}
       </div>
+      <PaginationControls
+        page={page} pageSize={pageSize} totalItems={totalItems}
+        totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
+      />
       {entries.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>

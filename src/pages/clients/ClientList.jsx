@@ -16,6 +16,8 @@ import {
 } from '@fluentui/react-components';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import PaginationControls from '../../components/PaginationControls.jsx';
+import { usePagination } from '../../hooks/usePagination.js';
 import { clientsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -114,6 +116,8 @@ export default function ClientList() {
     setSelected(new Set());
   };
 
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered);
+
   const selectedId = selected.size === 1 ? [...selected][0] : null;
 
   return (
@@ -136,7 +140,7 @@ export default function ClientList() {
           <div className={styles.empty}><Text>No clients found. Click 'New Client' to create one.</Text></div>
         ) : (
           <DataGrid
-            items={filtered}
+            items={pageItems}
             columns={columns}
             sortable
             getRowId={(item) => item._id}
@@ -164,6 +168,10 @@ export default function ClientList() {
           </DataGrid>
         )}
       </div>
+      <PaginationControls
+        page={page} pageSize={pageSize} totalItems={totalItems}
+        totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
+      />
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
