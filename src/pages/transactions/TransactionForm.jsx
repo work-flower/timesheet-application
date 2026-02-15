@@ -18,6 +18,7 @@ import {
   Button,
   Badge,
   Link,
+  Tooltip,
 } from '@fluentui/react-components';
 import { SaveRegular, AddRegular } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
@@ -190,16 +191,21 @@ export default function TransactionForm() {
         >
           {saving ? 'Saving...' : 'Save Status'}
         </Button>
-        {isDebit && (
+        <Tooltip
+          content="Only debit transactions (negative amounts) can be converted to expenses"
+          relationship="description"
+          withArrow
+        >
           <Button
             appearance="outline"
             icon={<AddRegular />}
             onClick={handleCreateExpense}
+            disabled={!isDebit}
             size="small"
           >
             Create Expense
           </Button>
-        )}
+        </Tooltip>
       </FormCommandBar>
 
       <div className={styles.pageBody}>
