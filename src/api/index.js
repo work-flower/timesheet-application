@@ -168,6 +168,8 @@ export const invoicesApi = {
   recalculate: (id) => request(`/invoices/${id}/recalculate`, { method: 'POST', body: '{}' }),
   consistencyCheck: (id) => request(`/invoices/${id}/consistency-check`, { method: 'POST', body: '{}' }),
   updatePayment: (id, data) => request(`/invoices/${id}/payment`, { method: 'PUT', body: JSON.stringify(data) }),
+  linkTransaction: (id, transactionId) => request(`/invoices/${id}/link-transaction`, { method: 'POST', body: JSON.stringify({ transactionId }) }),
+  unlinkTransaction: (id, transactionId) => request(`/invoices/${id}/unlink-transaction`, { method: 'POST', body: JSON.stringify({ transactionId }) }),
   getPdfUrl: (id) => `${BASE}/invoices/${id}/pdf`,
   getFileUrl: (id) => `${BASE}/invoices/${id}/file`,
 };

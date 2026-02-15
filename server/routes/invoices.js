@@ -106,6 +106,24 @@ router.put('/:id/payment', async (req, res) => {
   }
 });
 
+router.post('/:id/link-transaction', async (req, res) => {
+  try {
+    const result = await invoiceService.linkTransaction(req.params.id, req.body.transactionId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/:id/unlink-transaction', async (req, res) => {
+  try {
+    const result = await invoiceService.unlinkTransaction(req.params.id, req.body.transactionId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.get('/:id/file', async (req, res) => {
   try {
     const invoice = await invoiceService.getById(req.params.id);

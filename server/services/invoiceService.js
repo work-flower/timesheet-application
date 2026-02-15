@@ -91,6 +91,7 @@ export async function create(data) {
     lines,
     includeTimesheetReport: data.includeTimesheetReport || false,
     includeExpenseReport: data.includeExpenseReport || false,
+    transactions: [],
     paymentStatus: 'unpaid',
     paidDate: null,
     subtotal,
@@ -511,6 +512,39 @@ export async function removeByClientId(clientId) {
     }
   }
   return invoices.remove({ clientId }, { multi: true });
+}
+
+export async function linkTransaction(id, transactionId) {
+  const invoice = await invoices.findOne({ _id: id });
+  if (!invoice) throw new Error('Invoice not found');
+
+  const txList = invoice.transactions || [];
+  if (txList.includes(transactionId)) {
+    return getById(id); // Already linked, no-op
+  }
+
+  await invoices.update({ _id: id }, {
+    $set: {
+      transactions: [...txList, transactionId],
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  return getById(id);
+}
+
+export async function unlinkTransaction(id, transactionId) {
+  const invoice = await invoices.findOne({ _id: id });
+  if (!invoice) throw new Error('Invoice not found');
+
+  const txList = (invoice.transactions || []).filter((t) => t !== transactionId);
+
+  await invoices.update({ _id: id }, {
+    $set: {
+      transactions: txList,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  return getById(id);
 }
 
 // --- Helpers ---
