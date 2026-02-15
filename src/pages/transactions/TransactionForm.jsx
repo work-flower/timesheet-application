@@ -42,6 +42,8 @@ import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import { transactionsApi, invoicesApi, expensesApi } from '../../api/index.js';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
+import { usePagination } from '../../hooks/usePagination.js';
+import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
@@ -321,6 +323,8 @@ export default function TransactionForm() {
     return list;
   }, [invoices, invoiceSearch, showLinkedInvoices]);
 
+  const invoicePagination = usePagination(filteredInvoices, { defaultPageSize: 10 });
+
   const handleInvoiceConfirm = async () => {
     if (!selectedInvoiceId) return;
     setError(null);
@@ -399,6 +403,8 @@ export default function TransactionForm() {
     }
     return list;
   }, [expensesList, expenseSearch, showLinkedExpenses]);
+
+  const expensePagination = usePagination(filteredExpenses, { defaultPageSize: 10 });
 
   const handleExpenseConfirm = async () => {
     if (!selectedExpenseId) return;
@@ -639,7 +645,7 @@ export default function TransactionForm() {
 
       {/* Invoice Picker Dialog */}
       <Dialog open={invoicePickerOpen} onOpenChange={(e, d) => { if (!d.open) setInvoicePickerOpen(false); }}>
-        <DialogSurface style={{ maxWidth: '800px', width: '90vw' }}>
+        <DialogSurface style={{ maxWidth: '800px', width: '90vw', maxHeight: '85vh' }}>
           <DialogBody>
             <DialogTitle>Link to Invoice</DialogTitle>
             <DialogContent>
@@ -659,7 +665,7 @@ export default function TransactionForm() {
                   style={{ whiteSpace: 'nowrap' }}
                 />
               </div>
-              <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+              <div style={{ maxHeight: '500px', overflow: 'auto' }}>
                 {invoicesLoading ? (
                   <div style={{ padding: '24px', textAlign: 'center' }}>
                     <Spinner size="small" label="Loading invoices..." />
@@ -670,7 +676,7 @@ export default function TransactionForm() {
                   </Text>
                 ) : (
                   <DataGrid
-                    items={filteredInvoices}
+                    items={invoicePagination.pageItems}
                     columns={invoiceColumns}
                     sortable
                     getRowId={(item) => item._id}
@@ -702,6 +708,14 @@ export default function TransactionForm() {
                   </DataGrid>
                 )}
               </div>
+              <PaginationControls
+                page={invoicePagination.page}
+                pageSize={invoicePagination.pageSize}
+                totalItems={invoicePagination.totalItems}
+                totalPages={invoicePagination.totalPages}
+                onPageChange={invoicePagination.setPage}
+                onPageSizeChange={invoicePagination.setPageSize}
+              />
               {selectedInvoiceId && (
                 <Text style={{ marginTop: '8px', fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 }}>
                   Selected: {invoices.find((i) => i._id === selectedInvoiceId)?.invoiceNumber || selectedInvoiceId}
@@ -718,7 +732,7 @@ export default function TransactionForm() {
 
       {/* Expense Picker Dialog */}
       <Dialog open={expensePickerOpen} onOpenChange={(e, d) => { if (!d.open) setExpensePickerOpen(false); }}>
-        <DialogSurface style={{ maxWidth: '800px', width: '90vw' }}>
+        <DialogSurface style={{ maxWidth: '800px', width: '90vw', maxHeight: '85vh' }}>
           <DialogBody>
             <DialogTitle>Link to Expense</DialogTitle>
             <DialogContent>
@@ -738,7 +752,7 @@ export default function TransactionForm() {
                   style={{ whiteSpace: 'nowrap' }}
                 />
               </div>
-              <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+              <div style={{ maxHeight: '500px', overflow: 'auto' }}>
                 {expensesLoading ? (
                   <div style={{ padding: '24px', textAlign: 'center' }}>
                     <Spinner size="small" label="Loading expenses..." />
@@ -749,7 +763,7 @@ export default function TransactionForm() {
                   </Text>
                 ) : (
                   <DataGrid
-                    items={filteredExpenses}
+                    items={expensePagination.pageItems}
                     columns={expenseColumns}
                     sortable
                     getRowId={(item) => item._id}
@@ -781,6 +795,14 @@ export default function TransactionForm() {
                   </DataGrid>
                 )}
               </div>
+              <PaginationControls
+                page={expensePagination.page}
+                pageSize={expensePagination.pageSize}
+                totalItems={expensePagination.totalItems}
+                totalPages={expensePagination.totalPages}
+                onPageChange={expensePagination.setPage}
+                onPageSizeChange={expensePagination.setPageSize}
+              />
               {selectedExpenseId && (
                 <Text style={{ marginTop: '8px', fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 }}>
                   Selected: {expensesList.find((e) => e._id === selectedExpenseId)?.description || selectedExpenseId}
