@@ -40,7 +40,7 @@ import {
 import { SaveRegular, AddRegular, LinkRegular, LinkMultipleRegular } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
-import { transactionsApi, invoicesApi } from '../../api/index.js';
+import { transactionsApi, invoicesApi, expensesApi } from '../../api/index.js';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
@@ -122,6 +122,45 @@ const baseInvoiceColumns = [
   }),
 ];
 
+const baseExpenseColumns = [
+  createTableColumn({
+    columnId: 'date',
+    compare: (a, b) => (a.date || '').localeCompare(b.date || ''),
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'clientName',
+    compare: (a, b) => (a.clientName || '').localeCompare(b.clientName || ''),
+    renderHeaderCell: () => 'Client',
+    renderCell: (item) => <TableCellLayout>{item.clientName || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'projectName',
+    compare: (a, b) => (a.projectName || '').localeCompare(b.projectName || ''),
+    renderHeaderCell: () => 'Project',
+    renderCell: (item) => <TableCellLayout>{item.projectName || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'expenseType',
+    compare: (a, b) => (a.expenseType || '').localeCompare(b.expenseType || ''),
+    renderHeaderCell: () => 'Type',
+    renderCell: (item) => <TableCellLayout>{item.expenseType || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'description',
+    compare: (a, b) => (a.description || '').localeCompare(b.description || ''),
+    renderHeaderCell: () => 'Description',
+    renderCell: (item) => <TableCellLayout>{item.description || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'amount',
+    compare: (a, b) => (a.amount || 0) - (b.amount || 0),
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => <TableCellLayout>{fmtGBP.format(item.amount || 0)}</TableCellLayout>,
+  }),
+];
+
 const statusColors = {
   matched: 'success',
   unmatched: 'warning',
@@ -152,6 +191,14 @@ export default function TransactionForm() {
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
   const [showLinkedInvoices, setShowLinkedInvoices] = useState(false);
+
+  // Expense picker state
+  const [expensePickerOpen, setExpensePickerOpen] = useState(false);
+  const [expensesList, setExpensesList] = useState([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
+  const [expenseSearch, setExpenseSearch] = useState('');
+  const [selectedExpenseId, setSelectedExpenseId] = useState(null);
+  const [showLinkedExpenses, setShowLinkedExpenses] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -296,6 +343,84 @@ export default function TransactionForm() {
     }
   };
 
+  // Expense picker
+  const handleOpenExpensePicker = useCallback(async () => {
+    setExpensePickerOpen(true);
+    setExpenseSearch('');
+    setSelectedExpenseId(null);
+    setShowLinkedExpenses(false);
+    setExpensesLoading(true);
+    try {
+      const result = await expensesApi.getAll();
+      setExpensesList(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExpensesLoading(false);
+    }
+  }, []);
+
+  const expenseColumns = useMemo(() => [
+    createTableColumn({
+      columnId: 'linked',
+      compare: (a, b) => {
+        const aLinked = (a.transactions || []).includes(id) ? 1 : 0;
+        const bLinked = (b.transactions || []).includes(id) ? 1 : 0;
+        return aLinked - bLinked;
+      },
+      renderHeaderCell: () => '',
+      renderCell: (item) => {
+        const isLinked = (item.transactions || []).includes(id);
+        if (!isLinked) return null;
+        return (
+          <TableCellLayout>
+            <Tooltip content="This expense is already linked to this transaction" relationship="label" withArrow>
+              <LinkMultipleRegular style={{ color: tokens.colorBrandForeground1, fontSize: '16px' }} />
+            </Tooltip>
+          </TableCellLayout>
+        );
+      },
+    }),
+    ...baseExpenseColumns,
+  ], [id]);
+
+  const filteredExpenses = useMemo(() => {
+    let list = expensesList;
+    if (!showLinkedExpenses) {
+      list = list.filter((exp) => !(exp.transactions?.length > 0));
+    }
+    if (expenseSearch) {
+      const q = expenseSearch.toLowerCase();
+      list = list.filter((exp) =>
+        (exp.description || '').toLowerCase().includes(q) ||
+        (exp.clientName || '').toLowerCase().includes(q) ||
+        (exp.expenseType || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [expensesList, expenseSearch, showLinkedExpenses]);
+
+  const handleExpenseConfirm = async () => {
+    if (!selectedExpenseId) return;
+    setError(null);
+    setSuccess(null);
+    try {
+      await expensesApi.linkTransaction(selectedExpenseId, id);
+      const updated = await transactionsApi.updateMapping(id, { status: 'matched' });
+      setData(updated);
+      setBase({
+        status: updated.status || 'unmatched',
+        ignoreReason: updated.ignoreReason || '',
+      });
+      setSuccess('Transaction linked to expense successfully.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExpensePickerOpen(false);
+    }
+  };
+
   // Navigation guard
   useEffect(() => {
     return registerGuard({ isDirty, onSave: saveForm });
@@ -368,6 +493,21 @@ export default function TransactionForm() {
             size="small"
           >
             Link to Invoice
+          </Button>
+        </Tooltip>
+        <Tooltip
+          content="Only debit transactions (negative amounts) can be linked to expenses"
+          relationship="description"
+          withArrow
+        >
+          <Button
+            appearance="outline"
+            icon={<LinkRegular />}
+            onClick={handleOpenExpensePicker}
+            disabled={!isDebit}
+            size="small"
+          >
+            Link to Expense
           </Button>
         </Tooltip>
       </FormCommandBar>
@@ -571,6 +711,85 @@ export default function TransactionForm() {
             <DialogActions>
               <Button appearance="secondary" onClick={() => setInvoicePickerOpen(false)}>Cancel</Button>
               <Button appearance="primary" onClick={handleInvoiceConfirm} disabled={!selectedInvoiceId}>Confirm</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Expense Picker Dialog */}
+      <Dialog open={expensePickerOpen} onOpenChange={(e, d) => { if (!d.open) setExpensePickerOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '800px', width: '90vw' }}>
+          <DialogBody>
+            <DialogTitle>Link to Expense</DialogTitle>
+            <DialogContent>
+              <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <SearchBox
+                  placeholder="Search by description, client, or type..."
+                  value={expenseSearch}
+                  onChange={(e, d) => setExpenseSearch(d.value)}
+                  size="small"
+                  style={{ flex: 1 }}
+                />
+                <Checkbox
+                  checked={showLinkedExpenses}
+                  onChange={(e, d) => setShowLinkedExpenses(d.checked)}
+                  label="Show linked"
+                  size="medium"
+                  style={{ whiteSpace: 'nowrap' }}
+                />
+              </div>
+              <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                {expensesLoading ? (
+                  <div style={{ padding: '24px', textAlign: 'center' }}>
+                    <Spinner size="small" label="Loading expenses..." />
+                  </div>
+                ) : filteredExpenses.length === 0 ? (
+                  <Text style={{ padding: '16px', color: tokens.colorNeutralForeground3 }}>
+                    No expenses found.
+                  </Text>
+                ) : (
+                  <DataGrid
+                    items={filteredExpenses}
+                    columns={expenseColumns}
+                    sortable
+                    getRowId={(item) => item._id}
+                    style={{ width: '100%' }}
+                  >
+                    <DataGridHeader>
+                      <DataGridRow>
+                        {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                      </DataGridRow>
+                    </DataGridHeader>
+                    <DataGridBody>
+                      {({ item, rowId }) => (
+                        <DataGridRow
+                          key={rowId}
+                          style={{
+                            cursor: 'pointer',
+                            backgroundColor: selectedExpenseId === item._id ? tokens.colorBrandBackground2 : undefined,
+                          }}
+                          onClick={() => setSelectedExpenseId(item._id)}
+                        >
+                          {({ renderCell }) => (
+                            <DataGridCell>
+                              {renderCell(item)}
+                            </DataGridCell>
+                          )}
+                        </DataGridRow>
+                      )}
+                    </DataGridBody>
+                  </DataGrid>
+                )}
+              </div>
+              {selectedExpenseId && (
+                <Text style={{ marginTop: '8px', fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 }}>
+                  Selected: {expensesList.find((e) => e._id === selectedExpenseId)?.description || selectedExpenseId}
+                </Text>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setExpensePickerOpen(false)}>Cancel</Button>
+              <Button appearance="primary" onClick={handleExpenseConfirm} disabled={!selectedExpenseId}>Confirm</Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

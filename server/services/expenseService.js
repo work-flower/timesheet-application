@@ -108,6 +108,7 @@ export async function create(data) {
     billable: data.billable !== false,
     currency: data.currency || client?.currency || 'GBP',
     attachments: [],
+    transactions: [],
     notes: data.notes || '',
     createdAt: now,
     updatedAt: now,
@@ -154,6 +155,35 @@ export async function remove(id) {
   assertNotLocked(existing);
   await removeAllAttachments(id);
   return expenses.remove({ _id: id });
+}
+
+export async function linkTransaction(id, transactionId) {
+  const expense = await expenses.findOne({ _id: id });
+  if (!expense) throw new Error('Expense not found');
+  const txList = expense.transactions || [];
+  if (txList.includes(transactionId)) {
+    return getById(id);
+  }
+  await expenses.update({ _id: id }, {
+    $set: {
+      transactions: [...txList, transactionId],
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  return getById(id);
+}
+
+export async function unlinkTransaction(id, transactionId) {
+  const expense = await expenses.findOne({ _id: id });
+  if (!expense) throw new Error('Expense not found');
+  const txList = (expense.transactions || []).filter((t) => t !== transactionId);
+  await expenses.update({ _id: id }, {
+    $set: {
+      transactions: txList,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  return getById(id);
 }
 
 export async function getDistinctTypes() {

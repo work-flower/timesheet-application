@@ -125,6 +125,8 @@ export const expensesApi = {
   create: (data) => request('/expenses', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/expenses/${id}`, { method: 'DELETE' }),
+  linkTransaction: (id, transactionId) => request(`/expenses/${id}/link-transaction`, { method: 'POST', body: JSON.stringify({ transactionId }) }),
+  unlinkTransaction: (id, transactionId) => request(`/expenses/${id}/unlink-transaction`, { method: 'POST', body: JSON.stringify({ transactionId }) }),
   uploadAttachments: async (id, files) => {
     const formData = new FormData();
     for (const file of files) {

@@ -63,6 +63,24 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+router.post('/:id/link-transaction', async (req, res) => {
+  try {
+    const result = await expenseService.linkTransaction(req.params.id, req.body.transactionId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/:id/unlink-transaction', async (req, res) => {
+  try {
+    const result = await expenseService.unlinkTransaction(req.params.id, req.body.transactionId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Attachment endpoints
 router.post('/:id/attachments', upload.array('files', 10), async (req, res) => {
   try {
