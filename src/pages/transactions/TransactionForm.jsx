@@ -53,12 +53,6 @@ const useStyles = makeStyles({
     maxHeight: '300px',
     overflow: 'auto',
   },
-  statusActions: {
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'flex-start',
-    marginTop: '16px',
-  },
 });
 
 const fmtGBP = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
@@ -160,7 +154,27 @@ export default function TransactionForm() {
       <FormCommandBar
         onBack={() => navigate('/transactions')}
         locked
-      />
+      >
+        <Button
+          appearance="primary"
+          icon={<SaveRegular />}
+          onClick={handleSaveMapping}
+          disabled={saving || (status === 'ignored' && !ignoreReason.trim())}
+          size="small"
+        >
+          {saving ? 'Saving...' : 'Save Status'}
+        </Button>
+        {isDebit && (
+          <Button
+            appearance="outline"
+            icon={<AddRegular />}
+            onClick={handleCreateExpense}
+            size="small"
+          >
+            Create Expense
+          </Button>
+        )}
+      </FormCommandBar>
 
       <div className={styles.pageBody}>
         <div className={styles.header}>
@@ -290,25 +304,6 @@ export default function TransactionForm() {
           )}
         </FormSection>
 
-        <div className={styles.statusActions}>
-          <Button
-            appearance="primary"
-            icon={<SaveRegular />}
-            onClick={handleSaveMapping}
-            disabled={saving || (status === 'ignored' && !ignoreReason.trim())}
-          >
-            {saving ? 'Saving...' : 'Save Status'}
-          </Button>
-          {isDebit && (
-            <Button
-              appearance="secondary"
-              icon={<AddRegular />}
-              onClick={handleCreateExpense}
-            >
-              Create Expense
-            </Button>
-          )}
-        </div>
       </div>
     </div>
   );

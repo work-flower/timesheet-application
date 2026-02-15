@@ -21,7 +21,7 @@ const useStyles = makeStyles({
   },
 });
 
-export default function FormCommandBar({ onSave, onSaveAndClose, onBack, onDelete, saveDisabled, saving, locked }) {
+export default function FormCommandBar({ onSave, onSaveAndClose, onBack, onDelete, saveDisabled, saving, locked, children }) {
   return (
     <div className={useStyles().bar}>
       <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={onBack} size="small">
@@ -58,6 +58,12 @@ export default function FormCommandBar({ onSave, onSaveAndClose, onBack, onDelet
               </Button>
             </>
           )}
+        </>
+      )}
+      {children && (
+        <>
+          <ToolbarDivider />
+          {children}
         </>
       )}
     </div>
