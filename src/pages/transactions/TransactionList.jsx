@@ -165,12 +165,6 @@ const columns = [
     ),
   }),
   createTableColumn({
-    columnId: 'balance',
-    compare: (a, b) => (a.balance || 0) - (b.balance || 0),
-    renderHeaderCell: () => 'Balance',
-    renderCell: (item) => <TableCellLayout>{item.balance != null ? fmtGBP.format(item.balance) : '\u2014'}</TableCellLayout>,
-  }),
-  createTableColumn({
     columnId: 'reference',
     compare: (a, b) => (a.reference || '').localeCompare(b.reference || ''),
     renderHeaderCell: () => 'Reference',
@@ -220,11 +214,10 @@ export default function TransactionList() {
     setLoading(true);
     const params = { ...dateRange };
     if (statusFilter !== 'all') params.status = statusFilter;
-    if (accountFilter) params.accountName = accountFilter;
     transactionsApi.getAll(params)
       .then(setEntries)
       .finally(() => setLoading(false));
-  }, [dateRange, statusFilter, accountFilter]);
+  }, [dateRange, statusFilter]);
 
   const accounts = useMemo(() => {
     const names = [...new Set(entries.map((e) => e.accountName).filter(Boolean))];
@@ -232,16 +225,26 @@ export default function TransactionList() {
     return names;
   }, [entries]);
 
+  // Validate persisted account filter against loaded data
+  useEffect(() => {
+    const accountNames = new Set(entries.map((e) => e.accountName).filter(Boolean));
+    setAccountFilter((prev) => prev && !accountNames.has(prev) ? '' : prev);
+  }, [entries]);
+
   const filtered = useMemo(() => {
-    if (!search) return entries;
+    let result = entries;
+    if (accountFilter) {
+      result = result.filter((e) => e.accountName === accountFilter);
+    }
+    if (!search) return result;
     const q = search.toLowerCase();
-    return entries.filter((e) =>
+    return result.filter((e) =>
       (e.description || '').toLowerCase().includes(q) ||
       (e.accountName || '').toLowerCase().includes(q) ||
       (e.accountNumber || '').toLowerCase().includes(q) ||
       (e.reference || '').toLowerCase().includes(q)
     );
-  }, [entries, search]);
+  }, [entries, search, accountFilter]);
 
   const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered);
 

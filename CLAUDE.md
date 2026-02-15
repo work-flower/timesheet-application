@@ -224,7 +224,6 @@ Deleted when job is abandoned.
 | date | `YYYY-MM-DD` |
 | description | Transaction description |
 | amount | Number, negative for debits, positive for credits |
-| balance | Running balance (nullable) |
 | importJobId | FK → importJobs (source traceability) |
 | source | Full staged transaction record (audit trail) |
 | status | `unmatched`, `matched`, or `ignored` |

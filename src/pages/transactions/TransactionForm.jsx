@@ -23,6 +23,8 @@ import { SaveRegular, AddRegular } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import { transactionsApi } from '../../api/index.js';
+import { useFormTracker } from '../../hooks/useFormTracker.js';
+import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -67,15 +69,17 @@ export default function TransactionForm() {
   const styles = useStyles();
   const { id } = useParams();
   const navigate = useNavigate();
+  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+
+  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
+    status: 'unmatched',
+    ignoreReason: '',
+  });
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-
-  // Editable mapping fields
-  const [status, setStatus] = useState('unmatched');
-  const [ignoreReason, setIgnoreReason] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -87,34 +91,51 @@ export default function TransactionForm() {
     transactionsApi.getById(id)
       .then((result) => {
         setData(result);
-        setStatus(result.status || 'unmatched');
-        setIgnoreReason(result.ignoreReason || '');
+        setBase({
+          status: result.status || 'unmatched',
+          ignoreReason: result.ignoreReason || '',
+        });
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [id, navigate]);
+  }, [id, navigate, setBase]);
 
-  const handleSaveMapping = useCallback(async () => {
+  const handleChange = (field) => (e, d) => {
+    const value = d?.value ?? e.target.value;
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const saveForm = useCallback(async () => {
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      const payload = { status };
-      if (status === 'ignored') {
-        payload.ignoreReason = ignoreReason;
+      const payload = { status: form.status };
+      if (form.status === 'ignored') {
+        payload.ignoreReason = form.ignoreReason;
       }
       const updated = await transactionsApi.updateMapping(id, payload);
       setData(updated);
-      setStatus(updated.status || 'unmatched');
-      setIgnoreReason(updated.ignoreReason || '');
-      setSuccess('Status updated successfully.');
-      setTimeout(() => setSuccess(null), 3000);
+      setBase({
+        status: updated.status || 'unmatched',
+        ignoreReason: updated.ignoreReason || '',
+      });
+      return { ok: true };
     } catch (err) {
       setError(err.message);
+      return { ok: false };
     } finally {
       setSaving(false);
     }
-  }, [id, status, ignoreReason]);
+  }, [id, form.status, form.ignoreReason, setBase]);
+
+  const handleSaveStatus = async () => {
+    const result = await saveForm();
+    if (result.ok) {
+      setSuccess('Status updated successfully.');
+      setTimeout(() => setSuccess(null), 3000);
+    }
+  };
 
   const handleCreateExpense = () => {
     if (!data) return;
@@ -122,13 +143,18 @@ export default function TransactionForm() {
     params.set('date', data.date);
     params.set('amount', String(Math.abs(data.amount)));
     params.set('description', data.description || '');
-    navigate(`/expenses/new?${params.toString()}`);
+    guardedNavigate(`/expenses/new?${params.toString()}`);
   };
+
+  // Navigation guard
+  useEffect(() => {
+    return registerGuard({ isDirty, onSave: saveForm });
+  }, [isDirty, saveForm, registerGuard]);
 
   if (loading) {
     return (
       <div className={styles.page}>
-        <FormCommandBar onBack={() => navigate('/transactions')} />
+        <FormCommandBar onBack={() => guardedNavigate('/transactions')} />
         <div className={styles.loading}><Spinner label="Loading..." /></div>
       </div>
     );
@@ -137,7 +163,7 @@ export default function TransactionForm() {
   if (!data) {
     return (
       <div className={styles.page}>
-        <FormCommandBar onBack={() => navigate('/transactions')} />
+        <FormCommandBar onBack={() => guardedNavigate('/transactions')} />
         <div className={styles.pageBody}>
           <MessageBar intent="error" className={styles.message}>
             <MessageBarBody>Transaction not found.</MessageBarBody>
@@ -152,14 +178,14 @@ export default function TransactionForm() {
   return (
     <div className={styles.page}>
       <FormCommandBar
-        onBack={() => navigate('/transactions')}
+        onBack={() => guardedNavigate('/transactions')}
         locked
       >
         <Button
           appearance="primary"
           icon={<SaveRegular />}
-          onClick={handleSaveMapping}
-          disabled={saving || (status === 'ignored' && !ignoreReason.trim())}
+          onClick={handleSaveStatus}
+          disabled={saving || (form.status === 'ignored' && !form.ignoreReason.trim())}
           size="small"
         >
           {saving ? 'Saving...' : 'Save Status'}
@@ -180,7 +206,7 @@ export default function TransactionForm() {
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbButton onClick={() => navigate('/transactions')}>Transactions</BreadcrumbButton>
+              <BreadcrumbButton onClick={() => guardedNavigate('/transactions')}>Transactions</BreadcrumbButton>
             </BreadcrumbItem>
             <BreadcrumbDivider />
             <BreadcrumbItem>
@@ -206,7 +232,7 @@ export default function TransactionForm() {
         </MessageBar>
 
         {/* Section 1: Read-only transaction details */}
-        <fieldset disabled style={{ border: 'none', padding: 0, margin: 0 }}>
+        <fieldset disabled style={{ border: 'none', padding: 0, margin: 0, opacity: 0.6 }}>
           <FormSection title="Transaction Details">
             <FormField>
               <Field label="Date">
@@ -228,11 +254,6 @@ export default function TransactionForm() {
               </Field>
             </FormField>
             <FormField>
-              <Field label="Balance">
-                <Input value={data.balance != null ? fmtGBP.format(data.balance) : '\u2014'} readOnly />
-              </Field>
-            </FormField>
-            <FormField>
               <Field label="Reference">
                 <Input value={data.reference || '\u2014'} readOnly />
               </Field>
@@ -250,11 +271,11 @@ export default function TransactionForm() {
             <FormField>
               <Field label="Import Job">
                 {data.importJobId ? (
-                  <Link onClick={() => navigate(`/import-jobs/${data.importJobId}`)}>
+                  <Link onClick={() => guardedNavigate(`/import-jobs/${data.importJobId}`)}>
                     {data.importJobId}
                   </Link>
                 ) : (
-                  <Text>\u2014</Text>
+                  <Text>{'\u2014'}</Text>
                 )}
               </Field>
             </FormField>
@@ -279,22 +300,22 @@ export default function TransactionForm() {
         </fieldset>
 
         {/* Section 2: Editable status mapping */}
-        <FormSection title="Status &amp; Mapping">
-          <FormField>
+        <FormSection title="Status & Mapping">
+          <FormField changed={changedFields.has('status')}>
             <Field label="Status">
-              <Select value={status} onChange={(e, d) => setStatus(d.value)}>
+              <Select value={form.status} onChange={handleChange('status')}>
                 <option value="unmatched">Unmatched</option>
                 <option value="matched">Matched</option>
                 <option value="ignored">Ignored</option>
               </Select>
             </Field>
           </FormField>
-          {status === 'ignored' && (
-            <FormField fullWidth>
+          {form.status === 'ignored' && (
+            <FormField fullWidth changed={changedFields.has('ignoreReason')}>
               <Field label="Ignore Reason" required>
                 <Textarea
-                  value={ignoreReason}
-                  onChange={(e, d) => setIgnoreReason(d.value)}
+                  value={form.ignoreReason}
+                  onChange={handleChange('ignoreReason')}
                   placeholder="Why is this transaction being ignored?"
                   resize="vertical"
                   rows={3}

@@ -47,7 +47,6 @@ export async function create(data) {
     date: data.date,
     description: data.description,
     amount: Number(data.amount),
-    balance: data.balance != null ? Number(data.balance) : null,
     reference: data.reference || null,
     importJobId: data.importJobId,
     source: data.source || null,
