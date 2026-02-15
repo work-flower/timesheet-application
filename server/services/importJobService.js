@@ -88,8 +88,15 @@ export async function processFile(jobId) {
     const { rows, stopReason } = await parseFile(job.filePath, job.filename, job.userPrompt);
 
     // Build staged transactions with composite hash
+    const ID_KEY_PATTERNS = [/id$/i, /reference/i, /number$/i, /^ref$/i, /^txn/i];
     const stagedItems = rows.map((row) => {
-      const hashInput = `${job.filename}-${row.date || ''}-${row.description || ''}-${row.amount || ''}`;
+      let hashInput = `${job.filename}-${row.date || ''}-${row.description || ''}-${row.amount || ''}`;
+      // Append any identifier-like fields for stronger dedup
+      for (const key of Object.keys(row)) {
+        if (ID_KEY_PATTERNS.some((p) => p.test(key)) && row[key] != null && row[key] !== '') {
+          hashInput += `-${row[key]}`;
+        }
+      }
       const compositeHash = createHash('md5').update(hashInput).digest('hex');
       return {
         importJobId: jobId,
