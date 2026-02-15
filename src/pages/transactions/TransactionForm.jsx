@@ -13,8 +13,6 @@ import {
   BreadcrumbItem,
   BreadcrumbDivider,
   BreadcrumbButton,
-  Select,
-  Textarea,
   Button,
   Badge,
   Link,
@@ -33,18 +31,18 @@ import {
   DataGridCell,
   TableCellLayout,
   createTableColumn,
-  Radio,
   SearchBox,
   Checkbox,
+  TabList,
+  Tab,
 } from '@fluentui/react-components';
-import { SaveRegular, AddRegular, LinkRegular, LinkMultipleRegular } from '@fluentui/react-icons';
+import { AddRegular, LinkRegular, LinkMultipleRegular, LinkDismissRegular, WarningFilled } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
+import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import { transactionsApi, invoicesApi, expensesApi } from '../../api/index.js';
-import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
-import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -63,6 +61,18 @@ const useStyles = makeStyles({
     alignItems: 'center',
     padding: '48px',
   },
+  tabContent: {
+    paddingTop: '16px',
+  },
+  overviewRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '24px',
+    alignItems: 'start',
+    '@media (max-width: 768px)': {
+      gridTemplateColumns: '1fr',
+    },
+  },
   sourceSection: {
     marginTop: '8px',
     padding: '12px',
@@ -74,6 +84,43 @@ const useStyles = makeStyles({
     wordBreak: 'break-all',
     maxHeight: '300px',
     overflow: 'auto',
+  },
+  balanceSection: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase300,
+    padding: '16px',
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+  },
+  balanceRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '4px 0',
+  },
+  balanceSubRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '2px 0 2px 24px',
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  balanceGroupLabel: {
+    fontWeight: tokens.fontWeightSemibold,
+    padding: '8px 0 4px 0',
+    display: 'flex',
+    justifyContent: 'space-between',
+  },
+  balanceDivider: {
+    borderTop: `1px solid ${tokens.colorNeutralStroke1}`,
+    margin: '8px 0',
+  },
+  balanceTotal: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontWeight: tokens.fontWeightBold,
+    padding: '4px 0',
+    fontSize: tokens.fontSizeBase400,
   },
 });
 
@@ -173,18 +220,12 @@ export default function TransactionForm() {
   const styles = useStyles();
   const { id } = useParams();
   const navigate = useNavigate();
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
-
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
-    status: 'unmatched',
-    ignoreReason: '',
-  });
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [selectedTab, setSelectedTab] = useState('overview');
 
   // Invoice picker state
   const [invoicePickerOpen, setInvoicePickerOpen] = useState(false);
@@ -202,6 +243,38 @@ export default function TransactionForm() {
   const [selectedExpenseId, setSelectedExpenseId] = useState(null);
   const [showLinkedExpenses, setShowLinkedExpenses] = useState(false);
 
+  // Unlink confirmation state: { type: 'invoice'|'expense', id, label }
+  const [unlinkTarget, setUnlinkTarget] = useState(null);
+
+  const refreshTransaction = useCallback(async () => {
+    try {
+      const result = await transactionsApi.getById(id);
+      setData(result);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [id]);
+
+  const handleUnlinkConfirm = useCallback(async () => {
+    if (!unlinkTarget) return;
+    setError(null);
+    setSuccess(null);
+    try {
+      if (unlinkTarget.type === 'invoice') {
+        await invoicesApi.unlinkTransaction(unlinkTarget.id, id);
+      } else {
+        await expensesApi.unlinkTransaction(unlinkTarget.id, id);
+      }
+      await refreshTransaction();
+      setSuccess(`${unlinkTarget.type === 'invoice' ? 'Invoice' : 'Expense'} unlinked successfully.`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUnlinkTarget(null);
+    }
+  }, [unlinkTarget, id, refreshTransaction]);
+
   useEffect(() => {
     if (!id) {
       navigate('/transactions');
@@ -209,53 +282,10 @@ export default function TransactionForm() {
     }
     setLoading(true);
     transactionsApi.getById(id)
-      .then((result) => {
-        setData(result);
-        setBase({
-          status: result.status || 'unmatched',
-          ignoreReason: result.ignoreReason || '',
-        });
-      })
+      .then((result) => setData(result))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [id, navigate, setBase]);
-
-  const handleChange = (field) => (e, d) => {
-    const value = d?.value ?? e.target.value;
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const saveForm = useCallback(async () => {
-    setSaving(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      const payload = { status: form.status };
-      if (form.status === 'ignored') {
-        payload.ignoreReason = form.ignoreReason;
-      }
-      const updated = await transactionsApi.updateMapping(id, payload);
-      setData(updated);
-      setBase({
-        status: updated.status || 'unmatched',
-        ignoreReason: updated.ignoreReason || '',
-      });
-      return { ok: true };
-    } catch (err) {
-      setError(err.message);
-      return { ok: false };
-    } finally {
-      setSaving(false);
-    }
-  }, [id, form.status, form.ignoreReason, setBase]);
-
-  const handleSaveStatus = async () => {
-    const result = await saveForm();
-    if (result.ok) {
-      setSuccess('Status updated successfully.');
-      setTimeout(() => setSuccess(null), 3000);
-    }
-  };
+  }, [id, navigate]);
 
   const handleCreateExpense = () => {
     if (!data) return;
@@ -263,7 +293,7 @@ export default function TransactionForm() {
     params.set('date', data.date);
     params.set('amount', String(Math.abs(data.amount)));
     params.set('description', data.description || '');
-    guardedNavigate(`/expenses/new?${params.toString()}`);
+    navigate(`/expenses/new?${params.toString()}`);
   };
 
   // Invoice picker
@@ -331,13 +361,8 @@ export default function TransactionForm() {
     setSuccess(null);
     try {
       await invoicesApi.linkTransaction(selectedInvoiceId, id);
-      // Update transaction status to matched
-      const updated = await transactionsApi.updateMapping(id, { status: 'matched' });
-      setData(updated);
-      setBase({
-        status: updated.status || 'unmatched',
-        ignoreReason: updated.ignoreReason || '',
-      });
+      await transactionsApi.updateMapping(id, { status: 'matched' });
+      await refreshTransaction();
       setSuccess('Transaction linked to invoice successfully.');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
@@ -412,12 +437,8 @@ export default function TransactionForm() {
     setSuccess(null);
     try {
       await expensesApi.linkTransaction(selectedExpenseId, id);
-      const updated = await transactionsApi.updateMapping(id, { status: 'matched' });
-      setData(updated);
-      setBase({
-        status: updated.status || 'unmatched',
-        ignoreReason: updated.ignoreReason || '',
-      });
+      await transactionsApi.updateMapping(id, { status: 'matched' });
+      await refreshTransaction();
       setSuccess('Transaction linked to expense successfully.');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
@@ -427,15 +448,10 @@ export default function TransactionForm() {
     }
   };
 
-  // Navigation guard
-  useEffect(() => {
-    return registerGuard({ isDirty, onSave: saveForm });
-  }, [isDirty, saveForm, registerGuard]);
-
   if (loading) {
     return (
       <div className={styles.page}>
-        <FormCommandBar onBack={() => guardedNavigate('/transactions')} />
+        <FormCommandBar onBack={() => navigate('/transactions')} />
         <div className={styles.loading}><Spinner label="Loading..." /></div>
       </div>
     );
@@ -444,7 +460,7 @@ export default function TransactionForm() {
   if (!data) {
     return (
       <div className={styles.page}>
-        <FormCommandBar onBack={() => guardedNavigate('/transactions')} />
+        <FormCommandBar onBack={() => navigate('/transactions')} />
         <div className={styles.pageBody}>
           <MessageBar intent="error" className={styles.message}>
             <MessageBarBody>Transaction not found.</MessageBarBody>
@@ -459,18 +475,9 @@ export default function TransactionForm() {
   return (
     <div className={styles.page}>
       <FormCommandBar
-        onBack={() => guardedNavigate('/transactions')}
+        onBack={() => navigate('/transactions')}
         locked
       >
-        <Button
-          appearance="primary"
-          icon={<SaveRegular />}
-          onClick={handleSaveStatus}
-          disabled={saving || (form.status === 'ignored' && !form.ignoreReason.trim())}
-          size="small"
-        >
-          {saving ? 'Saving...' : 'Save Status'}
-        </Button>
         <Tooltip
           content="Only debit transactions (negative amounts) can be converted to expenses"
           relationship="description"
@@ -522,7 +529,7 @@ export default function TransactionForm() {
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbButton onClick={() => guardedNavigate('/transactions')}>Transactions</BreadcrumbButton>
+              <BreadcrumbButton onClick={() => navigate('/transactions')}>Transactions</BreadcrumbButton>
             </BreadcrumbItem>
             <BreadcrumbDivider />
             <BreadcrumbItem>
@@ -543,104 +550,187 @@ export default function TransactionForm() {
           </MessageBar>
         )}
 
-        <MessageBar intent="warning" className={styles.message}>
-          <MessageBarBody>Transactions are read-only by default. Only the status can be changed below.</MessageBarBody>
-        </MessageBar>
+        <TabList selectedValue={selectedTab} onTabSelect={(e, d) => setSelectedTab(d.value)}>
+          <Tab value="overview">Overview</Tab>
+          <Tab value="details">Details</Tab>
+        </TabList>
 
-        {/* Section 1: Read-only transaction details */}
-        <fieldset disabled style={{ border: 'none', padding: 0, margin: 0, opacity: 0.6 }}>
-          <FormSection title="Transaction Details">
-            <FormField>
-              <Field label="Date">
-                <Input value={data.date || ''} readOnly />
-              </Field>
-            </FormField>
-            <FormField>
-              <Field label="Amount">
-                <Input
-                  value={fmtGBP.format(data.amount)}
-                  readOnly
-                  style={{ color: data.amount >= 0 ? '#107C10' : '#D13438' }}
-                />
-              </Field>
-            </FormField>
-            <FormField fullWidth>
-              <Field label="Description">
-                <Input value={data.description || ''} readOnly />
-              </Field>
-            </FormField>
-            <FormField>
-              <Field label="Reference">
-                <Input value={data.reference || '\u2014'} readOnly />
-              </Field>
-            </FormField>
-            <FormField>
-              <Field label="Account Name">
-                <Input value={data.accountName || '\u2014'} readOnly />
-              </Field>
-            </FormField>
-            <FormField>
-              <Field label="Account Number">
-                <Input value={data.accountNumber || '\u2014'} readOnly />
-              </Field>
-            </FormField>
-            <FormField>
-              <Field label="Import Job">
-                {data.importJobId ? (
-                  <Link onClick={() => guardedNavigate(`/import-jobs/${data.importJobId}`)}>
-                    {data.importJobId}
-                  </Link>
-                ) : (
-                  <Text>{'\u2014'}</Text>
-                )}
-              </Field>
-            </FormField>
-            <FormField>
-              <Field label="Current Status">
-                <Badge appearance="filled" color={statusColors[data.status] || 'informative'} size="medium">
-                  {data.status}
-                </Badge>
-              </Field>
-            </FormField>
-          </FormSection>
+        <div className={styles.tabContent}>
+          {selectedTab === 'overview' && (
+            <div className={styles.overviewRow}>
+              <fieldset disabled style={{ border: 'none', padding: 0, margin: 0, pointerEvents: 'none', opacity: 0.6 }}>
+                <FormSection title="Transaction Details">
+                  <FormField fullWidth>
+                    <Field label="Date">
+                      <Input value={data.date || ''} readOnly />
+                    </Field>
+                  </FormField>
+                  <FormField fullWidth>
+                    <Field label="Amount">
+                      <Input
+                        value={fmtGBP.format(data.amount)}
+                        readOnly
+                        style={{ color: data.amount >= 0 ? '#107C10' : '#D13438' }}
+                      />
+                    </Field>
+                  </FormField>
+                  <FormField fullWidth>
+                    <Field label="Current Status">
+                      <Badge appearance="filled" color={statusColors[data.status] || 'informative'} size="medium">
+                        {data.status}
+                      </Badge>
+                    </Field>
+                  </FormField>
+                </FormSection>
+              </fieldset>
 
-          {data.source && (
-            <FormSection title="Source Details">
-              <FormField fullWidth>
-                <div className={styles.sourceSection}>
-                  {JSON.stringify(data.source, null, 2)}
-                </div>
-              </FormField>
-            </FormSection>
+              <FormSection title="Balance">
+                <FormField fullWidth>
+                  <div className={styles.balanceSection}>
+                    <div className={styles.balanceRow}>
+                      <span>Transaction Amount</span>
+                      <span>{fmtGBP.format(Math.abs(data.amount))}</span>
+                    </div>
+
+                    {!isDebit && data.linkedInvoices?.length > 0 && (
+                      <>
+                        <div className={styles.balanceGroupLabel}>
+                          <span>Linked Invoices</span>
+                          <span>{fmtGBP.format(-data.invoicesTotal)}</span>
+                        </div>
+                        {data.linkedInvoices.map((inv) => (
+                          <div key={inv._id} className={styles.balanceSubRow}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Tooltip content="Unlink this invoice" relationship="label" withArrow>
+                                <Button
+                                  appearance="subtle"
+                                  size="small"
+                                  icon={<LinkDismissRegular style={{ fontSize: '14px' }} />}
+                                  onClick={() => setUnlinkTarget({ type: 'invoice', id: inv._id, label: inv.invoiceNumber || 'Draft' })}
+                                  style={{ minWidth: 'auto', padding: '0 2px', height: '20px' }}
+                                />
+                              </Tooltip>
+                              <Link onClick={() => navigate(`/invoices/${inv._id}`)}>
+                                {inv.invoiceNumber || 'Draft'} {inv.invoiceDate ? `(${inv.invoiceDate})` : ''}
+                              </Link>
+                            </span>
+                            <span>{fmtGBP.format(-inv.total)}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {isDebit && data.linkedExpenses?.length > 0 && (
+                      <>
+                        <div className={styles.balanceGroupLabel}>
+                          <span>Linked Expenses</span>
+                          <span>{fmtGBP.format(-data.expensesTotal)}</span>
+                        </div>
+                        {data.linkedExpenses.map((exp) => (
+                          <div key={exp._id} className={styles.balanceSubRow}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Tooltip content="Unlink this expense" relationship="label" withArrow>
+                                <Button
+                                  appearance="subtle"
+                                  size="small"
+                                  icon={<LinkDismissRegular style={{ fontSize: '14px' }} />}
+                                  onClick={() => setUnlinkTarget({ type: 'expense', id: exp._id, label: exp.expenseType || exp.description || 'Expense' })}
+                                  style={{ minWidth: 'auto', padding: '0 2px', height: '20px' }}
+                                />
+                              </Tooltip>
+                              <Link onClick={() => navigate(`/expenses/${exp._id}`)}>
+                                {exp.expenseType || exp.description || 'Expense'} {exp.date ? `(${exp.date})` : ''}
+                              </Link>
+                            </span>
+                            <span>{fmtGBP.format(-exp.amount)}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    <div className={styles.balanceDivider} />
+                    {(() => {
+                      const remaining = data.remainingBalance ?? Math.abs(data.amount);
+                      const balanceColor = remaining === 0
+                        ? tokens.colorPaletteGreenForeground1
+                        : remaining < 0
+                          ? tokens.colorPaletteRedForeground1
+                          : tokens.colorStatusWarningForeground3;
+                      return (
+                        <div className={styles.balanceTotal}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            Remaining Balance
+                            {remaining > 0 && (
+                              <Tooltip content="Transaction not fully covered by linked items" relationship="label" withArrow>
+                                <WarningFilled style={{ color: tokens.colorStatusWarningForeground3, fontSize: '20px' }} />
+                              </Tooltip>
+                            )}
+                            {remaining < 0 && (
+                              <Tooltip content="Linked amounts exceed the transaction amount" relationship="label" withArrow>
+                                <WarningFilled style={{ color: tokens.colorPaletteRedForeground1, fontSize: '20px' }} />
+                              </Tooltip>
+                            )}
+                          </span>
+                          <span style={{ color: balanceColor }}>
+                            {fmtGBP.format(remaining)}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </FormField>
+              </FormSection>
+            </div>
           )}
-        </fieldset>
 
-        {/* Section 2: Editable status mapping */}
-        <FormSection title="Status & Mapping">
-          <FormField changed={changedFields.has('status')}>
-            <Field label="Status">
-              <Select value={form.status} onChange={handleChange('status')}>
-                <option value="unmatched">Unmatched</option>
-                <option value="matched">Matched</option>
-                <option value="ignored">Ignored</option>
-              </Select>
-            </Field>
-          </FormField>
-          {form.status === 'ignored' && (
-            <FormField fullWidth changed={changedFields.has('ignoreReason')}>
-              <Field label="Ignore Reason" required>
-                <Textarea
-                  value={form.ignoreReason}
-                  onChange={handleChange('ignoreReason')}
-                  placeholder="Why is this transaction being ignored?"
-                  resize="vertical"
-                  rows={3}
-                />
-              </Field>
-            </FormField>
+          {selectedTab === 'details' && (
+            <fieldset disabled style={{ border: 'none', padding: 0, margin: 0, pointerEvents: 'none', opacity: 0.6 }}>
+              <FormSection title="Transaction Details">
+                <FormField fullWidth>
+                  <Field label="Description">
+                    <Input value={data.description || ''} readOnly />
+                  </Field>
+                </FormField>
+                <FormField>
+                  <Field label="Reference">
+                    <Input value={data.reference || '\u2014'} readOnly />
+                  </Field>
+                </FormField>
+                <FormField>
+                  <Field label="Account Name">
+                    <Input value={data.accountName || '\u2014'} readOnly />
+                  </Field>
+                </FormField>
+                <FormField>
+                  <Field label="Account Number">
+                    <Input value={data.accountNumber || '\u2014'} readOnly />
+                  </Field>
+                </FormField>
+                <FormField>
+                  <Field label="Import Job">
+                    {data.importJobId ? (
+                      <Link onClick={() => navigate(`/import-jobs/${data.importJobId}`)}>
+                        {data.importJobId}
+                      </Link>
+                    ) : (
+                      <Text>{'\u2014'}</Text>
+                    )}
+                  </Field>
+                </FormField>
+              </FormSection>
+
+              {data.source && (
+                <FormSection title="Source Details">
+                  <FormField fullWidth>
+                    <div className={styles.sourceSection}>
+                      {JSON.stringify(data.source, null, 2)}
+                    </div>
+                  </FormField>
+                </FormSection>
+              )}
+            </fieldset>
           )}
-        </FormSection>
-
+        </div>
       </div>
 
       {/* Invoice Picker Dialog */}
@@ -816,6 +906,15 @@ export default function TransactionForm() {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+
+      {/* Unlink Confirmation */}
+      <ConfirmDialog
+        open={!!unlinkTarget}
+        onClose={() => setUnlinkTarget(null)}
+        onConfirm={handleUnlinkConfirm}
+        title={`Unlink ${unlinkTarget?.type === 'invoice' ? 'Invoice' : 'Expense'}`}
+        message={`Are you sure you want to unlink "${unlinkTarget?.label}" from this transaction?`}
+      />
     </div>
   );
 }

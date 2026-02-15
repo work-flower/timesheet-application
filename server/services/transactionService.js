@@ -1,4 +1,4 @@
-import { transactions } from '../db/index.js';
+import { transactions, invoices, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { assertNotLocked } from './lockCheck.js';
 import transactionSchema, { buildRecord, validateRequired } from '../schemas/transaction.js';
@@ -34,7 +34,48 @@ export async function getAll(query = {}) {
 export async function getById(id) {
   const entry = await transactions.findOne({ _id: id });
   if (!entry) return null;
-  return entry;
+
+  // Find linked invoices and expenses (those with this transaction in their transactions[])
+  const allInvoices = await invoices.find({});
+  const linkedInvoices = allInvoices
+    .filter((inv) => (inv.transactions || []).includes(id))
+    .map((inv) => ({
+      _id: inv._id,
+      invoiceNumber: inv.invoiceNumber,
+      invoiceDate: inv.invoiceDate,
+      total: inv.total || 0,
+      status: inv.status,
+    }));
+
+  const allExpenses = await expenses.find({});
+  const linkedExpenses = allExpenses
+    .filter((exp) => (exp.transactions || []).includes(id))
+    .map((exp) => ({
+      _id: exp._id,
+      date: exp.date,
+      description: exp.description,
+      expenseType: exp.expenseType,
+      amount: exp.amount || 0,
+    }));
+
+  const isDebit = entry.amount < 0;
+  const absAmount = Math.abs(entry.amount);
+  const invoicesTotal = linkedInvoices.reduce((sum, inv) => sum + inv.total, 0);
+  const expensesTotal = linkedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+  // Debit → matched against expenses; Credit → matched against invoices
+  const remainingBalance = isDebit
+    ? absAmount - expensesTotal
+    : absAmount - invoicesTotal;
+
+  return {
+    ...entry,
+    linkedInvoices,
+    linkedExpenses,
+    invoicesTotal,
+    expensesTotal,
+    remainingBalance,
+  };
 }
 
 export async function create(data) {
