@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   makeStyles,
   tokens,
@@ -122,7 +122,8 @@ export function getMissingRequiredTargets(fieldMapping) {
 
 export default function FieldMappingConfig({ sourceFields, fieldMapping, onMappingChange, onSave, saving }) {
   const styles = useStyles();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(() => localStorage.getItem('stagedTx.mappingExpanded') !== 'false');
+  useEffect(() => { localStorage.setItem('stagedTx.mappingExpanded', String(expanded)); }, [expanded]);
 
   const missing = getMissingRequiredTargets(fieldMapping);
   const isValid = missing.length === 0;
