@@ -89,22 +89,21 @@ export async function submit(importJobId, fieldMapping) {
           }
         }
 
-        const date = mapped.date || record.date || null;
-        const description = mapped.description || record.description || '';
-        const amount = mapped.amount != null ? Number(mapped.amount) : (record.amount != null ? Number(record.amount) : 0);
-        const balance = mapped.balance != null ? Number(mapped.balance) : null;
+        // Build transaction data from all mapped fields
+        const txData = { ...mapped };
 
-        if (!date) throw new Error('Date is required for transformation');
-        if (!description) throw new Error('Description is required for transformation');
+        // Required fields with fallbacks from raw record
+        txData.date = mapped.date || record.date || null;
+        txData.description = mapped.description || record.description || '';
+        txData.amount = mapped.amount != null ? Number(mapped.amount) : (record.amount != null ? Number(record.amount) : 0);
 
-        const transaction = await transactionService.create({
-          date,
-          description,
-          amount,
-          balance,
-          importJobId: record.importJobId,
-          source: record,
-        });
+        if (!txData.date) throw new Error('Date is required for transformation');
+        if (!txData.description) throw new Error('Description is required for transformation');
+
+        txData.importJobId = record.importJobId;
+        txData.source = record;
+
+        const transaction = await transactionService.create(txData);
 
         await stagedTransactions.remove({ _id: record._id });
         transformed.push(transaction);

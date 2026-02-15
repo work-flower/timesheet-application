@@ -3,6 +3,10 @@ import * as transactionService from '../services/transactionService.js';
 
 const router = Router();
 
+router.get('/\\$metadata', (req, res) => {
+  res.json(transactionService.transactionSchema);
+});
+
 router.get('/', async (req, res) => {
   try {
     const result = await transactionService.getAll(req.query);

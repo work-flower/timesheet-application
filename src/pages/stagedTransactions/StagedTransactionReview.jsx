@@ -30,7 +30,7 @@ import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import FieldMappingConfig, { autoDetectMapping, getMissingRequiredTargets } from './FieldMappingConfig.jsx';
-import { importJobsApi, stagedTransactionsApi } from '../../api/index.js';
+import { importJobsApi, stagedTransactionsApi, transactionsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
   page: {
@@ -188,10 +188,11 @@ export default function StagedTransactionReview() {
     setLoading(true);
     setError(null);
     try {
-      const [job, txs, dupes] = await Promise.all([
+      const [job, txs, dupes, schema] = await Promise.all([
         importJobsApi.getById(jobId),
         stagedTransactionsApi.getAll({ importJobId: jobId }),
         stagedTransactionsApi.checkDuplicates(jobId),
+        transactionsApi.getMetadata(),
       ]);
 
       setStagedTxs(txs);
@@ -202,7 +203,7 @@ export default function StagedTransactionReview() {
         setFieldMapping(job.fieldMapping);
       } else if (txs.length > 0) {
         const sourceFields = extractSourceFields(txs);
-        const autoMapping = autoDetectMapping(sourceFields);
+        const autoMapping = autoDetectMapping(sourceFields, schema);
         setFieldMapping(autoMapping);
       }
     } catch (err) {

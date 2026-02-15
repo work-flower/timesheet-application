@@ -187,6 +187,7 @@ export const transactionsApi = {
   update: (id, data) => request(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/transactions/${id}`, { method: 'DELETE' }),
   updateMapping: (id, data) => request(`/transactions/${id}/mapping`, { method: 'PUT', body: JSON.stringify(data) }),
+  getMetadata: () => request('/transactions/$metadata'),
 };
 
 // Import Jobs

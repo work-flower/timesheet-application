@@ -1,6 +1,9 @@
 import { transactions } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { assertNotLocked } from './lockCheck.js';
+import transactionSchema, { buildRecord, validateRequired } from '../schemas/transaction.js';
+
+export { transactionSchema };
 
 export async function getAll(query = {}) {
   const baseFilter = {};
@@ -35,23 +38,13 @@ export async function getById(id) {
 }
 
 export async function create(data) {
-  if (!data.date) throw new Error('Date is required');
-  if (!data.description) throw new Error('Description is required');
-  if (data.amount == null) throw new Error('Amount is required');
-  if (!data.importJobId) throw new Error('Import job ID is required');
+  validateRequired(data);
 
   const now = new Date().toISOString();
+  const record = buildRecord(data);
+
   return transactions.insert({
-    accountName: data.accountName || '',
-    accountNumber: data.accountNumber || '',
-    date: data.date,
-    description: data.description,
-    amount: Number(data.amount),
-    reference: data.reference || null,
-    importJobId: data.importJobId,
-    source: data.source || null,
-    status: 'unmatched',
-    ignoreReason: null,
+    ...record,
     isLocked: true,
     isLockedReason: 'Transactions are read-only by default',
     createdAt: now,
