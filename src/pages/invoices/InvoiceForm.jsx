@@ -30,6 +30,15 @@ import {
   DataGridCell,
   TableCellLayout,
   createTableColumn,
+  Dialog,
+  DialogSurface,
+  DialogBody,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  SearchBox,
+  Checkbox,
+  Link,
 } from '@fluentui/react-components';
 import {
   ArrowLeftRegular,
@@ -44,12 +53,18 @@ import {
   ShieldCheckmarkRegular,
   WarningRegular,
   ErrorCircleRegular,
+  LinkRegular,
+  LinkMultipleRegular,
+  LinkDismissRegular,
+  WarningFilled,
 } from '@fluentui/react-icons';
-import { invoicesApi, clientsApi, timesheetsApi, expensesApi, reportsApi } from '../../api/index.js';
+import { invoicesApi, clientsApi, timesheetsApi, expensesApi, reportsApi, transactionsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import ItemPickerDialog from '../../components/ItemPickerDialog.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
+import { usePagination } from '../../hooks/usePagination.js';
+import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 
 const useStyles = makeStyles({
@@ -141,6 +156,43 @@ const useStyles = makeStyles({
     alignItems: 'center',
     padding: '48px',
     color: tokens.colorNeutralForeground3,
+  },
+  balanceSection: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase300,
+    padding: '16px',
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+  },
+  balanceRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '4px 0',
+  },
+  balanceSubRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '2px 0 2px 24px',
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  balanceGroupLabel: {
+    fontWeight: tokens.fontWeightSemibold,
+    padding: '8px 0 4px 0',
+    display: 'flex',
+    justifyContent: 'space-between',
+  },
+  balanceDivider: {
+    borderTop: `1px solid ${tokens.colorNeutralStroke1}`,
+    margin: '8px 0',
+  },
+  balanceTotal: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontWeight: tokens.fontWeightBold,
+    padding: '4px 0',
+    fontSize: tokens.fontSizeBase400,
   },
 });
 
@@ -300,6 +352,33 @@ const makeUnifiedColumns = (onRemove, onUpdateWriteIn, isReadOnly, errorMap, war
   })] : []),
 ];
 
+const baseTransactionColumns = [
+  createTableColumn({
+    columnId: 'date',
+    compare: (a, b) => (a.date || '').localeCompare(b.date || ''),
+    renderHeaderCell: () => 'Date',
+    renderCell: (item) => <TableCellLayout>{item.date || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'description',
+    compare: (a, b) => (a.description || '').localeCompare(b.description || ''),
+    renderHeaderCell: () => 'Description',
+    renderCell: (item) => <TableCellLayout>{item.description || '\u2014'}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'amount',
+    compare: (a, b) => (a.amount || 0) - (b.amount || 0),
+    renderHeaderCell: () => 'Amount',
+    renderCell: (item) => <TableCellLayout>{fmtGBP(item.amount || 0)}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'status',
+    compare: (a, b) => (a.status || '').localeCompare(b.status || ''),
+    renderHeaderCell: () => 'Status',
+    renderCell: (item) => <TableCellLayout>{item.status || '\u2014'}</TableCellLayout>,
+  }),
+];
+
 function round2(n) {
   return Math.round(n * 100) / 100;
 }
@@ -344,6 +423,17 @@ export default function InvoiceForm() {
   const [expPickerOpen, setExpPickerOpen] = useState(false);
   const [availableTimesheets, setAvailableTimesheets] = useState([]);
   const [availableExpenses, setAvailableExpenses] = useState([]);
+
+  // Transaction picker
+  const [txPickerOpen, setTxPickerOpen] = useState(false);
+  const [txList, setTxList] = useState([]);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txSearch, setTxSearch] = useState('');
+  const [selectedTxId, setSelectedTxId] = useState(null);
+  const [showLinkedTx, setShowLinkedTx] = useState(false);
+
+  // Unlink confirmation
+  const [unlinkTarget, setUnlinkTarget] = useState(null);
 
   // PDF preview
   const [pdfUrl, setPdfUrl] = useState(null);
@@ -594,6 +684,102 @@ export default function InvoiceForm() {
       setError(err.message);
     }
   };
+
+  // --- Refresh invoice data helper ---
+  const refreshInvoice = useCallback(async () => {
+    try {
+      const data = await invoicesApi.getById(id);
+      setInvoiceData(data);
+      setClientProjects(data.clientProjects || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [id]);
+
+  // --- Transaction picker ---
+  const openTxPicker = useCallback(async () => {
+    setTxPickerOpen(true);
+    setTxSearch('');
+    setSelectedTxId(null);
+    setShowLinkedTx(false);
+    setTxLoading(true);
+    try {
+      const result = await transactionsApi.getAll();
+      // Credit transactions only (amount > 0) for invoices
+      setTxList(result.filter(tx => tx.amount > 0));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setTxLoading(false);
+    }
+  }, []);
+
+  const txColumns = useMemo(() => [
+    createTableColumn({
+      columnId: 'linked',
+      renderHeaderCell: () => '',
+      renderCell: (item) => {
+        const linked = (invoiceData?.transactions || []).includes(item._id);
+        if (!linked) return null;
+        return (
+          <TableCellLayout>
+            <Tooltip content="Already linked to this invoice" relationship="label" withArrow>
+              <LinkMultipleRegular style={{ color: tokens.colorBrandForeground1, fontSize: '16px' }} />
+            </Tooltip>
+          </TableCellLayout>
+        );
+      },
+    }),
+    ...baseTransactionColumns,
+  ], [invoiceData?.transactions]);
+
+  const filteredTx = useMemo(() => {
+    let list = txList;
+    if (!showLinkedTx) {
+      list = list.filter(tx => tx.status !== 'matched');
+    }
+    if (txSearch) {
+      const q = txSearch.toLowerCase();
+      list = list.filter(tx =>
+        (tx.description || '').toLowerCase().includes(q) ||
+        (tx.date || '').includes(q)
+      );
+    }
+    return list;
+  }, [txList, txSearch, showLinkedTx]);
+
+  const txPagination = usePagination(filteredTx, { defaultPageSize: 10 });
+
+  const handleTxConfirm = async () => {
+    if (!selectedTxId) return;
+    setError(null);
+    try {
+      await invoicesApi.linkTransaction(id, selectedTxId);
+      await transactionsApi.updateMapping(selectedTxId, { status: 'matched' });
+      await refreshInvoice();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setTxPickerOpen(false);
+    }
+  };
+
+  const handleUnlinkTx = useCallback(async () => {
+    if (!unlinkTarget) return;
+    setError(null);
+    try {
+      await invoicesApi.unlinkTransaction(id, unlinkTarget.id);
+      await refreshInvoice();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUnlinkTarget(null);
+    }
+  }, [unlinkTarget, id, refreshInvoice]);
 
   // --- Timesheet picker ---
   const openTimesheetPicker = async () => {
@@ -1017,6 +1203,10 @@ export default function InvoiceForm() {
                 </Button>
               </>
             )}
+            <ToolbarDivider />
+            <Button appearance="outline" icon={<LinkRegular />} onClick={openTxPicker} size="small" disabled={!invoiceData?.total}>
+              Link Transaction
+            </Button>
           </>
         )}
       </div>
@@ -1223,6 +1413,78 @@ export default function InvoiceForm() {
                   )}
                 </FormSection>
               )}
+
+              {/* Balance Card — linked transactions */}
+              {!isNew && (
+                <FormSection title="Linked Transactions">
+                  <FormField fullWidth>
+                    <div className={styles.balanceSection}>
+                      <div className={styles.balanceRow}>
+                        <span>Invoice Total</span>
+                        <span>{fmt.format(invoiceData?.total || 0)}</span>
+                      </div>
+
+                      {invoiceData?.linkedTransactions?.length > 0 && (
+                        <>
+                          <div className={styles.balanceGroupLabel}>
+                            <span>Linked Transactions</span>
+                            <span>{fmt.format(-(invoiceData.transactionsTotal || 0))}</span>
+                          </div>
+                          {invoiceData.linkedTransactions.map((tx) => (
+                            <div key={tx._id} className={styles.balanceSubRow}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Tooltip content="Unlink this transaction" relationship="label" withArrow>
+                                  <Button
+                                    appearance="subtle"
+                                    size="small"
+                                    icon={<LinkDismissRegular style={{ fontSize: '14px' }} />}
+                                    onClick={() => setUnlinkTarget({ id: tx._id, label: tx.description || tx.date })}
+                                    style={{ minWidth: 'auto', padding: '0 2px', height: '20px' }}
+                                  />
+                                </Tooltip>
+                                <Link onClick={() => guardedNavigate(`/transactions/${tx._id}`)}>
+                                  {tx.description || 'Transaction'} {tx.date ? `(${tx.date})` : ''}
+                                </Link>
+                              </span>
+                              <span>{fmt.format(-Math.abs(tx.amount))}</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+
+                      <div className={styles.balanceDivider} />
+                      {(() => {
+                        const remaining = invoiceData?.remainingBalance ?? (invoiceData?.total || 0);
+                        const balanceColor = remaining === 0
+                          ? tokens.colorPaletteGreenForeground1
+                          : remaining < 0
+                            ? tokens.colorPaletteRedForeground1
+                            : tokens.colorStatusWarningForeground3;
+                        return (
+                          <div className={styles.balanceTotal}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              Remaining Balance
+                              {remaining > 0 && (
+                                <Tooltip content="Invoice not fully covered by linked transactions" relationship="label" withArrow>
+                                  <WarningFilled style={{ color: tokens.colorStatusWarningForeground3, fontSize: '20px' }} />
+                                </Tooltip>
+                              )}
+                              {remaining < 0 && (
+                                <Tooltip content="Linked amounts exceed the invoice total" relationship="label" withArrow>
+                                  <WarningFilled style={{ color: tokens.colorPaletteRedForeground1, fontSize: '20px' }} />
+                                </Tooltip>
+                              )}
+                            </span>
+                            <span style={{ color: balanceColor }}>
+                              {fmt.format(remaining)}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </FormField>
+                </FormSection>
+              )}
             </>
           )}
 
@@ -1304,6 +1566,93 @@ export default function InvoiceForm() {
         title="Select Expenses"
         alreadySelectedIds={expSourceIds}
         invoiceId={id}
+      />
+
+      {/* Transaction picker dialog */}
+      <Dialog open={txPickerOpen} onOpenChange={(e, d) => { if (!d.open) setTxPickerOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '800px', width: '90vw', maxHeight: '85vh' }}>
+          <DialogBody>
+            <DialogTitle>Link Transaction</DialogTitle>
+            <DialogContent>
+              <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <SearchBox
+                  placeholder="Search by description or date..."
+                  value={txSearch}
+                  onChange={(e, d) => setTxSearch(d.value)}
+                  size="small"
+                  style={{ flex: 1 }}
+                />
+                <Checkbox
+                  checked={showLinkedTx}
+                  onChange={(e, d) => setShowLinkedTx(d.checked)}
+                  label="Show matched"
+                  size="medium"
+                  style={{ whiteSpace: 'nowrap' }}
+                />
+              </div>
+              <div style={{ maxHeight: '500px', overflow: 'auto' }}>
+                {txLoading ? (
+                  <div style={{ padding: '24px', textAlign: 'center' }}>
+                    <Spinner size="small" label="Loading transactions..." />
+                  </div>
+                ) : filteredTx.length === 0 ? (
+                  <Text style={{ padding: '16px', color: tokens.colorNeutralForeground3 }}>
+                    No credit transactions found.
+                  </Text>
+                ) : (
+                  <DataGrid
+                    items={txPagination.pageItems}
+                    columns={txColumns}
+                    sortable
+                    getRowId={(item) => item._id}
+                    style={{ width: '100%' }}
+                  >
+                    <DataGridHeader>
+                      <DataGridRow>
+                        {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+                      </DataGridRow>
+                    </DataGridHeader>
+                    <DataGridBody>
+                      {({ item, rowId }) => (
+                        <DataGridRow
+                          key={rowId}
+                          style={{
+                            cursor: 'pointer',
+                            backgroundColor: selectedTxId === item._id ? tokens.colorBrandBackground2 : undefined,
+                          }}
+                          onClick={() => setSelectedTxId(item._id)}
+                        >
+                          {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                        </DataGridRow>
+                      )}
+                    </DataGridBody>
+                  </DataGrid>
+                )}
+              </div>
+              <PaginationControls
+                page={txPagination.page}
+                pageSize={txPagination.pageSize}
+                totalItems={txPagination.totalItems}
+                totalPages={txPagination.totalPages}
+                onPageChange={txPagination.setPage}
+                onPageSizeChange={txPagination.setPageSize}
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setTxPickerOpen(false)}>Cancel</Button>
+              <Button appearance="primary" onClick={handleTxConfirm} disabled={!selectedTxId}>Confirm</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Unlink transaction confirmation */}
+      <ConfirmDialog
+        open={!!unlinkTarget}
+        onClose={() => setUnlinkTarget(null)}
+        onConfirm={handleUnlinkTx}
+        title="Unlink Transaction"
+        message={`Are you sure you want to unlink "${unlinkTarget?.label}" from this invoice?`}
       />
     </div>
   );

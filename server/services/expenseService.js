@@ -1,4 +1,4 @@
-import { clients, projects, expenses } from '../db/index.js';
+import { clients, projects, expenses, transactions } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
 import { assertNotLocked } from './lockCheck.js';
@@ -73,11 +73,31 @@ export async function getById(id) {
   const project = await projects.findOne({ _id: entry.projectId });
   const client = project ? await clients.findOne({ _id: project.clientId }) : null;
 
+  // Enrich with linked transactions
+  const txIds = entry.transactions || [];
+  let linkedTransactions = [];
+  let transactionsTotal = 0;
+  if (txIds.length > 0) {
+    const txDocs = await transactions.find({ _id: { $in: txIds } });
+    linkedTransactions = txDocs.map(tx => ({
+      _id: tx._id,
+      date: tx.date,
+      description: tx.description,
+      amount: tx.amount,
+      status: tx.status,
+    }));
+    transactionsTotal = linkedTransactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  }
+  const remainingBalance = (entry.amount || 0) - transactionsTotal;
+
   return {
     ...entry,
     projectName: project?.name || 'Unknown',
     clientName: client?.companyName || 'Unknown',
     clientId: project?.clientId || null,
+    linkedTransactions,
+    transactionsTotal,
+    remainingBalance,
   };
 }
 

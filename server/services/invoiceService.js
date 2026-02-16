@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { clients, projects, timesheets, expenses, invoices, settings } from '../db/index.js';
+import { clients, projects, timesheets, expenses, invoices, settings, transactions } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { assertNotLocked } from './lockCheck.js';
 import { buildInvoicePdf } from './invoicePdfService.js';
@@ -57,11 +57,31 @@ export async function getById(id) {
     vatPercent: p.vatPercent ?? null,
   }));
 
+  // Enrich with linked transactions
+  const txIds = invoice.transactions || [];
+  let linkedTransactions = [];
+  let transactionsTotal = 0;
+  if (txIds.length > 0) {
+    const txDocs = await transactions.find({ _id: { $in: txIds } });
+    linkedTransactions = txDocs.map(tx => ({
+      _id: tx._id,
+      date: tx.date,
+      description: tx.description,
+      amount: tx.amount,
+      status: tx.status,
+    }));
+    transactionsTotal = linkedTransactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  }
+  const remainingBalance = (invoice.total || 0) - transactionsTotal;
+
   return {
     ...invoice,
     clientName: client?.companyName || 'Unknown',
     client,
     clientProjects,
+    linkedTransactions,
+    transactionsTotal,
+    remainingBalance,
   };
 }
 
