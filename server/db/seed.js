@@ -1,7 +1,34 @@
+import readline from 'readline';
 import { clients, projects, timesheets, settings, expenses, invoices, transactions, importJobs, stagedTransactions } from './index.js';
 import aiConfig from './aiConfig.js';
 
 async function seed() {
+  // Block unless explicitly in development
+  if (process.env.NODE_ENV !== 'development') {
+    console.error('ERROR: npm run seed is only allowed when NODE_ENV=development.');
+    process.exit(1);
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
+
+  // Step 1: Explicit consent
+  const answer = await ask('WARNING: This will DELETE ALL DATA and replace it with sample records. Type "yes" to continue: ');
+  if (answer.trim().toLowerCase() !== 'yes') {
+    rl.close();
+    console.log('Seed cancelled.');
+    process.exit(0);
+  }
+
+  // Step 2: Random code verification
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const codeAnswer = await ask(`Confirmation code: ${code} — type it back to proceed: `);
+  rl.close();
+  if (codeAnswer.trim() !== code) {
+    console.log('Code mismatch. Seed cancelled.');
+    process.exit(0);
+  }
+
   // Clear existing data
   await clients.remove({}, { multi: true });
   await projects.remove({}, { multi: true });
