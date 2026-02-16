@@ -25,6 +25,9 @@ import {
   NavigationRegular,
   ChevronDownRegular,
   ChevronRightRegular,
+  DataBarVerticalRegular,
+  CalculatorRegular,
+  DocumentTextRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -195,7 +198,16 @@ const useStyles = makeStyles({
 });
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: <BoardRegular />, exact: true },
+  {
+    label: 'Dashboards',
+    icon: <BoardRegular />,
+    prefix: ['/', '/dashboards'],
+    children: [
+      { to: '/', label: 'Operations', icon: <BoardRegular />, exact: true },
+      { to: '/dashboards/reconciliation', label: 'Reconciliation', icon: <ArrowSwapRegular /> },
+      { to: '/dashboards/financial', label: 'Financial', icon: <DataBarVerticalRegular /> },
+    ],
+  },
   { to: '/clients', label: 'Clients', icon: <PeopleRegular /> },
   { to: '/projects', label: 'Projects', icon: <FolderRegular /> },
   { to: '/timesheets', label: 'Timesheets', icon: <CalendarClockRegular /> },
@@ -225,6 +237,8 @@ const navItems = [
     children: [
       { to: '/reports/timesheets', label: 'Timesheet', icon: <CalendarClockRegular /> },
       { to: '/reports/expenses', label: 'Expenses', icon: <ReceiptRegular /> },
+      { to: '/reports/income-expense', label: 'Income & Expense', icon: <DocumentTextRegular /> },
+      { to: '/reports/vat', label: 'VAT', icon: <CalculatorRegular /> },
     ],
   },
 ];
@@ -236,10 +250,17 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
 
   const isChildRouteActive = (prefix) => {
-    if (Array.isArray(prefix)) return prefix.some((p) => location.pathname.startsWith(p));
+    if (Array.isArray(prefix)) return prefix.some((p) => {
+      if (p === '/') return location.pathname === '/';
+      return location.pathname.startsWith(p);
+    });
+    if (prefix === '/') return location.pathname === '/';
     return location.pathname.startsWith(prefix);
   };
 
+  const [dashboardsExpanded, setDashboardsExpanded] = useState(
+    () => isChildRouteActive(['/', '/dashboards']),
+  );
   const [reportsExpanded, setReportsExpanded] = useState(
     () => isChildRouteActive('/reports'),
   );
@@ -251,6 +272,7 @@ export default function AppLayout() {
   );
 
   const expandState = {
+    Dashboards: [dashboardsExpanded, setDashboardsExpanded],
     Reports: [reportsExpanded, setReportsExpanded],
     Banking: [bankingExpanded, setBankingExpanded],
     'Data Management': [dataExpanded, setDataExpanded],
@@ -287,7 +309,7 @@ export default function AppLayout() {
     if (collapsed) {
       // When collapsed, render children as separate tooltip items
       return item.children.map((child) => {
-        const childActive = location.pathname.startsWith(child.to);
+        const childActive = isActive(child);
         const link = (
           <NavLink
             key={child.to}
@@ -322,7 +344,7 @@ export default function AppLayout() {
           </span>
         </div>
         {expanded && item.children.map((child) => {
-          const childActive = location.pathname.startsWith(child.to);
+          const childActive = isActive(child);
           return (
             <NavLink
               key={child.to}

@@ -3,6 +3,8 @@ import { buildTimesheetPdf } from '../services/reportService.js';
 import { buildExpensePdf } from '../services/expenseReportService.js';
 import { combinePdfs } from '../services/pdfCombineService.js';
 import { renderToBuffer } from '../services/pdfRenderer.js';
+import { buildIncomeExpensePdf, buildIncomeExpenseCsv } from '../services/incomeExpenseReportService.js';
+import { buildVatPdf, buildVatCsv } from '../services/vatReportService.js';
 
 const router = Router();
 
@@ -99,6 +101,72 @@ router.post('/combined-pdf', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename="combined-report.pdf"');
     res.send(combined);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Income & Expense PDF
+router.get('/income-expense-pdf', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+    const docDefinition = await buildIncomeExpensePdf(startDate, endDate);
+    const buffer = await renderToBuffer(docDefinition);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="income-expense-${startDate}-to-${endDate}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Income & Expense CSV
+router.get('/income-expense-csv', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+    const csv = await buildIncomeExpenseCsv(startDate, endDate);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="income-expense-${startDate}-to-${endDate}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// VAT Report PDF
+router.get('/vat-pdf', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+    const docDefinition = await buildVatPdf(startDate, endDate);
+    const buffer = await renderToBuffer(docDefinition);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="vat-report-${startDate}-to-${endDate}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// VAT Report CSV
+router.get('/vat-csv', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'startDate and endDate are required' });
+    }
+    const csv = await buildVatCsv(startDate, endDate);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="vat-report-${startDate}-to-${endDate}.csv"`);
+    res.send(csv);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -81,6 +81,42 @@ export const reportsApi = {
     }
     return res.blob();
   },
+  getIncomeExpensePdfBlob: async (startDate, endDate) => {
+    const params = new URLSearchParams({ startDate, endDate });
+    const res = await fetch(`${BASE}/reports/income-expense-pdf?${params}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+    }
+    return res.blob();
+  },
+  getIncomeExpenseCsvBlob: async (startDate, endDate) => {
+    const params = new URLSearchParams({ startDate, endDate });
+    const res = await fetch(`${BASE}/reports/income-expense-csv?${params}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `CSV generation failed: ${res.status}`);
+    }
+    return res.blob();
+  },
+  getVatPdfBlob: async (startDate, endDate) => {
+    const params = new URLSearchParams({ startDate, endDate });
+    const res = await fetch(`${BASE}/reports/vat-pdf?${params}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+    }
+    return res.blob();
+  },
+  getVatCsvBlob: async (startDate, endDate) => {
+    const params = new URLSearchParams({ startDate, endDate });
+    const res = await fetch(`${BASE}/reports/vat-csv?${params}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `CSV generation failed: ${res.status}`);
+    }
+    return res.blob();
+  },
   getCombinedPdfBlob: async (reports) => {
     const res = await fetch(`${BASE}/reports/combined-pdf`, {
       method: 'POST',
@@ -246,6 +282,22 @@ export const stagedTransactionsApi = {
   delete: (id) => request(`/staged-transactions/${id}`, { method: 'DELETE' }),
   submit: (importJobId, fieldMapping) => request('/staged-transactions/submit', { method: 'POST', body: JSON.stringify({ importJobId, fieldMapping }) }),
   checkDuplicates: (importJobId) => request('/staged-transactions/check-duplicates', { method: 'POST', body: JSON.stringify({ importJobId }) }),
+};
+
+// Dashboard
+export const dashboardApi = {
+  getOperations: () => request('/dashboard/operations'),
+  getInvoiceCoverage: (start, end) => request(`/dashboard/invoice-coverage?start=${start}&end=${end}`),
+  getReconciliation: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/dashboard/reconciliation${query ? `?${query}` : ''}`);
+  },
+  getFinancial: (startDate, endDate) =>
+    request(`/dashboard/financial?startDate=${startDate}&endDate=${endDate}`),
 };
 
 // AI Config

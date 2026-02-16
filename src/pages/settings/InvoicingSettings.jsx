@@ -39,6 +39,8 @@ export default function InvoicingSettings() {
     bankSortCode: '',
     bankAccountNumber: '',
     bankAccountOwner: '',
+    accountingReferenceDate: '',
+    vatStaggerGroup: '',
   });
   const [clientsList, setClientsList] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -58,6 +60,8 @@ export default function InvoicingSettings() {
           bankSortCode: data.bankSortCode || '',
           bankAccountNumber: data.bankAccountNumber || '',
           bankAccountOwner: data.bankAccountOwner || '',
+          accountingReferenceDate: data.accountingReferenceDate || '',
+          vatStaggerGroup: data.vatStaggerGroup || '',
         });
       }
     });
@@ -87,6 +91,44 @@ export default function InvoicingSettings() {
     <>
       {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
       {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Invoicing settings saved.</MessageBarBody></MessageBar>}
+
+      <FormSection title="Financial Periods">
+        <FormField>
+          <Field label="Accounting Reference Date" hint="Company year-end date (e.g. 03-31 for 31 March). Drives company year boundaries for financial reports.">
+            <Select
+              value={form.accountingReferenceDate}
+              onChange={(e, data) => setForm((prev) => ({ ...prev, accountingReferenceDate: data.value }))}
+            >
+              <option value="">Not set</option>
+              <option value="01-31">31 January</option>
+              <option value="02-28">28 February</option>
+              <option value="03-31">31 March</option>
+              <option value="04-30">30 April</option>
+              <option value="05-31">31 May</option>
+              <option value="06-30">30 June</option>
+              <option value="07-31">31 July</option>
+              <option value="08-31">31 August</option>
+              <option value="09-30">30 September</option>
+              <option value="10-31">31 October</option>
+              <option value="11-30">30 November</option>
+              <option value="12-31">31 December</option>
+            </Select>
+          </Field>
+        </FormField>
+        <FormField>
+          <Field label="VAT Stagger Group" hint="Determines VAT quarter boundaries. Group 1: Mar/Jun/Sep/Dec. Group 2: Jan/Apr/Jul/Oct. Group 3: Feb/May/Aug/Nov.">
+            <Select
+              value={form.vatStaggerGroup}
+              onChange={(e, data) => setForm((prev) => ({ ...prev, vatStaggerGroup: data.value }))}
+            >
+              <option value="">Not set</option>
+              <option value="1">Group 1 (Mar, Jun, Sep, Dec)</option>
+              <option value="2">Group 2 (Jan, Apr, Jul, Oct)</option>
+              <option value="3">Group 3 (Feb, May, Aug, Nov)</option>
+            </Select>
+          </Field>
+        </FormField>
+      </FormSection>
 
       <FormSection title="Business Client">
         <FormField>

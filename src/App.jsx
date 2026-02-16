@@ -22,6 +22,10 @@ import TransactionList from './pages/transactions/TransactionList.jsx';
 import TransactionForm from './pages/transactions/TransactionForm.jsx';
 import ReportForm from './pages/reports/ReportForm.jsx';
 import ExpenseReportForm from './pages/reports/ExpenseReportForm.jsx';
+import IncomeExpenseReport from './pages/reports/IncomeExpenseReport.jsx';
+import VatReport from './pages/reports/VatReport.jsx';
+import ReconciliationDashboard from './pages/dashboards/ReconciliationDashboard.jsx';
+import FinancialDashboard from './pages/dashboards/FinancialDashboard.jsx';
 
 export default function App() {
   return (
@@ -31,6 +35,8 @@ export default function App() {
           <Routes>
             <Route element={<AppLayout />}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/dashboards/reconciliation" element={<ReconciliationDashboard />} />
+              <Route path="/dashboards/financial" element={<FinancialDashboard />} />
               <Route path="/clients" element={<ClientList />} />
               <Route path="/clients/new" element={<ClientForm />} />
               <Route path="/clients/:id" element={<ClientForm />} />
@@ -55,6 +61,8 @@ export default function App() {
               <Route path="/reports" element={<Navigate to="/reports/timesheets" replace />} />
               <Route path="/reports/timesheets" element={<ReportForm />} />
               <Route path="/reports/expenses" element={<ExpenseReportForm />} />
+              <Route path="/reports/income-expense" element={<IncomeExpenseReport />} />
+              <Route path="/reports/vat" element={<VatReport />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Routes>

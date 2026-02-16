@@ -15,6 +15,7 @@ import transactionRoutes from './routes/transactions.js';
 import importJobRoutes from './routes/importJobs.js';
 import stagedTransactionRoutes from './routes/stagedTransactions.js';
 import aiConfigRoutes from './routes/aiConfig.js';
+import dashboardRoutes from './routes/dashboard.js';
 import { initScheduler } from './services/backupScheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,6 +40,7 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/import-jobs', importJobRoutes);
 app.use('/api/staged-transactions', stagedTransactionRoutes);
 app.use('/api/ai-config', aiConfigRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
