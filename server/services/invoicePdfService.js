@@ -399,7 +399,7 @@ function buildLineItems(lines) {
     const group = ensureGroup(vatKey);
 
     const count = bucket.lines.length;
-    const totalGross = bucket.lines.reduce((s, l) => s + (l.grossAmount || 0), 0);
+    const totalNet = bucket.lines.reduce((s, l) => s + (l.netAmount || 0), 0);
     const totalVat = bucket.lines.reduce((s, l) => s + (l.vatAmount || 0), 0);
 
     // Summarize expense types
@@ -409,16 +409,17 @@ function buildLineItems(lines) {
       typeCounts[t] = (typeCounts[t] || 0) + 1;
     }
     const typeSummary = Object.entries(typeCounts).map(([t, c]) => `${c}×${t}`).join(', ');
+    const totalGross = round2(totalNet + totalVat);
     const detailVat = totalVat > 0 ? `, VAT (inclusive) = ${fmtGBP(totalVat)}` : '';
 
     group.lines.push({
       description: `${Object.keys(typeCounts)[0] || 'Expenses'}${count > 1 ? ' expenses' : ''}`,
       qty: String(count),
       unit: count === 1 ? 'item' : 'items',
-      unitPrice: round2(totalGross / count),
+      unitPrice: round2(totalNet / count),
       vatPercent: bucket.vatPercent,
       vatAmount: round2(totalVat),
-      total: round2(totalGross),
+      total: totalGross,
       detail: `expenses: ${typeSummary} = ${fmtGBP(totalGross)}${detailVat}`,
     });
   }

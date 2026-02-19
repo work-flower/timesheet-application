@@ -165,6 +165,12 @@ const gridColumns = [
     renderCell: (item) => <TableCellLayout>{item.vatAmount ? fmt.format(item.vatAmount) : '—'}</TableCellLayout>,
   }),
   createTableColumn({
+    columnId: 'netAmount',
+    compare: (a, b) => (a.netAmount || 0) - (b.netAmount || 0),
+    renderHeaderCell: () => 'Net Amount',
+    renderCell: (item) => <TableCellLayout>{fmt.format(item.netAmount ?? ((item.amount || 0) - (item.vatAmount || 0)))}</TableCellLayout>,
+  }),
+  createTableColumn({
     columnId: 'billable',
     compare: (a, b) => Number(b.billable) - Number(a.billable),
     renderHeaderCell: () => 'Billable',

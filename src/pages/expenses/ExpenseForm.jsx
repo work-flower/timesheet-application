@@ -167,10 +167,14 @@ export default function ExpenseForm() {
     amount: 0,
     vatAmount: 0,
     vatPercent: 0,
+    netAmount: 0,
     billable: true,
     currency: 'GBP',
     notes: '',
-  }, { excludeFields: ['vatPercent'] });
+  });
+
+  // Reset keys to force SpinButton remount when a dependent field is programmatically updated
+  const [spinKeys, setSpinKeys] = useState({ amount: 0, vatAmount: 0, vatPercent: 0 });
 
   const [loadedData, setLoadedData] = useState(null);
   const [allProjects, setAllProjects] = useState([]);
@@ -220,6 +224,7 @@ export default function ExpenseForm() {
             amount: data.amount || 0,
             vatAmount: data.vatAmount || 0,
             vatPercent: data.vatPercent || 0,
+            netAmount: data.netAmount || 0,
             billable: data.billable !== false,
             currency: data.currency || 'GBP',
             notes: data.notes || '',
@@ -235,6 +240,7 @@ export default function ExpenseForm() {
             amount: 0,
             vatAmount: 0,
             vatPercent: 0,
+            netAmount: 0,
             billable: true,
             currency: firstClient?.currency || 'GBP',
             notes: '',
@@ -308,6 +314,7 @@ export default function ExpenseForm() {
           amount: updated.amount || 0,
           vatAmount: updated.vatAmount || 0,
           vatPercent: updated.vatPercent || 0,
+          netAmount: updated.netAmount || 0,
           billable: updated.billable !== false,
           currency: updated.currency || 'GBP',
           notes: updated.notes || '',
@@ -517,25 +524,58 @@ export default function ExpenseForm() {
 
         <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
         <FormSection title="Entry Details">
-          <FormField changed={changedFields.has('date')}>
-            <Field label="Date" required>
-              <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
-            </Field>
-          </FormField>
           <FormField changed={changedFields.has('amount')}>
             <Field label="Amount (gross)" required hint="Total amount paid including VAT">
               <SpinButton
+                key={`amount-${spinKeys.amount}`}
                 defaultValue={form.amount}
                 onChange={(e, data) => {
                   const val = data.value ?? parseFloat(data.displayValue);
                   if (val != null && !isNaN(val)) {
                     setForm((prev) => {
-                      const vatPct = val > 0 ? Math.round((prev.vatAmount / val) * 10000) / 100 : 0;
-                      return { ...prev, amount: val, vatPercent: vatPct };
+                      const next = { ...prev, amount: val };
+                      if (prev.vatPercent > 0) {
+                        next.vatAmount = Math.round(val * (prev.vatPercent / 100) * 100) / 100;
+                      } else if (prev.vatAmount > 0 && val > 0) {
+                        next.vatPercent = Math.round((prev.vatAmount / val) * 10000) / 100;
+                      }
+                      next.netAmount = Math.round((val - (next.vatAmount ?? prev.vatAmount)) * 100) / 100;
+                      return next;
                     });
+                    setSpinKeys((k) => ({ ...k, vatAmount: k.vatAmount + 1, vatPercent: k.vatPercent + 1 }));
                   }
                 }}
                 min={0}
+                step={0.01}
+              />
+            </Field>
+          </FormField>
+          <FormField changed={changedFields.has('date')}>
+            <Field label="Date" required>
+              <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
+            </Field>
+          </FormField>
+          <FormField changed={changedFields.has('vatPercent')}>
+            <Field label="VAT %">
+              <SpinButton
+                key={`vatPercent-${spinKeys.vatPercent}`}
+                defaultValue={form.vatPercent}
+                onChange={(e, data) => {
+                  const val = data.value ?? parseFloat(data.displayValue);
+                  if (val != null && !isNaN(val)) {
+                    setForm((prev) => {
+                      const next = { ...prev, vatPercent: val };
+                      if (prev.amount > 0) {
+                        next.vatAmount = Math.round(prev.amount * (val / 100) * 100) / 100;
+                      }
+                      next.netAmount = Math.round((prev.amount - (next.vatAmount ?? prev.vatAmount)) * 100) / 100;
+                      return next;
+                    });
+                    setSpinKeys((k) => ({ ...k, vatAmount: k.vatAmount + 1 }));
+                  }
+                }}
+                min={0}
+                max={100}
                 step={0.01}
               />
             </Field>
@@ -557,14 +597,20 @@ export default function ExpenseForm() {
           <FormField changed={changedFields.has('vatAmount')}>
             <Field label="VAT Amount" hint="VAT portion included in the Amount (gross)">
               <SpinButton
+                key={`vatAmount-${spinKeys.vatAmount}`}
                 defaultValue={form.vatAmount}
                 onChange={(e, data) => {
                   const val = data.value ?? parseFloat(data.displayValue);
                   if (val != null && !isNaN(val)) {
                     setForm((prev) => {
-                      const vatPct = prev.amount > 0 ? Math.round((val / prev.amount) * 10000) / 100 : 0;
-                      return { ...prev, vatAmount: val, vatPercent: vatPct };
+                      const next = { ...prev, vatAmount: val };
+                      if (prev.amount > 0) {
+                        next.vatPercent = Math.round((val / prev.amount) * 10000) / 100;
+                      }
+                      next.netAmount = Math.round((prev.amount - val) * 100) / 100;
+                      return next;
                     });
+                    setSpinKeys((k) => ({ ...k, vatPercent: k.vatPercent + 1 }));
                   }
                 }}
                 min={0}
@@ -587,12 +633,9 @@ export default function ExpenseForm() {
               </Combobox>
             </Field>
           </FormField>
-          <FormField>
-            <Field label="VAT %">
-              <Input
-                readOnly
-                value={form.vatPercent != null ? `${form.vatPercent.toFixed(2)}%` : '—'}
-              />
+          <FormField changed={changedFields.has('netAmount')}>
+            <Field label="Net Amount" hint="Amount (gross) minus VAT">
+              <Input readOnly value={fmtGBP.format(form.netAmount || 0)} />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('billable')}>

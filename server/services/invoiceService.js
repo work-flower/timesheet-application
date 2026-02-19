@@ -354,7 +354,7 @@ export async function recalculate(id) {
         updatedLines.push({ ...line, _sourceDeleted: true });
         continue;
       }
-      const netAmount = round2((exp.amount || 0) - (exp.vatAmount || 0));
+      const netAmount = exp.netAmount ?? round2((exp.amount || 0) - (exp.vatAmount || 0));
 
       updatedLines.push({
         ...line,
@@ -478,11 +478,12 @@ export async function consistencyCheck(id) {
       }
 
       // Check value drift
-      if (Math.abs((line.grossAmount || 0) - (exp.amount || 0)) > 0.01) {
+      const expNetAmount = exp.netAmount ?? round2((exp.amount || 0) - (exp.vatAmount || 0));
+      if (Math.abs((line.netAmount || 0) - expNetAmount) > 0.01) {
         conflicts.push({
           lineId: line.id, type: 'expense', sourceId: line.sourceId,
           field: 'amount',
-          message: `Expense ${exp.date}: amount changed from £${(line.grossAmount || 0).toFixed(2)} to £${(exp.amount || 0).toFixed(2)}`,
+          message: `Expense ${exp.date}: net amount changed from £${(line.netAmount || 0).toFixed(2)} to £${expNetAmount.toFixed(2)}`,
         });
       }
       if (Math.abs((line.vatAmount || 0) - (exp.vatAmount || 0)) > 0.01) {

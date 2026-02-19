@@ -114,7 +114,8 @@ export async function create(data) {
 
   const amount = Number(data.amount) || 0;
   const vatAmount = Number(data.vatAmount) || 0;
-  const vatPercent = amount > 0 ? Math.round((vatAmount / amount) * 10000) / 100 : 0;
+  const vatPercent = Number(data.vatPercent) || 0;
+  const netAmount = Math.round((amount - vatAmount) * 100) / 100;
 
   const now = new Date().toISOString();
   return expenses.insert({
@@ -125,6 +126,7 @@ export async function create(data) {
     amount,
     vatAmount,
     vatPercent,
+    netAmount,
     billable: data.billable !== false,
     currency: data.currency || client?.currency || 'GBP',
     attachments: [],
@@ -159,11 +161,13 @@ export async function update(id, data) {
     }
   }
 
-  // Recompute vatPercent when amount or vatAmount changes
+  if (updateData.vatPercent !== undefined) updateData.vatPercent = Number(updateData.vatPercent);
+
+  // Recompute netAmount when amount or vatAmount changes
   if (updateData.amount !== undefined || updateData.vatAmount !== undefined) {
     const finalAmount = updateData.amount ?? existing.amount ?? 0;
     const finalVat = updateData.vatAmount ?? existing.vatAmount ?? 0;
-    updateData.vatPercent = finalAmount > 0 ? Math.round((finalVat / finalAmount) * 10000) / 100 : 0;
+    updateData.netAmount = Math.round((finalAmount - finalVat) * 100) / 100;
   }
 
   await expenses.update({ _id: id }, { $set: updateData });

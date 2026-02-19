@@ -882,7 +882,7 @@ export default function InvoiceForm() {
     const newLines = newIds.map(expId => {
       const exp = availableExpenses.find(e => e._id === expId);
       if (!exp) return null;
-      const netAmount = round2((exp.amount || 0) - (exp.vatAmount || 0));
+      const netAmount = exp.netAmount ?? round2((exp.amount || 0) - (exp.vatAmount || 0));
 
       return {
         id: crypto.randomUUID(),
@@ -1076,8 +1076,9 @@ export default function InvoiceForm() {
         if (exp.invoiceId && exp.invoiceId !== id) {
           errors.push({ lineId: line.id, message: `Expense ${exp.date} is locked to another invoice` });
         }
-        if (Math.abs((line.grossAmount || 0) - (exp.amount || 0)) > 0.01) {
-          errors.push({ lineId: line.id, message: `Expense ${exp.date}: amount changed from £${(line.grossAmount || 0).toFixed(2)} to £${(exp.amount || 0).toFixed(2)}` });
+        const expNetAmount = exp.netAmount ?? round2((exp.amount || 0) - (exp.vatAmount || 0));
+        if (Math.abs((line.netAmount || 0) - expNetAmount) > 0.01) {
+          errors.push({ lineId: line.id, message: `Expense ${exp.date}: net amount changed from £${(line.netAmount || 0).toFixed(2)} to £${expNetAmount.toFixed(2)}` });
         }
         if (Math.abs((line.vatAmount || 0) - (exp.vatAmount || 0)) > 0.01) {
           errors.push({ lineId: line.id, message: `Expense ${exp.date}: VAT changed from £${(line.vatAmount || 0).toFixed(2)} to £${(exp.vatAmount || 0).toFixed(2)}` });
