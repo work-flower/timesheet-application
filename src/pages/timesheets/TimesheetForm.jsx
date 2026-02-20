@@ -9,6 +9,7 @@ import {
   Spinner,
   SpinButton,
   Select,
+  Button,
   MessageBar,
   MessageBarBody,
   Breadcrumb,
@@ -16,7 +17,9 @@ import {
   BreadcrumbDivider,
   BreadcrumbButton,
 } from '@fluentui/react-components';
+import { ReceiptRegular } from '@fluentui/react-icons';
 import { timesheetsApi, projectsApi } from '../../api/index.js';
+import InvoicePickerDialog from '../../components/InvoicePickerDialog.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -73,6 +76,7 @@ export default function TimesheetForm() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [invoicePickerOpen, setInvoicePickerOpen] = useState(false);
 
   // Helper to compute days/amount from project + hours
   const computeDaysAmount = (hours, projectId, projectList) => {
@@ -126,6 +130,8 @@ export default function TimesheetForm() {
     () => allProjects.find((p) => p._id === form.projectId),
     [form.projectId, allProjects],
   );
+
+  const clientId = selectedProject?.clientId || '';
 
   // Group projects by client
   const projectsByClient = useMemo(() => {
@@ -225,7 +231,19 @@ export default function TimesheetForm() {
         saveDisabled={!form.projectId || !form.date}
         saving={saving}
         locked={isLocked}
-      />
+      >
+        {!isNew && !isLocked && (
+          <Button
+            appearance="outline"
+            icon={<ReceiptRegular />}
+            onClick={() => setInvoicePickerOpen(true)}
+            size="small"
+            disabled={!clientId}
+          >
+            Link to Invoice
+          </Button>
+        )}
+      </FormCommandBar>
       <div className={styles.pageBody}>
         <div className={styles.header}>
           <Breadcrumb>
@@ -326,6 +344,18 @@ export default function TimesheetForm() {
         onConfirm={handleDelete}
         title="Delete Timesheet Entry"
         message="Are you sure you want to delete this timesheet entry? This action cannot be undone."
+      />
+      <InvoicePickerDialog
+        open={invoicePickerOpen}
+        onClose={() => setInvoicePickerOpen(false)}
+        onLinked={() => {
+          setInvoicePickerOpen(false);
+          setSuccess(true);
+          setTimeout(() => setSuccess(false), 3000);
+        }}
+        clientId={clientId}
+        sourceType="timesheet"
+        sourceId={id}
       />
     </div>
   );

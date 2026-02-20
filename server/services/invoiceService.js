@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { clients, projects, timesheets, expenses, invoices, settings, transactions } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { assertNotLocked } from './lockCheck.js';
@@ -566,6 +567,105 @@ export async function unlinkTransaction(id, transactionId) {
     },
   });
   return getById(id);
+}
+
+export async function addLine(invoiceId, items) {
+  const invoice = await invoices.findOne({ _id: invoiceId });
+  if (!invoice) throw new Error('Invoice not found');
+  if (invoice.status !== 'draft') throw new Error('Lines can only be added to draft invoices');
+  assertNotLocked(invoice);
+
+  const allProjects = await projects.find({});
+  const projectMap = Object.fromEntries(allProjects.map(p => [p._id, p]));
+  const allClients = await clients.find({});
+  const clientMap = Object.fromEntries(allClients.map(c => [c._id, c]));
+
+  const existingSourceIds = new Set(
+    (invoice.lines || []).filter(l => l.sourceId).map(l => l.sourceId)
+  );
+
+  const newLines = [];
+
+  for (const item of items) {
+    if (existingSourceIds.has(item.sourceId)) continue; // skip duplicates
+
+    if (item.type === 'timesheet') {
+      const ts = await timesheets.findOne({ _id: item.sourceId });
+      if (!ts) throw new Error(`Timesheet ${item.sourceId} not found`);
+
+      const project = projectMap[ts.projectId];
+      if (!project || project.clientId !== invoice.clientId) {
+        throw new Error(`Timesheet ${ts.date} does not belong to the invoice client`);
+      }
+      const client = clientMap[project.clientId];
+      const effectiveRate = project.rate != null ? project.rate : (client?.defaultRate || 0);
+      const vatPercent = project.vatPercent ?? null;
+      const netAmount = ts.amount || 0;
+      const vatAmount = vatPercent != null ? round2(netAmount * (vatPercent / 100)) : 0;
+
+      newLines.push({
+        id: randomUUID(),
+        type: 'timesheet',
+        sourceId: ts._id,
+        projectId: ts.projectId,
+        description: project.name || 'Consulting',
+        date: ts.date,
+        hours: ts.hours,
+        quantity: ts.days || 0,
+        unit: 'days',
+        unitPrice: effectiveRate,
+        vatPercent,
+        netAmount,
+        vatAmount,
+        grossAmount: round2(netAmount + vatAmount),
+      });
+    } else if (item.type === 'expense') {
+      const exp = await expenses.findOne({ _id: item.sourceId });
+      if (!exp) throw new Error(`Expense ${item.sourceId} not found`);
+
+      const project = projectMap[exp.projectId];
+      if (!project || project.clientId !== invoice.clientId) {
+        throw new Error(`Expense ${exp.date} does not belong to the invoice client`);
+      }
+      const netAmount = exp.netAmount ?? round2((exp.amount || 0) - (exp.vatAmount || 0));
+
+      newLines.push({
+        id: randomUUID(),
+        type: 'expense',
+        sourceId: exp._id,
+        projectId: exp.projectId,
+        description: [exp.expenseType, exp.description].filter(Boolean).join(' - '),
+        date: exp.date,
+        expenseType: exp.expenseType,
+        quantity: 1,
+        unit: 'item',
+        unitPrice: netAmount,
+        vatPercent: exp.vatPercent || 0,
+        netAmount,
+        vatAmount: exp.vatAmount || 0,
+        grossAmount: exp.amount || 0,
+      });
+    } else {
+      throw new Error(`Unknown line type: ${item.type}`);
+    }
+  }
+
+  if (newLines.length > 0) {
+    const updatedLines = [...(invoice.lines || []), ...newLines];
+    const { subtotal, totalVat, total } = computeTotalsFromLines(updatedLines);
+
+    await invoices.update({ _id: invoiceId }, {
+      $set: {
+        lines: updatedLines,
+        subtotal,
+        totalVat,
+        total,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  return getById(invoiceId);
 }
 
 // --- Helpers ---

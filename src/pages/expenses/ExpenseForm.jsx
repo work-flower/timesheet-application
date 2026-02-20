@@ -38,8 +38,9 @@ import {
   createTableColumn,
   SearchBox,
 } from '@fluentui/react-components';
-import { LinkRegular, LinkMultipleRegular, LinkDismissRegular, WarningFilled } from '@fluentui/react-icons';
+import { LinkRegular, LinkMultipleRegular, LinkDismissRegular, WarningFilled, ReceiptRegular } from '@fluentui/react-icons';
 import { expensesApi, projectsApi, clientsApi, transactionsApi } from '../../api/index.js';
+import InvoicePickerDialog from '../../components/InvoicePickerDialog.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -196,6 +197,7 @@ export default function ExpenseForm() {
   const [selectedTxId, setSelectedTxId] = useState(null);
   const [showLinkedTx, setShowLinkedTx] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState(null);
+  const [invoicePickerOpen, setInvoicePickerOpen] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -270,6 +272,8 @@ export default function ExpenseForm() {
     () => allProjects.find((p) => p._id === form.projectId),
     [form.projectId, allProjects],
   );
+
+  const expenseClientId = selectedProject?.clientId || '';
 
   // Lookup client currency from project
   const clientMap = useMemo(
@@ -492,6 +496,17 @@ export default function ExpenseForm() {
         saving={saving}
         locked={isLocked}
       >
+        {!isNew && !isLocked && (
+          <Button
+            appearance="outline"
+            icon={<ReceiptRegular />}
+            onClick={() => setInvoicePickerOpen(true)}
+            size="small"
+            disabled={!expenseClientId}
+          >
+            Link to Invoice
+          </Button>
+        )}
         {!isNew && (
           <Button
             appearance="outline"
@@ -862,6 +877,18 @@ export default function ExpenseForm() {
         onConfirm={handleUnlinkTx}
         title="Unlink Transaction"
         message={`Are you sure you want to unlink "${unlinkTarget?.label}" from this expense?`}
+      />
+      <InvoicePickerDialog
+        open={invoicePickerOpen}
+        onClose={() => setInvoicePickerOpen(false)}
+        onLinked={() => {
+          setInvoicePickerOpen(false);
+          setSuccess(true);
+          setTimeout(() => setSuccess(false), 3000);
+        }}
+        clientId={expenseClientId}
+        sourceType="expense"
+        sourceId={id}
       />
     </div>
   );

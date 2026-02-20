@@ -203,6 +203,7 @@ export const invoicesApi = {
   confirm: (id) => request(`/invoices/${id}/confirm`, { method: 'POST', body: '{}' }),
   post: (id) => request(`/invoices/${id}/post`, { method: 'POST', body: '{}' }),
   unconfirm: (id) => request(`/invoices/${id}/unconfirm`, { method: 'POST', body: '{}' }),
+  addLine: (id, items) => request(`/invoices/${id}/add-line`, { method: 'POST', body: JSON.stringify({ items }) }),
   recalculate: (id) => request(`/invoices/${id}/recalculate`, { method: 'POST', body: '{}' }),
   consistencyCheck: (id) => request(`/invoices/${id}/consistency-check`, { method: 'POST', body: '{}' }),
   updatePayment: (id, data) => request(`/invoices/${id}/payment`, { method: 'PUT', body: JSON.stringify(data) }),

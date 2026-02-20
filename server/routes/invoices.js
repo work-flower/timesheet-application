@@ -79,6 +79,15 @@ router.post('/:id/unconfirm', async (req, res) => {
   }
 });
 
+router.post('/:id/add-line', async (req, res) => {
+  try {
+    const result = await invoiceService.addLine(req.params.id, req.body.items);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.post('/:id/recalculate', async (req, res) => {
   try {
     const result = await invoiceService.recalculate(req.params.id);

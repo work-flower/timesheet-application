@@ -696,6 +696,23 @@ export default function InvoiceForm() {
     }
   }, [id]);
 
+  const refreshFromInvoice = useCallback((updated) => {
+    setInvoiceData(updated);
+    setClientProjects(updated.clientProjects || []);
+    setBase({
+      clientId: updated.clientId || '',
+      invoiceNumber: updated.invoiceNumber || '',
+      invoiceDate: updated.invoiceDate || '',
+      dueDate: updated.dueDate || '',
+      servicePeriodStart: updated.servicePeriodStart || '',
+      servicePeriodEnd: updated.servicePeriodEnd || '',
+      additionalNotes: updated.additionalNotes || '',
+      lines: updated.lines || [],
+      includeTimesheetReport: updated.includeTimesheetReport || false,
+      includeExpenseReport: updated.includeExpenseReport || false,
+    });
+  }, [setBase]);
+
   // --- Transaction picker ---
   const openTxPicker = useCallback(async () => {
     setTxPickerOpen(true);
@@ -808,50 +825,34 @@ export default function InvoiceForm() {
     };
   }, [form.servicePeriodStart, form.servicePeriodEnd]);
 
-  const handleTimesheetPickerConfirm = (selectedIds) => {
+  const handleTimesheetPickerConfirm = async (selectedIds) => {
     const currentSourceIds = new Set(tsSourceIds);
     const selectedSet = new Set(selectedIds);
 
-    // Newly added IDs
     const newIds = selectedIds.filter(sid => !currentSourceIds.has(sid));
-    // Removed IDs
     const removedIds = tsSourceIds.filter(sid => !selectedSet.has(sid));
 
-    // Generate lines for newly added timesheets
-    const newLines = newIds.map(tsId => {
-      const ts = availableTimesheets.find(t => t._id === tsId);
-      if (!ts) return null;
-      const project = clientProjects.find(p => p._id === ts.projectId);
-      const effectiveRate = project?.effectiveRate || 0;
-      const vatPercent = project?.vatPercent ?? null;
-      const netAmount = ts.amount || 0;
-      const vatAmount = vatPercent != null ? round2(netAmount * (vatPercent / 100)) : 0;
+    setError(null);
+    try {
+      let latest = invoiceData;
 
-      return {
-        id: crypto.randomUUID(),
-        type: 'timesheet',
-        sourceId: ts._id,
-        projectId: ts.projectId,
-        description: project?.name || ts.projectName || 'Consulting',
-        date: ts.date,
-        hours: ts.hours,
-        quantity: ts.days || 0,
-        unit: 'days',
-        unitPrice: effectiveRate,
-        vatPercent,
-        netAmount,
-        vatAmount,
-        grossAmount: round2(netAmount + vatAmount),
-      };
-    }).filter(Boolean);
+      // Add new items via backend
+      if (newIds.length) {
+        latest = await invoicesApi.addLine(id, newIds.map(sid => ({ type: 'timesheet', sourceId: sid })));
+      }
 
-    setForm(prev => ({
-      ...prev,
-      lines: [
-        ...prev.lines.filter(l => !(l.type === 'timesheet' && removedIds.includes(l.sourceId))),
-        ...newLines,
-      ],
-    }));
+      // Remove deselected items client-side, save via update
+      if (removedIds.length) {
+        const filtered = (latest.lines || []).filter(l =>
+          !(l.type === 'timesheet' && removedIds.includes(l.sourceId))
+        );
+        latest = await invoicesApi.update(id, { lines: filtered });
+      }
+
+      refreshFromInvoice(latest);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   // --- Expense picker ---
@@ -872,44 +873,34 @@ export default function InvoiceForm() {
     filterFn: (item) => item.billable !== false,
   }), []);
 
-  const handleExpensePickerConfirm = (selectedIds) => {
+  const handleExpensePickerConfirm = async (selectedIds) => {
     const currentSourceIds = new Set(expSourceIds);
     const selectedSet = new Set(selectedIds);
 
     const newIds = selectedIds.filter(sid => !currentSourceIds.has(sid));
     const removedIds = expSourceIds.filter(sid => !selectedSet.has(sid));
 
-    const newLines = newIds.map(expId => {
-      const exp = availableExpenses.find(e => e._id === expId);
-      if (!exp) return null;
-      const netAmount = exp.netAmount ?? round2((exp.amount || 0) - (exp.vatAmount || 0));
+    setError(null);
+    try {
+      let latest = invoiceData;
 
-      return {
-        id: crypto.randomUUID(),
-        type: 'expense',
-        sourceId: exp._id,
-        projectId: exp.projectId,
-        description: [exp.expenseType, exp.description].filter(Boolean).join(' - '),
-        date: exp.date,
-        expenseType: exp.expenseType,
-        billable: exp.billable !== false,
-        quantity: 1,
-        unit: 'item',
-        unitPrice: netAmount,
-        vatPercent: exp.vatPercent || 0,
-        netAmount,
-        vatAmount: exp.vatAmount || 0,
-        grossAmount: exp.amount || 0,
-      };
-    }).filter(Boolean);
+      // Add new items via backend
+      if (newIds.length) {
+        latest = await invoicesApi.addLine(id, newIds.map(sid => ({ type: 'expense', sourceId: sid })));
+      }
 
-    setForm(prev => ({
-      ...prev,
-      lines: [
-        ...prev.lines.filter(l => !(l.type === 'expense' && removedIds.includes(l.sourceId))),
-        ...newLines,
-      ],
-    }));
+      // Remove deselected items client-side, save via update
+      if (removedIds.length) {
+        const filtered = (latest.lines || []).filter(l =>
+          !(l.type === 'expense' && removedIds.includes(l.sourceId))
+        );
+        latest = await invoicesApi.update(id, { lines: filtered });
+      }
+
+      refreshFromInvoice(latest);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const removeLine = (lineId) => {
@@ -1332,13 +1323,13 @@ export default function InvoiceForm() {
                     </Text>
                     {!isReadOnly && (
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={openTimesheetPicker} disabled={!form.clientId}>
+                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={openTimesheetPicker} disabled={!form.clientId || isNew}>
                           Add Timesheets
                         </Button>
-                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={openExpensePicker} disabled={!form.clientId}>
+                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={openExpensePicker} disabled={!form.clientId || isNew}>
                           Add Expenses
                         </Button>
-                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={addWriteInLine}>
+                        <Button appearance="outline" icon={<AddRegular />} size="small" onClick={addWriteInLine} disabled={isNew}>
                           Add Line
                         </Button>
                       </div>
