@@ -107,7 +107,7 @@ export async function buildInvoicePdf(invoiceId) {
     isFirstGroup = false;
 
     for (const line of group.lines) {
-      const vatDisplay = line.vatPercent != null ? `${line.vatPercent}%` : 'Exempt';
+      const vatDisplay = line.vatPercent != null ? `${line.vatPercent}%` : '';
       const vatAmount = line.vatPercent != null ? fmtGBP(line.vatAmount) : '—';
       const fill = rowIndex % 2 === 1 ? LIGHT_GREY : null;
 
