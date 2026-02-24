@@ -4,6 +4,7 @@ import {
   makeStyles,
   tokens,
   Text,
+  ToggleButton,
   DataGrid,
   DataGridHeader,
   DataGridHeaderCell,
@@ -32,6 +33,14 @@ const useStyles = makeStyles({
   title: {
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase500,
+  },
+  filters: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 16px',
+    backgroundColor: tokens.colorNeutralBackground1,
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
   },
   gridContainer: { flex: 1, overflow: 'hidden', width: '100%' },
   loading: { display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '48px' },
@@ -78,6 +87,7 @@ export default function ProjectList() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(() => localStorage.getItem('projects.showArchived') === 'true');
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
@@ -88,10 +98,12 @@ export default function ProjectList() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = projects.filter((p) =>
-    !search || p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.clientName?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = projects.filter((p) => {
+    if (!showArchived && p.status === 'archived') return false;
+    if (search && !p.name.toLowerCase().includes(search.toLowerCase()) &&
+        !p.clientName?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -130,6 +142,19 @@ export default function ProjectList() {
         searchValue={search}
         onSearchChange={setSearch}
       />
+      <div className={styles.filters}>
+        <ToggleButton
+          size="small"
+          checked={showArchived}
+          onClick={() => {
+            const next = !showArchived;
+            setShowArchived(next);
+            localStorage.setItem('projects.showArchived', String(next));
+          }}
+        >
+          Show Archived
+        </ToggleButton>
+      </div>
       {deleteError && (
         <div style={{ padding: '8px 16px' }}>
           <Text style={{ color: tokens.colorPaletteRedForeground1 }}>{deleteError}</Text>
