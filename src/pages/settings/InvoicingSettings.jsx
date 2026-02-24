@@ -5,7 +5,7 @@ import {
   Input,
   Textarea,
   Field,
-  SpinButton,
+  Spinner,
   Button,
   MessageBar,
   MessageBarBody,
@@ -14,6 +14,7 @@ import {
 import { SaveRegular } from '@fluentui/react-icons';
 import { settingsApi, clientsApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { useFormTracker } from '../../hooks/useFormTracker.js';
 
 const useStyles = makeStyles({
   actions: {
@@ -27,30 +28,36 @@ const useStyles = makeStyles({
   },
 });
 
+const INITIAL_STATE = {
+  businessClientId: '',
+  invoiceNumberSeed: 0,
+  defaultPaymentTermDays: 10,
+  defaultVatRate: 20,
+  invoiceFooterText: '',
+  bankName: '',
+  bankSortCode: '',
+  bankAccountNumber: '',
+  bankAccountOwner: '',
+  accountingReferenceDate: '',
+  vatStaggerGroup: '',
+};
+
 export default function InvoicingSettings() {
   const styles = useStyles();
-  const [form, setForm] = useState({
-    businessClientId: '',
-    invoiceNumberSeed: 0,
-    defaultPaymentTermDays: 10,
-    defaultVatRate: 20,
-    invoiceFooterText: '',
-    bankName: '',
-    bankSortCode: '',
-    bankAccountNumber: '',
-    bankAccountOwner: '',
-    accountingReferenceDate: '',
-    vatStaggerGroup: '',
-  });
+  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker(INITIAL_STATE);
   const [clientsList, setClientsList] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    settingsApi.get().then((data) => {
+    Promise.all([
+      settingsApi.get(),
+      clientsApi.getAll(),
+    ]).then(([data, clients]) => {
       if (data) {
-        setForm({
+        setBase({
           businessClientId: data.businessClientId || '',
           invoiceNumberSeed: data.invoiceNumberSeed ?? 0,
           defaultPaymentTermDays: data.defaultPaymentTermDays ?? 10,
@@ -64,9 +71,10 @@ export default function InvoicingSettings() {
           vatStaggerGroup: data.vatStaggerGroup || '',
         });
       }
+      setClientsList(clients);
+      setLoading(false);
     });
-    clientsApi.getAll().then(setClientsList);
-  }, []);
+  }, [setBase]);
 
   const handleChange = (field) => (e, data) => {
     setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
@@ -77,7 +85,14 @@ export default function InvoicingSettings() {
     setError(null);
     setSuccess(false);
     try {
-      await settingsApi.update(form);
+      // Only send changed fields to avoid overwriting values modified elsewhere
+      // (e.g. invoiceNumberSeed incremented by invoice confirm)
+      const payload = {};
+      for (const field of changedFields) {
+        payload[field] = form[field];
+      }
+      await settingsApi.update(payload);
+      setBase(form);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
@@ -87,13 +102,15 @@ export default function InvoicingSettings() {
     }
   };
 
+  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
+
   return (
     <>
       {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
       {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Invoicing settings saved.</MessageBarBody></MessageBar>}
 
       <FormSection title="Financial Periods">
-        <FormField>
+        <FormField changed={changedFields.has('accountingReferenceDate')}>
           <Field label="Accounting Reference Date" hint="Company year-end date (e.g. 03-31 for 31 March). Drives company year boundaries for financial reports.">
             <Select
               value={form.accountingReferenceDate}
@@ -115,7 +132,7 @@ export default function InvoicingSettings() {
             </Select>
           </Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('vatStaggerGroup')}>
           <Field label="VAT Stagger Group" hint="Determines VAT quarter boundaries. Group 1: Mar/Jun/Sep/Dec. Group 2: Jan/Apr/Jul/Oct. Group 3: Feb/May/Aug/Nov.">
             <Select
               value={form.vatStaggerGroup}
@@ -131,7 +148,7 @@ export default function InvoicingSettings() {
       </FormSection>
 
       <FormSection title="Business Client">
-        <FormField>
+        <FormField changed={changedFields.has('businessClientId')}>
           <Field label="Business Client" hint="Designate a client to track business-level expenses (rent, software, tax, etc.)">
             <Select
               value={form.businessClientId}
@@ -147,39 +164,42 @@ export default function InvoicingSettings() {
       </FormSection>
 
       <FormSection title="Invoice Numbering">
-        <FormField>
+        <FormField changed={changedFields.has('invoiceNumberSeed')}>
           <Field label="Invoice Number Seed" hint="Last used invoice number. Next invoice will be this + 1.">
-            <SpinButton
-              defaultValue={form.invoiceNumberSeed}
-              onChange={(e, data) => {
-                const val = data.value ?? parseFloat(data.displayValue);
-                if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, invoiceNumberSeed: val }));
+            <Input
+              type="number"
+              value={String(form.invoiceNumberSeed ?? '')}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val)) setForm((prev) => ({ ...prev, invoiceNumberSeed: val }));
               }}
               min={0}
               step={1}
             />
           </Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('defaultPaymentTermDays')}>
           <Field label="Default Payment Terms (days)">
-            <SpinButton
-              defaultValue={form.defaultPaymentTermDays}
-              onChange={(e, data) => {
-                const val = data.value ?? parseFloat(data.displayValue);
-                if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, defaultPaymentTermDays: val }));
+            <Input
+              type="number"
+              value={String(form.defaultPaymentTermDays ?? '')}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val)) setForm((prev) => ({ ...prev, defaultPaymentTermDays: val }));
               }}
               min={0}
               step={1}
             />
           </Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('defaultVatRate')}>
           <Field label="Default VAT Rate (%)" hint="Default VAT rate for new projects.">
-            <SpinButton
-              defaultValue={form.defaultVatRate}
-              onChange={(e, data) => {
-                const val = data.value ?? parseFloat(data.displayValue);
-                if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, defaultVatRate: val }));
+            <Input
+              type="number"
+              value={String(form.defaultVatRate ?? '')}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val)) setForm((prev) => ({ ...prev, defaultVatRate: val }));
               }}
               min={0}
               max={100}
@@ -190,22 +210,22 @@ export default function InvoicingSettings() {
       </FormSection>
 
       <FormSection title="Bank Details">
-        <FormField>
+        <FormField changed={changedFields.has('bankName')}>
           <Field label="Bank Name">
             <Input value={form.bankName} onChange={handleChange('bankName')} />
           </Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('bankSortCode')}>
           <Field label="Sort Code">
             <Input value={form.bankSortCode} onChange={handleChange('bankSortCode')} />
           </Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('bankAccountNumber')}>
           <Field label="Account Number">
             <Input value={form.bankAccountNumber} onChange={handleChange('bankAccountNumber')} />
           </Field>
         </FormField>
-        <FormField>
+        <FormField changed={changedFields.has('bankAccountOwner')}>
           <Field label="Account Holder Name">
             <Input value={form.bankAccountOwner} onChange={handleChange('bankAccountOwner')} />
           </Field>
@@ -213,7 +233,7 @@ export default function InvoicingSettings() {
       </FormSection>
 
       <FormSection title="Invoice Footer">
-        <FormField fullWidth>
+        <FormField fullWidth changed={changedFields.has('invoiceFooterText')}>
           <Field label="Footer Text" hint="Text displayed at the bottom of every invoice.">
             <Textarea
               value={form.invoiceFooterText}
@@ -230,7 +250,7 @@ export default function InvoicingSettings() {
           appearance="primary"
           icon={<SaveRegular />}
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || !isDirty}
           size="small"
         >
           {saving ? 'Saving...' : 'Save Configuration'}

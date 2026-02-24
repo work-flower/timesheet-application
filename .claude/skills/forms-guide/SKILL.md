@@ -283,23 +283,24 @@ Extra action buttons can be passed as `children` — they render after a Toolbar
 - Use `<Field label="..." required hint="...">` inside FormField
 - Notes field uses `MarkdownEditor` component, placed outside FormSection, as a fullWidth FormField
 
-### SpinButton
+### Numeric Fields
 
-Must use uncontrolled mode. Never use `value` prop — use `defaultValue`:
+Use `<Input type="number">` for all numeric fields. This is a controlled component that stays in sync with form state:
 
 ```jsx
-<SpinButton
-  defaultValue={form.fieldName}
-  onChange={(e, data) => {
-    const val = data.value ?? parseFloat(data.displayValue);
-    if (val != null && !isNaN(val)) {
-      setForm((prev) => ({ ...prev, fieldName: val }));
-    }
+<Input
+  type="number"
+  value={String(form.fieldName ?? '')}
+  onChange={(e) => {
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val)) setForm((prev) => ({ ...prev, fieldName: val }));
   }}
   min={0}
   step={0.01}
 />
 ```
+
+**Do NOT use SpinButton.** It requires uncontrolled mode (`defaultValue`) which only reads the value on mount and ignores subsequent state updates. This causes stale values when data loads asynchronously or the form baseline changes. Some legacy forms still use SpinButton with a loading guard — new code should always use `Input type="number"` instead.
 
 ### Project Dropdown (grouped by client)
 
