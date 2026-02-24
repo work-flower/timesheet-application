@@ -1,3 +1,10 @@
+---
+name: list-views-guide
+description: Build data grids and list views. Use when implementing DataGrid pages, filters, pagination, search, summary footers, period toggles, or localStorage filter persistence.
+user-invocable: true
+allowed-tools: Read, Grep, Glob
+---
+
 # List Views Guide
 
 ## File Location

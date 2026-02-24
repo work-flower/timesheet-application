@@ -1,3 +1,10 @@
+---
+name: routing-guide
+description: Set up routes and navigation. Use when adding new pages, registering routes in App.jsx, adding sidebar menu items, implementing navigation guards, or adding breadcrumbs.
+user-invocable: true
+allowed-tools: Read, Grep, Glob
+---
+
 # Routing & Navigation Guide
 
 ## Route Registration

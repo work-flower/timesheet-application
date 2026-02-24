@@ -8,13 +8,13 @@ No authentication — single user, local app.
 
 ## Implementation Guides
 
-Before implementing new features, **always consult `ai-guides/`** for established patterns and conventions:
+Implementation patterns are available as Claude Code skills (`.claude/skills/`). Invoke them with `/skill-name` or let Claude auto-load them based on context:
 
-- [`ai-guides/forms.md`](ai-guides/forms.md) — Form structure, save pattern, locking, dirty tracking, field layout
-- [`ai-guides/list-views.md`](ai-guides/list-views.md) — DataGrid, filters, pagination, search, summary footer
-- [`ai-guides/api-services.md`](ai-guides/api-services.md) — Backend CRUD template, OData support, enrichment, route/API client patterns
-- [`ai-guides/routing-and-navigation.md`](ai-guides/routing-and-navigation.md) — Route registration, sidebar navigation, guards, breadcrumbs
-- [`ai-guides/components.md`](ai-guides/components.md) — Shared component contracts (FormCommandBar, CommandBar, FormSection, FormField, etc.)
+- `/forms-guide` — Form structure, save pattern, locking, dirty tracking, field layout
+- `/list-views-guide` — DataGrid, filters, pagination, search, summary footer
+- `/api-services-guide` — Backend CRUD template, OData support, enrichment, route/API client patterns
+- `/routing-guide` — Route registration, sidebar navigation, guards, breadcrumbs
+- `/components-guide` — Shared component contracts (FormCommandBar, CommandBar, FormSection, FormField, etc.)
 
 ## Tech Stack
 

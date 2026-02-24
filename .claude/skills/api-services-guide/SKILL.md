@@ -1,3 +1,10 @@
+---
+name: api-services-guide
+description: Write backend API services and routes. Use when creating CRUD endpoints, Express routes, OData query support, service-layer business logic, validation, enrichment, record locking, or frontend API clients.
+user-invocable: true
+allowed-tools: Read, Grep, Glob
+---
+
 # API & Services Guide
 
 ## Architecture

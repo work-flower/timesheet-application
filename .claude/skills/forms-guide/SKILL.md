@@ -1,3 +1,10 @@
+---
+name: forms-guide
+description: Implement React forms for entities. Use when creating or modifying form components, implementing save patterns, dirty tracking, field validation, record locking, query string pre-fill, or navigation guards.
+user-invocable: true
+allowed-tools: Read, Grep, Glob
+---
+
 # Forms Guide
 
 ## File Location

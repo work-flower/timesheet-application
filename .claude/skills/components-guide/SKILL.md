@@ -1,3 +1,10 @@
+---
+name: components-guide
+description: Use shared Fluent UI components. Use when working with FormCommandBar, CommandBar, FormSection, FormField, ConfirmDialog, MarkdownEditor, PaginationControls, AttachmentGallery, useFormTracker, or usePagination hooks.
+user-invocable: true
+allowed-tools: Read, Grep, Glob
+---
+
 # Shared Components Guide
 
 ## FormCommandBar
