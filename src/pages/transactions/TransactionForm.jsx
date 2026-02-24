@@ -5,6 +5,7 @@ import {
   tokens,
   Text,
   Input,
+  Textarea,
   Field,
   Spinner,
   MessageBar,
@@ -36,7 +37,7 @@ import {
   TabList,
   Tab,
 } from '@fluentui/react-components';
-import { AddRegular, LinkRegular, LinkMultipleRegular, LinkDismissRegular, WarningFilled } from '@fluentui/react-icons';
+import { AddRegular, LinkRegular, LinkMultipleRegular, LinkDismissRegular, WarningFilled, EyeOffRegular, ArrowUndoRegular } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -246,6 +247,10 @@ export default function TransactionForm() {
   // Unlink confirmation state: { type: 'invoice'|'expense', id, label }
   const [unlinkTarget, setUnlinkTarget] = useState(null);
 
+  // Ignore dialog state
+  const [ignoreDialogOpen, setIgnoreDialogOpen] = useState(false);
+  const [ignoreReason, setIgnoreReason] = useState('');
+
   const refreshTransaction = useCallback(async () => {
     try {
       const result = await transactionsApi.getById(id);
@@ -274,6 +279,35 @@ export default function TransactionForm() {
       setUnlinkTarget(null);
     }
   }, [unlinkTarget, id, refreshTransaction]);
+
+  const handleIgnoreConfirm = useCallback(async () => {
+    setError(null);
+    setSuccess(null);
+    try {
+      await transactionsApi.updateMapping(id, { status: 'ignored', ignoreReason });
+      await refreshTransaction();
+      setSuccess('Transaction ignored.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIgnoreDialogOpen(false);
+      setIgnoreReason('');
+    }
+  }, [id, ignoreReason, refreshTransaction]);
+
+  const handleRestore = useCallback(async () => {
+    setError(null);
+    setSuccess(null);
+    try {
+      await transactionsApi.updateMapping(id, { status: 'unmatched' });
+      await refreshTransaction();
+      setSuccess('Transaction restored to unmatched.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [id, refreshTransaction]);
 
   useEffect(() => {
     if (!id) {
@@ -472,6 +506,8 @@ export default function TransactionForm() {
   }
 
   const isDebit = data.amount < 0;
+  const isIgnored = data.status === 'ignored';
+  const isUnmatched = data.status === 'unmatched';
 
   return (
     <div className={styles.page}>
@@ -488,7 +524,7 @@ export default function TransactionForm() {
             appearance="outline"
             icon={<AddRegular />}
             onClick={handleCreateExpense}
-            disabled={!isDebit}
+            disabled={!isDebit || isIgnored}
             size="small"
           >
             Create Expense
@@ -503,7 +539,7 @@ export default function TransactionForm() {
             appearance="outline"
             icon={<LinkRegular />}
             onClick={handleOpenInvoicePicker}
-            disabled={isDebit}
+            disabled={isDebit || isIgnored}
             size="small"
           >
             Link to Invoice
@@ -518,12 +554,31 @@ export default function TransactionForm() {
             appearance="outline"
             icon={<LinkRegular />}
             onClick={handleOpenExpensePicker}
-            disabled={!isDebit}
+            disabled={!isDebit || isIgnored}
             size="small"
           >
             Link to Expense
           </Button>
         </Tooltip>
+        <Button
+          appearance="outline"
+          icon={<EyeOffRegular />}
+          onClick={() => { setIgnoreReason(''); setIgnoreDialogOpen(true); }}
+          disabled={!isUnmatched}
+          size="small"
+        >
+          Ignore
+        </Button>
+        {isIgnored && (
+          <Button
+            appearance="outline"
+            icon={<ArrowUndoRegular />}
+            onClick={handleRestore}
+            size="small"
+          >
+            Restore
+          </Button>
+        )}
       </FormCommandBar>
 
       <div className={styles.pageBody}>
@@ -548,6 +603,11 @@ export default function TransactionForm() {
         {success && (
           <MessageBar intent="success" className={styles.message}>
             <MessageBarBody>{success}</MessageBarBody>
+          </MessageBar>
+        )}
+        {isIgnored && data.ignoreReason && (
+          <MessageBar intent="warning" className={styles.message}>
+            <MessageBarBody>Ignored: {data.ignoreReason}</MessageBarBody>
           </MessageBar>
         )}
 
@@ -916,6 +976,33 @@ export default function TransactionForm() {
         title={`Unlink ${unlinkTarget?.type === 'invoice' ? 'Invoice' : 'Expense'}`}
         message={`Are you sure you want to unlink "${unlinkTarget?.label}" from this transaction?`}
       />
+
+      {/* Ignore Confirmation Dialog */}
+      <Dialog open={ignoreDialogOpen} onOpenChange={(e, d) => { if (!d.open) setIgnoreDialogOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '480px' }}>
+          <DialogBody>
+            <DialogTitle>Ignore Transaction</DialogTitle>
+            <DialogContent>
+              <Text style={{ display: 'block', marginBottom: '12px' }}>
+                This transaction will be marked as ignored and locked. Please provide a reason.
+              </Text>
+              <Field label="Reason" required>
+                <Textarea
+                  value={ignoreReason}
+                  onChange={(e, d) => setIgnoreReason(d.value)}
+                  placeholder="Why is this transaction being ignored?"
+                  resize="vertical"
+                  rows={3}
+                />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setIgnoreDialogOpen(false)}>Cancel</Button>
+              <Button appearance="primary" onClick={handleIgnoreConfirm} disabled={!ignoreReason.trim()}>Confirm</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }

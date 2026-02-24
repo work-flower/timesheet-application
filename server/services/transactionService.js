@@ -137,6 +137,15 @@ export async function updateMapping(id, data) {
     updateData.ignoreReason = null;
   }
 
+  // Lock/unlock based on ignored status
+  if (newStatus === 'ignored') {
+    updateData.isLocked = true;
+    updateData.isLockedReason = `Ignored: ${newIgnoreReason}`;
+  } else if (existing.status === 'ignored' && newStatus !== 'ignored') {
+    updateData.isLocked = true;
+    updateData.isLockedReason = 'Transactions are read-only by default';
+  }
+
   await transactions.update({ _id: id }, { $set: updateData });
   return getById(id);
 }
