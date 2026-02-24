@@ -1,6 +1,6 @@
 ---
 name: api-services-guide
-description: Write backend API services and routes. Use when creating CRUD endpoints, Express routes, OData query support, service-layer business logic, validation, enrichment, record locking, or frontend API clients.
+description: Standards for backend services and API routes. Load this skill when creating, modifying, or fixing any service, route, or API client — covers CRUD operations, OData support, enrichment, validation, record locking, and frontend API client pattern.
 user-invocable: true
 allowed-tools: Read, Grep, Glob
 ---

@@ -6,13 +6,13 @@ A single-user desktop timesheet and invoicing application for UK technology cont
 
 No authentication — single user, local app.
 
-## Implementation Guides
+## Standards (Claude Code Skills)
 
-Implementation patterns are available as Claude Code skills (`.claude/skills/`). Invoke them with `/skill-name` or let Claude auto-load them based on context:
+Project standards are enforced via Claude Code skills (`.claude/skills/`). These should be loaded when **creating, modifying, or fixing** any part of the codebase they cover. Invoke with `/skill-name` or let Claude auto-load based on context:
 
 - `/forms-guide` — Form structure, save pattern, locking, dirty tracking, field layout
 - `/list-views-guide` — DataGrid, filters, pagination, search, summary footer
-- `/api-services-guide` — Backend CRUD template, OData support, enrichment, route/API client patterns
+- `/api-services-guide` — Backend CRUD, OData support, enrichment, route/API client patterns
 - `/routing-guide` — Route registration, sidebar navigation, guards, breadcrumbs
 - `/components-guide` — Shared component contracts (FormCommandBar, CommandBar, FormSection, FormField, etc.)
 

@@ -1,6 +1,6 @@
 ---
 name: forms-guide
-description: Implement React forms for entities. Use when creating or modifying form components, implementing save patterns, dirty tracking, field validation, record locking, query string pre-fill, or navigation guards.
+description: Standards for entity form views. Load this skill when creating, modifying, or fixing any form component — covers structure, save pattern, dirty tracking, field validation, record locking, query string pre-fill, navigation guards, and render order.
 user-invocable: true
 allowed-tools: Read, Grep, Glob
 ---

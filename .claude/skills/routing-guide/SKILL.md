@@ -1,6 +1,6 @@
 ---
 name: routing-guide
-description: Set up routes and navigation. Use when adding new pages, registering routes in App.jsx, adding sidebar menu items, implementing navigation guards, or adding breadcrumbs.
+description: Standards for routing and navigation. Load this skill when adding, modifying, or fixing routes, sidebar menu items, navigation guards, or breadcrumbs — covers App.jsx registration, AppLayout sidebar, guardedNavigate, and file structure conventions.
 user-invocable: true
 allowed-tools: Read, Grep, Glob
 ---

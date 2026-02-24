@@ -1,6 +1,6 @@
 ---
 name: list-views-guide
-description: Build data grids and list views. Use when implementing DataGrid pages, filters, pagination, search, summary footers, period toggles, or localStorage filter persistence.
+description: Standards for entity list views. Load this skill when creating, modifying, or fixing any list page — covers DataGrid, columns, filters, pagination, search, summary footers, period toggles, localStorage persistence, and delete pattern.
 user-invocable: true
 allowed-tools: Read, Grep, Glob
 ---
