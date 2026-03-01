@@ -10,6 +10,7 @@ import {
   MessageBarBody,
 } from '@fluentui/react-components';
 import { SaveRegular } from '@fluentui/react-icons';
+import { Link as RouterLink } from 'react-router-dom';
 import { mcpAuthApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 
@@ -147,7 +148,7 @@ export default function McpAuthSettings() {
             </Button>
           </div>
           <div className={styles.hint}>
-            Configures the /.well-known/oauth-authorization-server and /.well-known/openid-configuration endpoints for MCP client OAuth discovery.
+            Configures the /.well-known/oauth-authorization-server and /.well-known/openid-configuration endpoints for OAuth discovery. Enables machine-to-machine authentication for MCP clients, API integrations, and other external services. See the <RouterLink to="/help/mcp-auth" target="_blank">M2M API Authentication</RouterLink> guide for setup instructions.
           </div>
         </FormField>
       </FormSection>

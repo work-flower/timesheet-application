@@ -1,15 +1,23 @@
 ---
-title: MCP Authentication — Connecting Claude.ai to Your MCP Server
-description: Configure OAuth for remote MCP access via Cloudflare
-tags: [mcp, oauth, cloudflare]
+title: M2M API Authentication
+description: Configure OAuth for machine-to-machine API access via Cloudflare
+tags: [m2m, oauth, cloudflare, mcp, api]
 banner: images/02-mcp-auth-settings.png
 ---
 
 ## Overview
 
-This guide explains how to configure your MCP server so that **Claude.ai** (or other remote MCP clients) can securely connect to it through **Cloudflare Access** using **Azure AD** authentication.
+This guide explains how to configure **machine-to-machine (M2M) API authentication** so that external clients can securely connect to your application through **Cloudflare Access** using **Azure AD** authentication.
 
-Your MCP server runs locally and is exposed to the internet via a **Cloudflare Tunnel**, protected by **Cloudflare Access**. The challenge is that Claude.ai requires an OAuth 2.1 discovery flow to connect, which Cloudflare Access doesn't natively support. This guide walks through the configuration to bridge that gap — **without writing any code or deploying a Worker**.
+The **M2M API Auth** tab in Settings configures standard OAuth 2.1 discovery endpoints (`/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration`) at the application root. This enables any OAuth-capable client — not just MCP — to discover and authenticate against your server. Use cases include:
+
+- **MCP clients** (e.g. Claude.ai) connecting to your MCP server endpoint
+- **API clients** making programmatic requests to your REST API
+- **Any M2M integration** that supports OAuth 2.1 token-based authentication
+
+> This guide walks through MCP (Claude.ai) as the primary example, but the same configuration applies to any machine-to-machine client that uses OAuth 2.1 discovery.
+
+Your application runs locally and is exposed to the internet via a **Cloudflare Tunnel**, protected by **Cloudflare Access**. The challenge is that OAuth clients require a standard discovery flow, which Cloudflare Access doesn't natively support. This guide walks through the configuration to bridge that gap — **without writing any code or deploying a Worker**.
 
 ---
 

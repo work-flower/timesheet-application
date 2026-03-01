@@ -146,7 +146,7 @@ export default function Settings() {
           <Tab value="profile">Profile</Tab>
           <Tab value="invoicing">Invoicing</Tab>
           <Tab value="aiConfig">Transaction Import AI Config</Tab>
-          <Tab value="mcpAuth">MCP Auth</Tab>
+          <Tab value="mcpAuth">M2M API Auth</Tab>
           <Tab value="backup">Backup</Tab>
         </TabList>
 
