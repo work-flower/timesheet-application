@@ -23,6 +23,7 @@ import {
   ArrowSwapRegular,
   SettingsRegular,
   NavigationRegular,
+  QuestionCircleRegular,
   ChevronDownRegular,
   ChevronRightRegular,
   DataBarVerticalRegular,
@@ -373,9 +374,14 @@ export default function AppLayout() {
           />
           <Text className={styles.topBarTitle}>Timesheet Manager</Text>
         </div>
-        <Button appearance="subtle" icon={<SettingsRegular />} onClick={() => guardedNavigate('/settings')}>
-          Settings
-        </Button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <Button appearance="subtle" icon={<QuestionCircleRegular />} onClick={() => guardedNavigate('/help')}>
+            Help
+          </Button>
+          <Button appearance="subtle" icon={<SettingsRegular />} onClick={() => guardedNavigate('/settings')}>
+            Settings
+          </Button>
+        </div>
       </div>
       <div className={styles.body}>
         <nav

@@ -67,6 +67,9 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Serve help topic assets (images etc.) from src/help/
+app.use('/help', express.static(join(__dirname, '..', 'src', 'help')));
+
 // Serve static frontend in production
 const distPath = join(__dirname, '..', 'dist');
 app.use(express.static(distPath));

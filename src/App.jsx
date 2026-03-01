@@ -24,6 +24,8 @@ import ReportForm from './pages/reports/ReportForm.jsx';
 import ExpenseReportForm from './pages/reports/ExpenseReportForm.jsx';
 import IncomeExpenseReport from './pages/reports/IncomeExpenseReport.jsx';
 import VatReport from './pages/reports/VatReport.jsx';
+import HelpIndex from './pages/help/HelpIndex.jsx';
+import HelpTopic from './pages/help/HelpTopic.jsx';
 import ReconciliationDashboard from './pages/dashboards/ReconciliationDashboard.jsx';
 import FinancialDashboard from './pages/dashboards/FinancialDashboard.jsx';
 
@@ -63,6 +65,8 @@ export default function App() {
               <Route path="/reports/expenses" element={<ExpenseReportForm />} />
               <Route path="/reports/income-expense" element={<IncomeExpenseReport />} />
               <Route path="/reports/vat" element={<VatReport />} />
+              <Route path="/help" element={<HelpIndex />} />
+              <Route path="/help/:topicId" element={<HelpTopic />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Routes>
