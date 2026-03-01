@@ -17,6 +17,8 @@ import stagedTransactionRoutes from './routes/stagedTransactions.js';
 import aiConfigRoutes from './routes/aiConfig.js';
 import dashboardRoutes from './routes/dashboard.js';
 import mcpRoutes from './routes/mcp.js';
+import mcpAuthRoutes from './routes/mcpAuth.js';
+import { getWellKnownMetadata } from './services/mcpAuthService.js';
 import { initScheduler } from './services/backupScheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +45,22 @@ app.use('/api/staged-transactions', stagedTransactionRoutes);
 app.use('/api/ai-config', aiConfigRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/mcp', mcpRoutes);
+app.use('/api/mcp-auth', mcpAuthRoutes);
+
+// .well-known OAuth discovery endpoints (must be unauthenticated)
+async function wellKnownHandler(req, res) {
+  try {
+    const metadata = await getWellKnownMetadata();
+    if (!metadata) {
+      return res.status(404).json({ error: 'MCP Auth not configured' });
+    }
+    res.json(metadata);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+app.get('/.well-known/oauth-authorization-server', wellKnownHandler);
+app.get('/.well-known/openid-configuration', wellKnownHandler);
 
 // Health check
 app.get('/api/health', (req, res) => {
