@@ -308,6 +308,12 @@ export const aiConfigApi = {
   testConnection: (data) => request('/ai-config/test-connection', { method: 'POST', body: JSON.stringify(data) }),
 };
 
+// MCP Auth
+export const mcpAuthApi = {
+  getConfig: () => request('/mcp-auth'),
+  updateConfig: (data) => request('/mcp-auth', { method: 'PUT', body: JSON.stringify(data) }),
+};
+
 // Backup
 export const backupApi = {
   getConfig: () => request('/backup/config'),
