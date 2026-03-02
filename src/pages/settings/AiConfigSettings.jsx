@@ -40,6 +40,7 @@ export default function AiConfigSettings() {
     maxTokens: '',
     timeoutMinutes: '',
     systemPrompt: '',
+    expenseSystemPrompt: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -56,6 +57,7 @@ export default function AiConfigSettings() {
             maxTokens: data.maxTokens != null ? String(data.maxTokens) : '',
             timeoutMinutes: data.timeoutMinutes != null ? String(data.timeoutMinutes) : '',
             systemPrompt: data.systemPrompt || '',
+            expenseSystemPrompt: data.expenseSystemPrompt || '',
           });
         }
       })
@@ -98,6 +100,7 @@ export default function AiConfigSettings() {
           maxTokens: saved.maxTokens != null ? String(saved.maxTokens) : '',
           timeoutMinutes: saved.timeoutMinutes != null ? String(saved.timeoutMinutes) : '',
           systemPrompt: saved.systemPrompt || '',
+          expenseSystemPrompt: saved.expenseSystemPrompt || '',
         });
       }
       showMessage('success', 'Configuration saved.');
@@ -182,7 +185,7 @@ export default function AiConfigSettings() {
         </FormField>
       </FormSection>
 
-      <FormSection title="System Prompt">
+      <FormSection title="Transaction Import System Prompt">
         <FormField fullWidth>
           <MarkdownEditor
             value={config.systemPrompt}
@@ -192,6 +195,20 @@ export default function AiConfigSettings() {
           />
           <div className={styles.hint}>
             General parsing instructions shared across all imports. Each import job can also have a job-specific user prompt.
+          </div>
+        </FormField>
+      </FormSection>
+
+      <FormSection title="Expense Receipt System Prompt">
+        <FormField fullWidth>
+          <MarkdownEditor
+            value={config.expenseSystemPrompt}
+            onChange={(val) => setConfig((prev) => ({ ...prev, expenseSystemPrompt: val }))}
+            height={300}
+            placeholder="Instructions for parsing expense receipts..."
+          />
+          <div className={styles.hint}>
+            Instructions sent to the AI when scanning expense receipts. The AI should return a JSON object with date, amount, vatAmount, expenseType, and description.
           </div>
         </FormField>
       </FormSection>

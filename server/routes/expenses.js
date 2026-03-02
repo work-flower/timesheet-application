@@ -2,9 +2,39 @@ import { Router } from 'express';
 import multer from 'multer';
 import * as expenseService from '../services/expenseService.js';
 import * as attachmentService from '../services/expenseAttachmentService.js';
+import { parseReceipt } from '../services/expenseParserService.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+// POST /parse-receipts must come before /:id
+router.post('/parse-receipts', upload.any(), async (req, res) => {
+  try {
+    const files = req.files || [];
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    for (const file of files) {
+      if (!file.mimetype.startsWith('image/') && file.mimetype !== 'application/pdf') {
+        return res.status(400).json({ error: `Unsupported file type: ${file.originalname}. Please upload images or PDFs.` });
+      }
+    }
+    const results = await Promise.all(
+      files.map(async (file) => {
+        try {
+          const parsed = await parseReceipt(file.buffer, file.originalname, file.mimetype);
+          return { filename: file.originalname, ...parsed };
+        } catch (err) {
+          return { filename: file.originalname, error: err.message };
+        }
+      })
+    );
+    res.json(results);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /types must come before /:id
 router.get('/types', async (req, res) => {

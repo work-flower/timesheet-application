@@ -49,7 +49,7 @@ Follow this flow for EVERY entry (each entry is an independent session — never
       `Create an expense entry. The API computes vatPercent, netAmount, and inherits currency automatically.
 
 Follow this flow (each entry is an independent session — never reuse projectId from a previous entry):
-1. If the user shared a receipt photo, read it with vision to extract: date, amount, VAT, description, expense type.
+1. If the user shared a receipt photo, read it with vision to extract: date, amount, VAT, description, expense type, and external reference (invoice number, order ID, receipt number, or any reference identifier visible on the document).
 2. Call list_projects to find the project. Never skip this step.
 3. Present extracted/provided data for user confirmation before submitting.
 4. Only submit when the user confirms the details are correct.
@@ -64,6 +64,7 @@ Follow this flow (each entry is an independent session — never reuse projectId
         description: { type: 'string', description: 'Client-facing description' },
         vatAmount: { type: 'number', description: 'VAT portion included in amount (default: 0)' },
         billable: { type: 'boolean', description: 'Billable to client (default: true)' },
+        externalReference: { type: 'string', description: 'Invoice number, order ID, receipt number, or other external reference from the source document' },
         notes: { type: 'string', description: 'Internal notes (not visible to client)' },
       },
       required: ['projectId', 'amount'],
@@ -138,12 +139,13 @@ const handlers = {
     return `Timesheet created: ${result.hours} hours (${result.days.toFixed(2)} days, ${fmtGBP(result.amount)}) on ${result.date}. Notes: ${result.notes || '—'}`;
   },
 
-  async create_expense({ projectId, date, amount, expenseType, description, vatAmount, billable, notes } = {}) {
+  async create_expense({ projectId, date, amount, expenseType, description, vatAmount, billable, externalReference, notes } = {}) {
     const data = { projectId, date: date || today(), amount };
     if (expenseType != null) data.expenseType = expenseType;
     if (description != null) data.description = description;
     if (vatAmount != null) data.vatAmount = vatAmount;
     if (billable != null) data.billable = billable;
+    if (externalReference != null) data.externalReference = externalReference;
     if (notes != null) data.notes = notes;
 
     const result = await expenseService.create(data);

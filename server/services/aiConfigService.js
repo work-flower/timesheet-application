@@ -2,6 +2,15 @@ import aiConfig from '../db/aiConfig.js';
 
 const DEFAULT_MODEL = 'claude-sonnet-4-5-20250929';
 const DEFAULT_SYSTEM_PROMPT = `You are a bank statement parser. The attached file is a bank statement export which may be in CSV, OFX, PDF or other formats. Extract all transactions and return a JSON array. Each transaction must have: \`date\` (YYYY-MM-DD), \`description\` (string), \`amount\` (number, negative for debits, positive for credits). Include any other fields present such as \`balance\`, \`reference\`, \`transactionType\`, etc. Return ONLY the JSON array, no other text.`;
+const DEFAULT_EXPENSE_SYSTEM_PROMPT = `You are a receipt/invoice parser. The attached file is a photo or scan of a receipt or invoice. Extract the expense details and return a JSON object with these fields:
+- \`date\` (string, YYYY-MM-DD format)
+- \`amount\` (number, gross total paid including VAT/tax, negative for credit notes/refunds)
+- \`vatAmount\` (number, VAT/tax portion included in amount, 0 if no VAT shown)
+- \`expenseType\` (string, category e.g. "Travel", "Meals", "Equipment", "Software", "Office Supplies", "Accommodation")
+- \`description\` (string, brief client-facing description of what was purchased)
+- \`externalReference\` (string, invoice number, order ID, receipt number, or any other reference identifier found on the document)
+
+Return ONLY the JSON object, no other text. If a field cannot be determined, use null for strings and 0 for numbers.`;
 
 function maskSecret(value) {
   if (!value || value.length <= 4) return value ? '****' : '';
@@ -61,6 +70,7 @@ export async function getRawConfig() {
     apiKey: '',
     model: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    expenseSystemPrompt: DEFAULT_EXPENSE_SYSTEM_PROMPT,
     maxTokens: null,
     timeoutMinutes: null,
     createdAt: now,
@@ -93,4 +103,4 @@ export async function testConnection(data) {
   return { success: true };
 }
 
-export { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT };
+export { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_EXPENSE_SYSTEM_PROMPT };

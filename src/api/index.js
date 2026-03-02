@@ -165,6 +165,22 @@ export const expensesApi = {
   delete: (id) => request(`/expenses/${id}`, { method: 'DELETE' }),
   linkTransaction: (id, transactionId) => request(`/expenses/${id}/link-transaction`, { method: 'POST', body: JSON.stringify({ transactionId }) }),
   unlinkTransaction: (id, transactionId) => request(`/expenses/${id}/unlink-transaction`, { method: 'POST', body: JSON.stringify({ transactionId }) }),
+  parseReceipts: async (files) => {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    const res = await fetch(`${BASE}/expenses/parse-receipts`, {
+      method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Parse failed: ${res.status}`);
+    }
+    return res.json();
+  },
   uploadAttachments: async (id, files) => {
     const formData = new FormData();
     for (const file of files) {

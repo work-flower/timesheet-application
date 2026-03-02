@@ -171,6 +171,7 @@ export default function ExpenseForm() {
     netAmount: 0,
     billable: true,
     currency: 'GBP',
+    externalReference: '',
     notes: '',
   });
 
@@ -229,6 +230,7 @@ export default function ExpenseForm() {
             netAmount: data.netAmount || 0,
             billable: data.billable !== false,
             currency: data.currency || 'GBP',
+            externalReference: data.externalReference || '',
             notes: data.notes || '',
           });
         } else if (active.length > 0) {
@@ -245,6 +247,7 @@ export default function ExpenseForm() {
             netAmount: 0,
             billable: true,
             currency: firstClient?.currency || 'GBP',
+            externalReference: '',
             notes: '',
           });
         }
@@ -321,6 +324,7 @@ export default function ExpenseForm() {
           netAmount: updated.netAmount || 0,
           billable: updated.billable !== false,
           currency: updated.currency || 'GBP',
+          externalReference: updated.externalReference || '',
           notes: updated.notes || '',
         });
         return { ok: true };
@@ -549,10 +553,12 @@ export default function ExpenseForm() {
                   if (val != null && !isNaN(val)) {
                     setForm((prev) => {
                       const next = { ...prev, amount: val };
-                      if (prev.vatPercent > 0) {
-                        next.vatAmount = Math.round(val * prev.vatPercent / (100 + prev.vatPercent) * 100) / 100;
-                      } else if (prev.vatAmount > 0 && val > prev.vatAmount) {
-                        next.vatPercent = Math.round((prev.vatAmount / (val - prev.vatAmount)) * 10000) / 100;
+                      const absVal = Math.abs(val);
+                      if (prev.vatPercent !== 0 && absVal > 0) {
+                        next.vatAmount = Math.sign(val) * Math.round(absVal * prev.vatPercent / (100 + prev.vatPercent) * 100) / 100;
+                      } else if (prev.vatAmount !== 0 && absVal > Math.abs(prev.vatAmount)) {
+                        const absVat = Math.abs(prev.vatAmount);
+                        next.vatPercent = Math.round((absVat / (absVal - absVat)) * 10000) / 100;
                       }
                       next.netAmount = Math.round((val - (next.vatAmount ?? prev.vatAmount)) * 100) / 100;
                       return next;
@@ -560,7 +566,6 @@ export default function ExpenseForm() {
                     setSpinKeys((k) => ({ ...k, vatAmount: k.vatAmount + 1, vatPercent: k.vatPercent + 1 }));
                   }
                 }}
-                min={0}
                 step={0.01}
               />
             </Field>
@@ -580,8 +585,9 @@ export default function ExpenseForm() {
                   if (val != null && !isNaN(val)) {
                     setForm((prev) => {
                       const next = { ...prev, vatPercent: val };
-                      if (prev.amount > 0) {
-                        next.vatAmount = Math.round(prev.amount * val / (100 + val) * 100) / 100;
+                      const absAmount = Math.abs(prev.amount);
+                      if (absAmount > 0) {
+                        next.vatAmount = Math.sign(prev.amount) * Math.round(absAmount * val / (100 + val) * 100) / 100;
                       }
                       next.netAmount = Math.round((prev.amount - (next.vatAmount ?? prev.vatAmount)) * 100) / 100;
                       return next;
@@ -619,8 +625,10 @@ export default function ExpenseForm() {
                   if (val != null && !isNaN(val)) {
                     setForm((prev) => {
                       const next = { ...prev, vatAmount: val };
-                      if (prev.amount > val) {
-                        next.vatPercent = Math.round((val / (prev.amount - val)) * 10000) / 100;
+                      const absAmount = Math.abs(prev.amount);
+                      const absVat = Math.abs(val);
+                      if (absAmount > absVat) {
+                        next.vatPercent = Math.round((absVat / (absAmount - absVat)) * 10000) / 100;
                       }
                       next.netAmount = Math.round((prev.amount - val) * 100) / 100;
                       return next;
@@ -628,7 +636,6 @@ export default function ExpenseForm() {
                     setSpinKeys((k) => ({ ...k, vatPercent: k.vatPercent + 1 }));
                   }
                 }}
-                min={0}
                 step={0.01}
               />
             </Field>
@@ -674,6 +681,15 @@ export default function ExpenseForm() {
                 onChange={(e, data) => setForm((prev) => ({ ...prev, description: data.value }))}
                 placeholder="e.g. Return train London to Manchester for project kickoff"
                 resize="vertical"
+              />
+            </Field>
+          </FormField>
+          <FormField changed={changedFields.has('externalReference')}>
+            <Field label="External Reference" hint="Invoice number, order ID, or other external reference">
+              <Input
+                value={form.externalReference}
+                onChange={(e, data) => setForm((prev) => ({ ...prev, externalReference: data.value }))}
+                placeholder="e.g. INV-12345"
               />
             </Field>
           </FormField>

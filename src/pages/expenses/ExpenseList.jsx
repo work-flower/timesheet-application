@@ -16,8 +16,11 @@ import {
   createTableColumn,
   Spinner,
 } from '@fluentui/react-components';
+import { Button } from '@fluentui/react-components';
+import { ScanDashRegular } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import ReceiptUploadDialog from './ReceiptUploadDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { expensesApi, clientsApi, projectsApi } from '../../api/index.js';
@@ -129,6 +132,12 @@ const gridColumns = [
     renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout>,
   }),
   createTableColumn({
+    columnId: 'externalReference',
+    compare: (a, b) => (a.externalReference || '').localeCompare(b.externalReference || ''),
+    renderHeaderCell: () => 'External Ref',
+    renderCell: (item) => <TableCellLayout>{item.externalReference || '—'}</TableCellLayout>,
+  }),
+  createTableColumn({
     columnId: 'clientName',
     compare: (a, b) => (a.clientName || '').localeCompare(b.clientName || ''),
     renderHeaderCell: () => 'Client',
@@ -176,12 +185,6 @@ const gridColumns = [
     renderHeaderCell: () => 'Billable',
     renderCell: (item) => <TableCellLayout>{item.billable ? 'Yes' : 'No'}</TableCellLayout>,
   }),
-  createTableColumn({
-    columnId: 'attachments',
-    compare: (a, b) => (a.attachments?.length || 0) - (b.attachments?.length || 0),
-    renderHeaderCell: () => 'Attachments',
-    renderCell: (item) => <TableCellLayout>{(item.attachments?.length || 0).toString()}</TableCellLayout>,
-  }),
 ];
 
 export default function ExpenseList() {
@@ -200,6 +203,7 @@ export default function ExpenseList() {
   const [expenseType, setExpenseType] = useState(() => localStorage.getItem('expenses.expenseType') || '');
   const [customStart, setCustomStart] = useState(() => localStorage.getItem('expenses.customStart') || getWeekRange().startDate);
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('expenses.customEnd') || getWeekRange().endDate);
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
 
   // Persist filter selections
   useEffect(() => { localStorage.setItem('expenses.range', range); }, [range]);
@@ -323,7 +327,16 @@ export default function ExpenseList() {
         newLabel="New Expense"
         onDelete={selectedId ? () => setDeleteTarget(selectedId) : undefined}
         deleteDisabled={!selectedId}
-      />
+      >
+        <Button
+          appearance="subtle"
+          icon={<ScanDashRegular />}
+          size="small"
+          onClick={() => setReceiptDialogOpen(true)}
+        >
+          Scan Receipt
+        </Button>
+      </CommandBar>
       <div className={styles.filters}>
         <Text size={200} weight="semibold">Period:</Text>
         <ToggleButton size="small" checked={range === 'week'} onClick={() => setRange('week')}>This Week</ToggleButton>
@@ -413,6 +426,12 @@ export default function ExpenseList() {
         onConfirm={handleDelete}
         title="Delete Expense"
         message="Are you sure you want to delete this expense? This action cannot be undone."
+      />
+      <ReceiptUploadDialog
+        open={receiptDialogOpen}
+        onClose={() => setReceiptDialogOpen(false)}
+        onCreated={(ids) => { setReceiptDialogOpen(false); navigate(ids.length === 1 ? `/expenses/${ids[0]}` : '/expenses'); }}
+        projects={allProjects}
       />
     </div>
   );
