@@ -12,6 +12,7 @@ import TimesheetList from './pages/timesheets/TimesheetList.jsx';
 import TimesheetForm from './pages/timesheets/TimesheetForm.jsx';
 import ExpenseList from './pages/expenses/ExpenseList.jsx';
 import ExpenseForm from './pages/expenses/ExpenseForm.jsx';
+import ExpenseAttachmentUpload from './pages/expenses/ExpenseAttachmentUpload.jsx';
 import InvoiceList from './pages/invoices/InvoiceList.jsx';
 import InvoiceForm from './pages/invoices/InvoiceForm.jsx';
 import Settings from './pages/settings/Settings.jsx';
@@ -36,6 +37,7 @@ export default function App() {
       <BrowserRouter>
         <UnsavedChangesProvider>
           <Routes>
+            <Route path="/expenses/:id/attachments/upload" element={<ExpenseAttachmentUpload />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/dashboards/reconciliation" element={<ReconciliationDashboard />} />

@@ -148,7 +148,7 @@ const handlers = {
 
     const result = await expenseService.create(data);
 
-    return `Expense created (ID: ${result._id}): ${fmtGBP(result.amount)} (VAT ${fmtGBP(result.vatAmount)}, net ${fmtGBP(result.netAmount)}) on ${result.date}. Type: ${result.expenseType || '—'}. Description: ${result.description || '—'}.\nAttachment upload path: /api/expenses/${result._id}/attachments`;
+    return `Expense created (ID: ${result._id}): ${fmtGBP(result.amount)} (VAT ${fmtGBP(result.vatAmount)}, net ${fmtGBP(result.netAmount)}) on ${result.date}. Type: ${result.expenseType || '—'}. Description: ${result.description || '—'}.\nReceipt upload page: /expenses/${result._id}/attachments/upload`;
   },
 
   async list_recent_timesheets({ days: lookback } = {}) {
