@@ -113,8 +113,16 @@ export async function create(data) {
   const client = await clients.findOne({ _id: project.clientId });
 
   const amount = Number(data.amount) || 0;
-  const vatAmount = Number(data.vatAmount) || 0;
-  const vatPercent = Number(data.vatPercent) || 0;
+  let vatAmount, vatPercent;
+  if (data.vatPercent != null && data.vatAmount == null) {
+    // Given vatPercent, derive vatAmount from gross: vatAmount = amount * vat% / (100 + vat%)
+    vatPercent = Number(data.vatPercent);
+    vatAmount = amount > 0 ? Math.round(amount * vatPercent / (100 + vatPercent) * 100) / 100 : 0;
+  } else {
+    // Given vatAmount (or both), derive vatPercent: vat% = vatAmount / netAmount * 100
+    vatAmount = Number(data.vatAmount) || 0;
+    vatPercent = data.vatPercent != null ? Number(data.vatPercent) : (amount > vatAmount ? Math.round((vatAmount / (amount - vatAmount)) * 100 * 100) / 100 : 0);
+  }
   const netAmount = Math.round((amount - vatAmount) * 100) / 100;
 
   const now = new Date().toISOString();
@@ -161,11 +169,24 @@ export async function update(id, data) {
     }
   }
 
-  if (updateData.vatPercent !== undefined) updateData.vatPercent = Number(updateData.vatPercent);
-
-  // Recompute netAmount when amount or vatAmount changes
-  if (updateData.amount !== undefined || updateData.vatAmount !== undefined) {
+  // Recompute VAT fields and netAmount when amount/vatAmount/vatPercent changes
+  if (updateData.amount !== undefined || updateData.vatAmount !== undefined || updateData.vatPercent !== undefined) {
     const finalAmount = updateData.amount ?? existing.amount ?? 0;
+    if (updateData.vatPercent !== undefined && updateData.vatAmount === undefined) {
+      // vatPercent provided, derive vatAmount
+      const vp = Number(updateData.vatPercent);
+      updateData.vatPercent = vp;
+      updateData.vatAmount = finalAmount > 0 ? Math.round(finalAmount * vp / (100 + vp) * 100) / 100 : 0;
+    } else {
+      // vatAmount provided (or both), derive vatPercent if not explicitly set
+      const finalVat = updateData.vatAmount ?? existing.vatAmount ?? 0;
+      updateData.vatAmount = finalVat;
+      if (updateData.vatPercent == null) {
+        updateData.vatPercent = finalAmount > finalVat ? Math.round((finalVat / (finalAmount - finalVat)) * 100 * 100) / 100 : 0;
+      } else {
+        updateData.vatPercent = Number(updateData.vatPercent);
+      }
+    }
     const finalVat = updateData.vatAmount ?? existing.vatAmount ?? 0;
     updateData.netAmount = Math.round((finalAmount - finalVat) * 100) / 100;
   }

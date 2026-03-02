@@ -550,9 +550,9 @@ export default function ExpenseForm() {
                     setForm((prev) => {
                       const next = { ...prev, amount: val };
                       if (prev.vatPercent > 0) {
-                        next.vatAmount = Math.round(val * (prev.vatPercent / 100) * 100) / 100;
-                      } else if (prev.vatAmount > 0 && val > 0) {
-                        next.vatPercent = Math.round((prev.vatAmount / val) * 10000) / 100;
+                        next.vatAmount = Math.round(val * prev.vatPercent / (100 + prev.vatPercent) * 100) / 100;
+                      } else if (prev.vatAmount > 0 && val > prev.vatAmount) {
+                        next.vatPercent = Math.round((prev.vatAmount / (val - prev.vatAmount)) * 10000) / 100;
                       }
                       next.netAmount = Math.round((val - (next.vatAmount ?? prev.vatAmount)) * 100) / 100;
                       return next;
@@ -581,7 +581,7 @@ export default function ExpenseForm() {
                     setForm((prev) => {
                       const next = { ...prev, vatPercent: val };
                       if (prev.amount > 0) {
-                        next.vatAmount = Math.round(prev.amount * (val / 100) * 100) / 100;
+                        next.vatAmount = Math.round(prev.amount * val / (100 + val) * 100) / 100;
                       }
                       next.netAmount = Math.round((prev.amount - (next.vatAmount ?? prev.vatAmount)) * 100) / 100;
                       return next;
@@ -619,8 +619,8 @@ export default function ExpenseForm() {
                   if (val != null && !isNaN(val)) {
                     setForm((prev) => {
                       const next = { ...prev, vatAmount: val };
-                      if (prev.amount > 0) {
-                        next.vatPercent = Math.round((val / prev.amount) * 10000) / 100;
+                      if (prev.amount > val) {
+                        next.vatPercent = Math.round((val / (prev.amount - val)) * 10000) / 100;
                       }
                       next.netAmount = Math.round((prev.amount - val) * 100) / 100;
                       return next;
