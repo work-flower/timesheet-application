@@ -211,9 +211,17 @@ This policy tells Cloudflare Access to accept Bearer tokens issued by the SaaS O
 
 > **Important:** This must be a **separate policy** with action **Service Auth** — not a rule added to your existing Allow policy. The Allow action requires interactive browser login. Service Auth is for programmatic access with Bearer tokens.
 
+### Step 5: Advanced Settings - Access Token Lifetime
+
+As Cloudflare OIDC apps don't allow pure client-id and client-secret authentication, we need to set Access Token Lifetime and Refresh Tokens to below values to ensure longer user experience and the connection at Claude.ai won't drop and require MFA frequently.
+
+![Access Token Lifetime Setting](./images/16-access-token-lifetime.jpg)
+
+*Advanced settings, Access Token Lifetime should be set to reasonable settings. With refresh tokens enabled, Claude uses the refresh token to silently get a new access token when the token expires — no login prompt. This continues until the refresh token itself expires. The 5-minute token expires, Claude has no refresh token to get a new one silently, so the connection drops. With these two changes, Claude can maintain the connection all day and silently refresh when needed.*
+
 ---
 
-### Step 5: Connect from Claude.ai
+### Step 6: Connect from Claude.ai
 
 1. In Claude.ai, go to your MCP connector settings
 2. Add your MCP server URL: `https://ts.jetbot.co.uk/mcp`
