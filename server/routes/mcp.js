@@ -54,7 +54,7 @@ Follow this flow (each entry is an independent session — never reuse projectId
 2. Call list_projects to find the project. Never skip this step.
 3. Present extracted/provided data for user confirmation before submitting.
 4. Only submit when the user confirms the details are correct.
-5. After creation, if the user shared a receipt image, automatically call upload_expense_attachment to attach it — no extra confirmation needed.`,
+5. After creation, if the user shared a receipt image, automatically call upload_expense_attachment to attach it — no extra confirmation needed. Resize the image first (max 1024px, JPEG 60-80% quality) to avoid context overflow.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -72,7 +72,14 @@ Follow this flow (each entry is an independent session — never reuse projectId
   },
   {
     name: 'upload_expense_attachment',
-    description: 'Upload a receipt image or file to an existing expense. Call this automatically after create_expense if the user shared a receipt image.',
+    description:
+      `Upload a receipt image or file to an existing expense. Call this automatically after create_expense if the user shared a receipt image.
+
+IMPORTANT — Image size: Base64-encoded images consume significant context. Before encoding, always reduce image size:
+- Resize to max 1024px on the longest side
+- Use JPEG at 60-80% quality (convert PNG to JPEG unless transparency is needed)
+- Target under 500KB before base64 encoding
+This keeps the base64 string manageable and prevents context overflow.`,
     inputSchema: {
       type: 'object',
       properties: {
