@@ -21,7 +21,7 @@ Project standards are enforced via Claude Code skills (`.claude/skills/`). These
 - **Frontend:** React 18, React Router v6, Vite, Fluent UI v9 (`@fluentui/react-components`) — **MUST use Fluent UI React components for all UI. Do not replace with HTML tables, custom components, or other libraries unless explicitly asked.**
 - **Backend:** Node.js, Express.js, NeDB (`nedb-promises`), ESM throughout (`"type": "module"`)
 - **PDF:** pdfmake (server-side), pdf-lib (PDF merging)
-- **AI:** `@anthropic-ai/sdk` (Claude API for bank statement parsing)
+- **AI:** `@anthropic-ai/sdk` (Claude API for bank statement parsing and expense receipt scanning)
 - **Other:** `@uiw/react-md-editor` (markdown notes), `multer` + `sharp` (expense attachments + thumbnails), `@aws-sdk/client-s3` + `archiver` + `tar` + `node-cron` (R2 cloud backup), `dotenv`
 
 ## Configuration
@@ -107,11 +107,13 @@ One entry = one day on one project. Multiple entries per day allowed (different 
 | date | `YYYY-MM-DD`, no future dates allowed |
 | expenseType | Freetext with autocomplete from distinct values in collection |
 | description | Client-facing (visible on invoices/reports) |
-| amount | Gross total paid (including VAT) |
-| vatAmount | VAT portion included in amount |
-| vatPercent | Computed on save: `(vatAmount / amount) × 100`, read-only in UI |
+| amount | Gross total paid (including VAT). Negative for credit notes/refunds |
+| vatAmount | VAT portion included in amount. Negative when amount is negative |
+| vatPercent | Computed on save via golden rule (see Business Rules). Read-only in UI |
+| netAmount | Computed on save: `amount - vatAmount` |
 | billable | Boolean, default true |
 | currency | Inherited from client on creation, read-only; updates when project changes |
+| externalReference | Invoice number, order ID, receipt number, or other external reference from the source document |
 | attachments | Array of `{ filename, originalName, mimeType }` |
 | notes | Markdown, internal only (not visible to client) |
 | invoiceId, isLocked, isLockedReason | Record locking fields |
@@ -202,7 +204,8 @@ AI-powered transaction import configuration. Stored in a **separate** database f
 | model | Claude model ID (default: `claude-sonnet-4-5-20250929`) |
 | maxTokens | Maximum output tokens for AI response (default: 64000, max: 64000) |
 | timeoutMinutes | Request timeout in minutes (default: 30) |
-| systemPrompt | System prompt sent with every AI parsing request |
+| systemPrompt | System prompt sent with every transaction import AI parsing request |
+| expenseSystemPrompt | System prompt sent with every expense receipt scanning AI request |
 
 ### importJobs
 
@@ -263,9 +266,12 @@ Deleted when job is abandoned.
 
 ### Expenses
 
-7. `vatPercent` computed and persisted on save: `(vatAmount / amount) × 100`. Read-only in UI.
-8. Currency inherited from client on creation. Read-only in form, updates when project changes.
-9. Date must not be in the future.
+7. **VAT golden rule:** `vatAmount` and `vatPercent` are not mutually exclusive. On create and update, if one is non-zero and the other is 0, the zero value is derived from the non-zero one. If `vatPercent` is provided and `vatAmount` is 0: `vatAmount = amount × vatPercent / (100 + vatPercent)`. If `vatAmount` is provided and `vatPercent` is 0: `vatPercent = |vatAmount| / |netAmount| × 100`. If both are non-zero or both are zero, both are kept as-is. `netAmount` is always computed as `amount - vatAmount`. All VAT calculations use absolute values internally to support negative amounts correctly.
+8. **Credit notes / refunds:** Expenses support negative amounts. A credit note or refund is recorded as an expense with a negative `amount`. VAT fields follow the same sign as the amount (e.g. amount: -8.99, vatAmount: -1.50). The VAT golden rule and all form calculations handle negative values correctly.
+9. Currency inherited from client on creation. Read-only in form, updates when project changes.
+10. Date must not be in the future.
+11. **Receipt scanning:** Multiple receipt images or PDFs can be uploaded and parsed by AI in parallel from the expense list. The AI extracts date, amount, vatAmount, expenseType, description, and externalReference. Parsed fields are shown in an editable preview alongside the original document before creating expenses. Each created expense has the original receipt auto-attached. The AI system prompt for receipt parsing is configurable in Settings → AI Config.
+12. **External reference:** The `externalReference` field captures invoice numbers, order IDs, or receipt numbers from source documents. It is populated automatically by AI receipt scanning, carried over from transaction references when creating an expense from a transaction, and available as a parameter in the MCP `create_expense` tool.
 
 ### Invoicing
 
@@ -307,6 +313,15 @@ Deleted when job is abandoned.
 36. **Abandon** deletes all staged transactions.
 37. **Delete** is only allowed for terminal-status jobs (`abandoned`, `failed`). Cascade-deletes staged transactions and the upload directory.
 
+### MCP (Model Context Protocol)
+
+38. The application exposes an MCP endpoint at `POST /mcp` (outside `/api` prefix) for AI assistants (e.g. Claude Code) to interact with the system via JSON-RPC 2.0. Supports `initialize`, `notifications/initialized`, `tools/list`, and `tools/call` methods.
+39. **Available tools:** `list_projects` (list active projects with rates and working hours), `create_timesheet` (log time entry), `create_expense` (create expense with automatic VAT and currency computation), `list_recent_timesheets` (recent entries with totals), `list_recent_expenses` (recent entries with billable/total split).
+40. **Expense creation via MCP:** The `create_expense` tool accepts `projectId`, `date`, `amount`, `expenseType`, `description`, `vatAmount`, `billable`, `externalReference`, and `notes`. The API computes `vatPercent`, `netAmount`, and inherits currency automatically. When a receipt image is shared, the AI is instructed to extract all fields including external references before creating the expense.
+41. **Confirmation flow:** All MCP tools follow a confirmation flow — the AI must list projects first, confirm the project with the user, present a summary, and only submit after user confirmation.
+42. **Authentication:** MCP auth configuration is managed via `/api/mcp-auth` endpoints. OAuth 2.0 metadata served at `/.well-known/oauth-authorization-server`.
+43. **Upload Expense Image Skill:** A downloadable Claude.ai skill (`upload-expense-image`) that allows Claude to upload receipt images to expense attachments after creating an expense via MCP. Available from the Help section. The skill saves shared images to a temporary file and POSTs them to the attachment endpoint, avoiding context overflow from base64-encoded images.
+
 ---
 
 ## API
@@ -318,7 +333,7 @@ All endpoints prefixed with `/api`. All list endpoints support OData-style query
 - **Clients:** List, detail (includes projects + timesheets + expenses), create (auto-creates default project), update, delete (cascade)
 - **Projects:** List (enriched with clientName/effectiveRate/effectiveWorkingHours), detail (includes timesheets + expenses), create, update (empty string → null for rate/workingHours/vatPercent), delete (prevents default, cascade)
 - **Timesheets:** List (enriched with projectName/clientName/clientId; supports `startDate`, `endDate`, `projectId`, `clientId`, `groupBy=week|month|year`), detail (includes effectiveRate/effectiveWorkingHours), create/update (validates + computes days/amount), delete
-- **Expenses:** List (enriched; supports `startDate`, `endDate`, `projectId`, `clientId`, `expenseType`), distinct types endpoint, detail, create (inherits currency), update (recomputes vatPercent), delete (cascade attachments). Attachment sub-endpoints: upload (multipart, max 10 files), delete, serve original, serve thumbnail.
+- **Expenses:** List (enriched; supports `startDate`, `endDate`, `projectId`, `clientId`, `expenseType`), distinct types endpoint, detail, create (inherits currency, applies VAT golden rule), update (applies VAT golden rule), delete (cascade attachments). Receipt parsing endpoint: accepts multiple images/PDFs, returns AI-extracted fields per file. Attachment sub-endpoints: upload (multipart, max 10 files), delete, serve original, serve thumbnail.
 - **Invoices:** List (supports `clientId`, `status`, `startDate`, `endDate`), detail (enriched with client info + clientProjects with effectiveRate/vatPercent), create, update (draft/unlocked only; protects status/invoiceNumber/paymentStatus/pdfPath), delete (draft only). Lifecycle: confirm, post, unconfirm. Operations: recalculate, consistency-check. Payment update (posted only). PDF endpoints: generate on-the-fly, serve saved file (confirmed/posted only).
 - **Reports:** Generate timesheet PDF (by client + date range, optional project filter). Generate expense PDF (same params). Combined PDF endpoint accepts array of report specs (invoice + timesheet + expense) and merges into single PDF.
 - **Documents:** List, detail, serve PDF file, generate + save PDF, delete (removes file + record)
@@ -329,6 +344,7 @@ All endpoints prefixed with `/api`. All list endpoints support OData-style query
 - **Transactions:** List (supports `importJobId`, `status`, `accountName` filters), detail, create, update, delete.
 - **Logs:** Config CRUD (secret masked on read), test R2 connection, search (supports entity params `startDate`, `endDate`, `level`, `source`, `keyword`, `traceId` + OData `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`), list local files, read log file (with level/source/keyword filtering), upload to R2 (integrity-verified, deletes local), safe delete local file (requires R2 backup verification), download from R2, list R2 logs, pageview tracking (with traceId).
 - **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup
+- **Help:** Skill zip download endpoint (`GET /api/help/skills/:skillFolder/download`). Searches `src/help/{topic}/skill/{skillFolder}/` and serves as a zip archive. Help topic content is auto-discovered from `src/help/*/index.md` frontmatter (title, description, tags, optional banner image).
 
 ### OData Query Support
 
@@ -389,14 +405,16 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/transactions` | Transaction list |
 | `/transactions/:id` | Transaction form (read-only details, editable status) |
 | `/logs` | Log Viewer |
-| `/settings` | Settings (tabs: Profile, Invoicing, Transaction Import AI Config, Backup, Logging) |
+| `/help` | Help topics index |
+| `/help/:topicId` | Help topic detail (markdown content with images) |
+| `/settings` | Settings (tabs: Profile, Invoicing, AI Config, Backup, Logging) |
 
 ### List Views
 
 All list views share a common pattern: command bar (New, Delete, Search) → sortable DataGrid → row click opens record.
 
 - **Timesheet list:** Default period: current week. Period toggle buttons (This Week / This Month / All Time / Custom with date pickers). Client and Project dropdown filters. Summary row showing Days, Amount totals. All filter selections persisted to localStorage.
-- **Expense list:** Default period: current month. Same period toggle pattern. Client, Project, and Expense Type dropdown filters. Columns: Date, Client, Project, Type, Description, Amount, VAT, Billable, Attachments count. Summary footer: Billable Total, Non-Billable Total, Entry count. All filters persisted to localStorage.
+- **Expense list:** Default period: current month. Same period toggle pattern. Client, Project, and Expense Type dropdown filters. Columns: Date, External Ref, Client, Project, Type, Description, Amount, VAT, Net Amount, Billable. "Scan Receipt" button in command bar opens receipt upload dialog. Summary footer: Billable Total, Non-Billable Total, Entry count. All filters persisted to localStorage.
 - **Invoice list:** Filters: Status (draft/confirmed/posted), Client, Payment (unpaid/paid/overdue). Columns: Invoice #, Date, Client, Period, Status badge, Amount, Payment badge. Summary footer: total invoices, total amount, unpaid amount. Filters persisted to localStorage.
 - **Import job list:** Status dropdown filter. Columns: Filename (truncated with ellipsis), Status (colour-coded badge), Created date. Summary footer: job count. Status filter persisted to localStorage.
 - **Log Viewer:** Date range, level, source, and keyword filters. TraceId filter (set by clicking a traceId value). Columns: Timestamp, Level (colour-coded badge), Source, Method, Path, TraceId (truncated, clickable), Message. Row click opens a detail drawer (OverlayDrawer) showing all fields, full message, and raw JSON with copy button. Clicking traceId in detail panel filters to that trace.
@@ -437,7 +455,8 @@ Below cards: "Recent Timesheet Entries" grid showing last 10 entries (Date, Clie
 - Days and Amount are read-only, computed only when user changes Hours or Project (not on form load — persisted values shown as-is on edit)
 
 **Expense form:**
-- 2-column: Date | Amount (gross), Project (grouped by client) | VAT Amount, Expense Type (combobox with autocomplete from previous types) | VAT % (read-only), Billable | Currency (read-only, from client), Description (full width, client-facing), Notes (markdown, internal)
+- 2-column: Amount (gross, supports negative for credit notes) | Date, VAT % | Project (grouped by client), VAT Amount | Expense Type (combobox with autocomplete from previous types), Net Amount (read-only) | Billable, Currency (read-only, from client), Description (full width, client-facing), External Reference (invoice number, order ID, etc.), Notes (markdown, internal)
+- Amount and VAT Amount fields accept negative values for credit notes/refunds. VAT golden rule applied live in the form: changing one VAT field recalculates the other
 - Attachment gallery (edit only — "Save first" message on new): upload multiple, thumbnail grid with lightbox for images, file type icons for non-images, delete with confirmation
 
 **Invoice form:**
@@ -473,9 +492,17 @@ Two report pages (Timesheet and Expense) sharing the same two-column layout — 
 Five tabs:
 - **Profile:** Contractor personal + business details form with dirty tracking
 - **Invoicing:** Invoice number seed (read-only display), default payment term days, default VAT rate, invoice footer text, bank details (name, sort code, account number, account owner)
-- **Transaction Import AI Config:** API Key (password input, masked), Model (text input), Max Tokens (number input, default 64000, max 64000), Timeout in minutes (number input, default 30). Test Connection and Save Configuration buttons. System Prompt (markdown editor, full width). Independent component with own save logic (not part of main Settings form tracker).
+- **AI Config:** API Key (password input, masked), Model (text input), Max Tokens (number input, default 64000, max 64000), Timeout in minutes (number input, default 30). Test Connection and Save Configuration buttons. Two system prompt sections: Transaction Import System Prompt and Expense Receipt System Prompt (both markdown editors, full width). Independent component with own save logic (not part of main Settings form tracker).
 - **Backup:** R2 credentials, backup path, schedule (off/daily/weekly). Save Configuration button, Test Connection, Backup Now. Backup history grid with Restore/Delete per row. Restore shows confirmation dialog and reload banner on success.
 - **Logging:** Log level, max file size, message filter (regex), payload logging toggle (debug-only, with volume warning). R2 log storage credentials (endpoint, access key, secret, bucket, path). Upload settings (enabled toggle, interval). Test Connection and Save. Local log files grid with Upload to R2 and Delete actions. R2 log files grid with Download action. Independent component with own save logic.
+
+### Help Pages
+
+Auto-discovered from `src/help/*/index.md` files with YAML frontmatter (title, description, tags, optional banner). Help index shows topic cards. Topic detail renders markdown content with images. Topics can include downloadable Claude.ai skills (zipped from `src/help/{topic}/skill/{skillFolder}/`).
+
+**Current topics:**
+- **M2M API Authentication** — Configure OAuth for machine-to-machine API access via Cloudflare Access and Azure AD
+- **Upload Expense Image Skill** — Downloadable Claude.ai skill for automatic receipt image upload after expense creation via MCP
 
 ---
 
