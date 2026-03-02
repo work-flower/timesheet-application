@@ -1,4 +1,4 @@
 data
-logs
+/logs
 node_modules
 dist
