@@ -3,6 +3,7 @@ import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync, renameSync, existsSync, rmSync } from 'fs';
+import als from '../logging/asyncContext.js';
 import * as importJobService from '../services/importJobService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -57,8 +58,10 @@ router.post('/', upload.single('file'), async (req, res) => {
     await importJobs.update({ _id: job._id }, { $set: { filePath: destPath } });
 
     // Fire background processing (no await)
-    importJobService.processFile(job._id).catch((err) => {
-      console.error(`processFile error for job ${job._id}:`, err);
+    als.run({ source: 'import_parser', importJobId: job._id }, () => {
+      importJobService.processFile(job._id).catch((err) => {
+        console.error(`processFile error for job ${job._id}:`, err);
+      });
     });
 
     const updated = await importJobService.getById(job._id);
@@ -105,8 +108,10 @@ router.put('/:id', upload.single('file'), async (req, res) => {
       });
 
       // Fire background processing
-      importJobService.processFile(req.params.id).catch((err) => {
-        console.error(`processFile error for job ${req.params.id}:`, err);
+      als.run({ source: 'import_parser', importJobId: req.params.id }, () => {
+        importJobService.processFile(req.params.id).catch((err) => {
+          console.error(`processFile error for job ${req.params.id}:`, err);
+        });
       });
 
       const updated = await importJobService.getById(req.params.id);

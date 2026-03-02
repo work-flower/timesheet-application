@@ -28,6 +28,7 @@ import HelpIndex from './pages/help/HelpIndex.jsx';
 import HelpTopic from './pages/help/HelpTopic.jsx';
 import ReconciliationDashboard from './pages/dashboards/ReconciliationDashboard.jsx';
 import FinancialDashboard from './pages/dashboards/FinancialDashboard.jsx';
+import LogViewer from './pages/logs/LogViewer.jsx';
 
 export default function App() {
   return (
@@ -67,6 +68,7 @@ export default function App() {
               <Route path="/reports/vat" element={<VatReport />} />
               <Route path="/help" element={<HelpIndex />} />
               <Route path="/help/:topicId" element={<HelpTopic />} />
+              <Route path="/logs" element={<LogViewer />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Routes>

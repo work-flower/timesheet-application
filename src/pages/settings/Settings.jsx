@@ -25,6 +25,7 @@ import BackupSettings from './BackupSettings.jsx';
 import InvoicingSettings from './InvoicingSettings.jsx';
 import AiConfigSettings from './AiConfigSettings.jsx';
 import McpAuthSettings from './McpAuthSettings.jsx';
+import LoggingSettings from './LoggingSettings.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -148,6 +149,7 @@ export default function Settings() {
           <Tab value="aiConfig">Transaction Import AI Config</Tab>
           <Tab value="mcpAuth">M2M API Auth</Tab>
           <Tab value="backup">Backup</Tab>
+          <Tab value="logging">Logging</Tab>
         </TabList>
 
         {tab === 'profile' && (
@@ -191,6 +193,7 @@ export default function Settings() {
         {tab === 'aiConfig' && <AiConfigSettings />}
         {tab === 'mcpAuth' && <McpAuthSettings />}
         {tab === 'backup' && <BackupSettings />}
+        {tab === 'logging' && <LoggingSettings />}
       </div>
     </div>
   );

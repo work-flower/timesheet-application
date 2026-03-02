@@ -17,6 +17,10 @@ COPY --from=build /app/dist dist/
 
 ENV PORT=3001
 ENV DATA_DIR=/app/data
+ENV LOG_DIR=/app/logs
+ENV LOG_LEVEL=error
+
+RUN mkdir -p /app/logs
 
 EXPOSE ${PORT}
 CMD ["node", "server/index.js"]

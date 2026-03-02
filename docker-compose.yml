@@ -3,8 +3,11 @@ services:
     build: .
     environment:
       - PORT=${PORT:-3001}
+      - LOG_DIR=/app/logs
+      - LOG_LEVEL=${LOG_LEVEL:-error}
     ports:
       - "${PORT:-3001}:${PORT:-3001}"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
+      - ${LOG_DIR:-./logs}:/app/logs
     restart: unless-stopped

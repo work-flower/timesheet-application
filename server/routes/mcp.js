@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import als from '../logging/asyncContext.js';
 import * as projectService from '../services/projectService.js';
 import * as timesheetService from '../services/timesheetService.js';
 import * as expenseService from '../services/expenseService.js';
@@ -260,6 +261,10 @@ router.post('/', async (req, res) => {
     const toolName = params?.name;
     const toolArgs = params?.arguments || {};
     const handler = handlers[toolName];
+
+    // Enrich ALS context with tool name
+    const store = als.getStore();
+    if (store) store.toolName = toolName;
 
     if (!handler) {
       return res.json(jsonrpc(id, {

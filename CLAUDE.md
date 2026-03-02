@@ -176,6 +176,22 @@ R2 cloud backup configuration. Stored in a **separate** database file — **not*
 | backupPath | R2 key prefix (change to browse another environment's backups) |
 | schedule | `off`, `daily`, or `weekly` |
 
+### logConfig (single document)
+
+Logging configuration and R2 log storage settings. Stored in a **separate** database file. Secret key masked on read.
+
+| Field | Description |
+|-------|-------------|
+| logLevel | Minimum log level (`debug`, `info`, `warn`, `error`; default: `info`) |
+| maxFileSize | Maximum log file size in bytes before rotation (default: 5MB) |
+| messageFilter | Regex pattern tested against full serialized JSON entry; empty = log everything |
+| logPayloads | Boolean — log POST/PUT/PATCH request bodies (debug level only). Sensitive fields masked by key-name pattern |
+| r2Endpoint, r2AccessKeyId, r2SecretAccessKey | R2 credentials for log storage |
+| r2BucketName | R2 bucket name |
+| r2LogPath | R2 key prefix for log files (default: `logs`) |
+| uploadEnabled | Boolean — enable automatic upload of completed log files to R2 |
+| uploadIntervalMinutes | Interval in minutes for the automatic upload cycle |
+
 ### aiConfig (single document)
 
 AI-powered transaction import configuration. Stored in a **separate** database file (`ai-config.db`) — **not** included in backup archives. API key masked on read.
@@ -271,14 +287,24 @@ Deleted when job is abandoned.
 22. **Unconfirm** unlocks: the invoice, all referenced timesheets (clears `invoiceId`), all referenced expenses (clears `invoiceId`).
 23. **Locked record UI:** Form hides Save/Delete buttons (shows only Back), displays warning banner with lock reason, disables all form inputs.
 
+### Logging
+
+24. **Log files:** JSON Lines format (`app-YYYY-MM-DD.log`), one entry per line. Files rotate when exceeding max file size (numbered suffix: `app-YYYY-MM-DD-1.log`). Stored in a dedicated log directory.
+25. **TraceId correlation:** Each page navigation generates a client-side UUID. All API requests from that navigation share the same traceId via `X-Trace-Id` header. Server stores it in AsyncLocalStorage and writes it to every log entry. Enables filtering all requests triggered by a single user action.
+26. **Message filter:** Regex pattern tested against the full serialized JSON log entry before writing to file. Filters by any field (source, path, level, message). Empty pattern logs everything.
+27. **Payload logging:** Opt-in, debug-level only. Logs POST/PUT/PATCH request bodies. Sensitive fields automatically masked using a key-name pattern (`secret`, `password`, `apikey`). Payloads truncated at 2000 characters. Acceptable for single-user app where the user has full autonomy; not suitable for multi-user deployments.
+28. **R2 log lifecycle:** Completed (non-active) log files can be uploaded to R2. Upload verifies integrity (filename + size + MD5 hash) after transfer, then deletes the local copy. The active log file (today's date) cannot be uploaded or deleted. Files can be downloaded from R2 back to local for searching.
+29. **Safe local delete:** Local log files can only be deleted if an identical copy exists in R2 (verified by filename + size + MD5 hash match). If the R2 copy differs or doesn't exist, deletion is blocked.
+30. **Automatic upload:** When enabled, a periodic cycle uploads all completed log files to R2. Files already in R2 with matching content are removed locally. Mismatches are logged as warnings.
+
 ### Transaction Imports
 
-24. **File upload:** Creating an import job requires a file upload (CSV, PDF, OFX, XML, TXT, XLS, XLSX). The file is stored on disk at `DATA_DIR/uploads/{jobId}/`.
-25. **AI parsing:** After upload, the file is sent to Claude API with the system prompt (from AI config) and the job's user prompt. Claude returns a JSON array of transactions. Parsing runs asynchronously — the job is created immediately with `processing` status.
-26. **Staged transactions:** Each parsed row becomes a staged transaction with a composite hash (MD5 of `filename-date-description-amount`). Staged transactions are semi-structured — all fields returned by the AI are stored.
-27. **Lifecycle:** `processing` → `ready_for_review` → `abandoned`. On failure: `processing` → `failed`. Failed jobs can be retried by re-uploading a file.
-28. **Abandon** deletes all staged transactions.
-29. **Delete** is only allowed for terminal-status jobs (`abandoned`, `failed`). Cascade-deletes staged transactions and the upload directory.
+31. **File upload:** Creating an import job requires a file upload (CSV, PDF, OFX, XML, TXT, XLS, XLSX). The file is stored on disk at `DATA_DIR/uploads/{jobId}/`.
+32. **AI parsing:** After upload, the file is sent to Claude API with the system prompt (from AI config) and the job's user prompt. Claude returns a JSON array of transactions. Parsing runs asynchronously — the job is created immediately with `processing` status.
+33. **Staged transactions:** Each parsed row becomes a staged transaction with a composite hash (MD5 of `filename-date-description-amount`). Staged transactions are semi-structured — all fields returned by the AI are stored.
+34. **Lifecycle:** `processing` → `ready_for_review` → `abandoned`. On failure: `processing` → `failed`. Failed jobs can be retried by re-uploading a file.
+35. **Abandon** deletes all staged transactions.
+36. **Delete** is only allowed for terminal-status jobs (`abandoned`, `failed`). Cascade-deletes staged transactions and the upload directory.
 
 ---
 
@@ -300,6 +326,7 @@ All endpoints prefixed with `/api`. All list endpoints support OData-style query
 - **Import Jobs:** List (supports `status` filter), detail, create (multipart file upload, triggers background AI parsing), update (supports multipart file re-upload on failed jobs), delete (terminal only, cascade). Lifecycle: abandon.
 - **Staged Transactions:** List (supports `importJobId` filter), detail, create, update, delete. Bulk create used internally by AI parser.
 - **Transactions:** List (supports `importJobId`, `status`, `accountName` filters), detail, create, update, delete.
+- **Logs:** Config CRUD (secret masked on read), test R2 connection, search (supports entity params `startDate`, `endDate`, `level`, `source`, `keyword`, `traceId` + OData `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`), list local files, read log file (with level/source/keyword filtering), upload to R2 (integrity-verified, deletes local), safe delete local file (requires R2 backup verification), download from R2, list R2 logs, pageview tracking (with traceId).
 - **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup
 
 ### OData Query Support
@@ -330,7 +357,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 ### Layout
 
 1. **Top Bar:** App title "Timesheet Manager" on the left with hamburger menu toggle, Settings button on the right
-2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Dashboard, Clients, Projects, Timesheets, Expenses, Invoices, Reports (expandable parent with Timesheet and Expenses children), Data Management (expandable parent with Import Transactions child). Active item highlighted with blue accent border.
+2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Dashboard, Clients, Projects, Timesheets, Expenses, Invoices, Reports (expandable parent with Timesheet and Expenses children), Data Management (expandable parent with Import Transactions and Application Logs children). Active item highlighted with blue accent border.
 3. **Main Content Area** (scrollable): List views, form views, or dashboard
 
 ### Navigation
@@ -360,7 +387,8 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/import-jobs/:id` | Import job form (staged transactions grid, lifecycle) |
 | `/transactions` | Transaction list |
 | `/transactions/:id` | Transaction form (read-only details, editable status) |
-| `/settings` | Settings (tabs: Profile, Invoicing, Transaction Import AI Config, Backup) |
+| `/logs` | Log Viewer |
+| `/settings` | Settings (tabs: Profile, Invoicing, Transaction Import AI Config, Backup, Logging) |
 
 ### List Views
 
@@ -370,6 +398,7 @@ All list views share a common pattern: command bar (New, Delete, Search) → sor
 - **Expense list:** Default period: current month. Same period toggle pattern. Client, Project, and Expense Type dropdown filters. Columns: Date, Client, Project, Type, Description, Amount, VAT, Billable, Attachments count. Summary footer: Billable Total, Non-Billable Total, Entry count. All filters persisted to localStorage.
 - **Invoice list:** Filters: Status (draft/confirmed/posted), Client, Payment (unpaid/paid/overdue). Columns: Invoice #, Date, Client, Period, Status badge, Amount, Payment badge. Summary footer: total invoices, total amount, unpaid amount. Filters persisted to localStorage.
 - **Import job list:** Status dropdown filter. Columns: Filename (truncated with ellipsis), Status (colour-coded badge), Created date. Summary footer: job count. Status filter persisted to localStorage.
+- **Log Viewer:** Date range, level, source, and keyword filters. TraceId filter (set by clicking a traceId value). Columns: Timestamp, Level (colour-coded badge), Source, Method, Path, TraceId (truncated, clickable), Message. Row click opens a detail drawer (OverlayDrawer) showing all fields, full message, and raw JSON with copy button. Clicking traceId in detail panel filters to that trace.
 
 ### Form Views
 
@@ -440,11 +469,12 @@ Two report pages (Timesheet and Expense) sharing the same two-column layout — 
 
 ### Settings Page
 
-Four tabs:
+Five tabs:
 - **Profile:** Contractor personal + business details form with dirty tracking
 - **Invoicing:** Invoice number seed (read-only display), default payment term days, default VAT rate, invoice footer text, bank details (name, sort code, account number, account owner)
 - **Transaction Import AI Config:** API Key (password input, masked), Model (text input), Max Tokens (number input, default 64000, max 64000), Timeout in minutes (number input, default 30). Test Connection and Save Configuration buttons. System Prompt (markdown editor, full width). Independent component with own save logic (not part of main Settings form tracker).
 - **Backup:** R2 credentials, backup path, schedule (off/daily/weekly). Save Configuration button, Test Connection, Backup Now. Backup history grid with Restore/Delete per row. Restore shows confirmation dialog and reload banner on success.
+- **Logging:** Log level, max file size, message filter (regex), payload logging toggle (debug-only, with volume warning). R2 log storage credentials (endpoint, access key, secret, bucket, path). Upload settings (enabled toggle, interval). Test Connection and Save. Local log files grid with Upload to R2 and Delete actions. R2 log files grid with Download action. Independent component with own save logic.
 
 ---
 

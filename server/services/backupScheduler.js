@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import als from '../logging/asyncContext.js';
 import { createBackup, getConfig } from './backupService.js';
 import backupConfig from '../db/backupConfig.js';
 
@@ -19,14 +20,16 @@ export function updateSchedule(schedule) {
   const cronExpr = SCHEDULE_MAP[schedule];
   if (!cronExpr) return; // 'off' or unknown
 
-  currentTask = cron.schedule(cronExpr, async () => {
-    console.log(`[Backup] Scheduled backup starting (${schedule})...`);
-    try {
-      const result = await createBackup();
-      console.log(`[Backup] Scheduled backup completed: ${result.key}`);
-    } catch (err) {
-      console.error(`[Backup] Scheduled backup failed:`, err.message);
-    }
+  currentTask = cron.schedule(cronExpr, () => {
+    als.run({ source: 'backup_scheduler' }, async () => {
+      console.log(`[Backup] Scheduled backup starting (${schedule})...`);
+      try {
+        const result = await createBackup();
+        console.log(`[Backup] Scheduled backup completed: ${result.key}`);
+      } catch (err) {
+        console.error(`[Backup] Scheduled backup failed:`, err.message);
+      }
+    });
   });
 
   console.log(`[Backup] Scheduled backup set to ${schedule} (${cronExpr})`);

@@ -1,9 +1,11 @@
+import { getTraceId } from './traceId.js';
+
 const BASE = '/api';
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: { 'Content-Type': 'application/json', 'X-Trace-Id': getTraceId(), ...options.headers },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -56,7 +58,7 @@ export const settingsApi = {
 export const reportsApi = {
   downloadTimesheetPdf: async (clientId, startDate, endDate) => {
     const params = new URLSearchParams({ clientId, startDate, endDate });
-    const res = await fetch(`${BASE}/reports/timesheet-pdf?${params}`);
+    const res = await fetch(`${BASE}/reports/timesheet-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `Download failed: ${res.status}`);
@@ -65,7 +67,7 @@ export const reportsApi = {
   },
   getTimesheetPdfBlob: async (clientId, projectId, startDate, endDate) => {
     const params = new URLSearchParams({ clientId, startDate, endDate, projectId });
-    const res = await fetch(`${BASE}/reports/timesheet-pdf?${params}`);
+    const res = await fetch(`${BASE}/reports/timesheet-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `PDF generation failed: ${res.status}`);
@@ -74,7 +76,7 @@ export const reportsApi = {
   },
   getExpensePdfBlob: async (clientId, projectId, startDate, endDate) => {
     const params = new URLSearchParams({ clientId, startDate, endDate, projectId });
-    const res = await fetch(`${BASE}/reports/expense-pdf?${params}`);
+    const res = await fetch(`${BASE}/reports/expense-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `PDF generation failed: ${res.status}`);
@@ -83,7 +85,7 @@ export const reportsApi = {
   },
   getIncomeExpensePdfBlob: async (startDate, endDate) => {
     const params = new URLSearchParams({ startDate, endDate });
-    const res = await fetch(`${BASE}/reports/income-expense-pdf?${params}`);
+    const res = await fetch(`${BASE}/reports/income-expense-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `PDF generation failed: ${res.status}`);
@@ -92,7 +94,7 @@ export const reportsApi = {
   },
   getIncomeExpenseCsvBlob: async (startDate, endDate) => {
     const params = new URLSearchParams({ startDate, endDate });
-    const res = await fetch(`${BASE}/reports/income-expense-csv?${params}`);
+    const res = await fetch(`${BASE}/reports/income-expense-csv?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `CSV generation failed: ${res.status}`);
@@ -101,7 +103,7 @@ export const reportsApi = {
   },
   getVatPdfBlob: async (startDate, endDate) => {
     const params = new URLSearchParams({ startDate, endDate });
-    const res = await fetch(`${BASE}/reports/vat-pdf?${params}`);
+    const res = await fetch(`${BASE}/reports/vat-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `PDF generation failed: ${res.status}`);
@@ -110,7 +112,7 @@ export const reportsApi = {
   },
   getVatCsvBlob: async (startDate, endDate) => {
     const params = new URLSearchParams({ startDate, endDate });
-    const res = await fetch(`${BASE}/reports/vat-csv?${params}`);
+    const res = await fetch(`${BASE}/reports/vat-csv?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `CSV generation failed: ${res.status}`);
@@ -120,7 +122,7 @@ export const reportsApi = {
   getCombinedPdfBlob: async (reports) => {
     const res = await fetch(`${BASE}/reports/combined-pdf`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Trace-Id': getTraceId() },
       body: JSON.stringify({ reports }),
     });
     if (!res.ok) {
@@ -170,6 +172,7 @@ export const expensesApi = {
     }
     const res = await fetch(`${BASE}/expenses/${id}/attachments`, {
       method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
       body: formData,
     });
     if (!res.ok) {
@@ -244,7 +247,7 @@ export const importJobsApi = {
   getById: (id) => request(`/import-jobs/${id}`),
   create: async (formData) => {
     // formData is a FormData object — no Content-Type header (browser sets multipart boundary)
-    const res = await fetch(`${BASE}/import-jobs`, { method: 'POST', body: formData });
+    const res = await fetch(`${BASE}/import-jobs`, { method: 'POST', headers: { 'X-Trace-Id': getTraceId() }, body: formData });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `Request failed: ${res.status}`);
@@ -254,7 +257,7 @@ export const importJobsApi = {
   update: async (id, data) => {
     // Support both FormData (file re-upload) and plain object
     if (data instanceof FormData) {
-      const res = await fetch(`${BASE}/import-jobs/${id}`, { method: 'PUT', body: data });
+      const res = await fetch(`${BASE}/import-jobs/${id}`, { method: 'PUT', headers: { 'X-Trace-Id': getTraceId() }, body: data });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `Request failed: ${res.status}`);
@@ -323,4 +326,32 @@ export const backupApi = {
   list: () => request('/backup/list'),
   restore: (backupKey) => request('/backup/restore', { method: 'POST', body: JSON.stringify({ backupKey }) }),
   delete: (key) => request(`/backup/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+};
+
+// Logs
+export const logApi = {
+  getConfig: () => request('/logs/config'),
+  updateConfig: (data) => request('/logs/config', { method: 'PUT', body: JSON.stringify(data) }),
+  testConnection: (data) => request('/logs/test-connection', { method: 'POST', body: JSON.stringify(data) }),
+  listFiles: () => request('/logs/files'),
+  readFile: (filename, params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/logs/files/${encodeURIComponent(filename)}${query ? `?${query}` : ''}`);
+  },
+  search: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/logs/search${query ? `?${query}` : ''}`);
+  },
+  uploadToR2: (filename) => request(`/logs/upload/${encodeURIComponent(filename)}`, { method: 'POST', body: '{}' }),
+  deleteLocal: (filename) => request(`/logs/files/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+  downloadFromR2: (filename) => request(`/logs/download/${encodeURIComponent(filename)}`, { method: 'POST', body: '{}' }),
+  listR2: () => request('/logs/r2'),
 };

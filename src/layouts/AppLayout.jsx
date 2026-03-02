@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useUnsavedChanges } from '../contexts/UnsavedChangesContext.jsx';
+import { newTraceId, getTraceId } from '../api/traceId.js';
 import {
   makeStyles,
   tokens,
@@ -29,6 +30,7 @@ import {
   DataBarVerticalRegular,
   CalculatorRegular,
   DocumentTextRegular,
+  TextBulletListSquareRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -225,10 +227,11 @@ const navItems = [
   {
     label: 'Data Management',
     icon: <DatabaseRegular />,
-    prefix: ['/import-jobs', '/staged-transactions'],
+    prefix: ['/import-jobs', '/staged-transactions', '/logs'],
     children: [
       { to: '/import-jobs', label: 'Import Transactions', icon: <ArrowImportRegular /> },
       { to: '/staged-transactions', label: 'Staged Transactions', icon: <TableRegular /> },
+      { to: '/logs', label: 'Application Logs', icon: <TextBulletListSquareRegular /> },
     ],
   },
   {
@@ -249,6 +252,16 @@ export default function AppLayout() {
   const location = useLocation();
   const { guardedNavigate } = useUnsavedChanges();
   const [collapsed, setCollapsed] = useState(false);
+
+  // Generate a new traceId on every navigation and log it as a pageview
+  useEffect(() => {
+    newTraceId();
+    fetch('/api/logs/pageview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Trace-Id': getTraceId() },
+      body: JSON.stringify({ path: location.pathname, method: 'GET', traceId: getTraceId() }),
+    }).catch(() => {});
+  }, [location.pathname]);
 
   const isChildRouteActive = (prefix) => {
     if (Array.isArray(prefix)) return prefix.some((p) => {
