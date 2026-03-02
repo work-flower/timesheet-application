@@ -22,6 +22,7 @@ import aiConfigRoutes from './routes/aiConfig.js';
 import dashboardRoutes from './routes/dashboard.js';
 import mcpRoutes from './routes/mcp.js';
 import mcpAuthRoutes from './routes/mcpAuth.js';
+import helpRoutes from './routes/help.js';
 import logRoutes from './routes/logs.js';
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
 import { initScheduler } from './services/backupScheduler.js';
@@ -115,6 +116,7 @@ app.use('/api/ai-config', aiConfigRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/mcp', mcpRoutes);
 app.use('/api/mcp-auth', mcpAuthRoutes);
+app.use('/api/help', helpRoutes);
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)
 async function wellKnownHandler(req, res) {
