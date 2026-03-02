@@ -3,7 +3,6 @@ import als from '../logging/asyncContext.js';
 import * as projectService from '../services/projectService.js';
 import * as timesheetService from '../services/timesheetService.js';
 import * as expenseService from '../services/expenseService.js';
-import * as attachmentService from '../services/expenseAttachmentService.js';
 
 const router = Router();
 
@@ -49,14 +48,12 @@ Follow this flow for EVERY entry (each entry is an independent session — never
     description:
       `Create an expense entry. The API computes vatPercent, netAmount, and inherits currency automatically.
 
-IMPORTANT — Image size: If the user shares a receipt image, always reduce it before encoding to base64. Resize to max 1024px on the longest side, use JPEG at 60-80% quality (convert PNG to JPEG unless transparency is needed), and target under 500KB. This prevents context overflow from large base64 strings.
-
 Follow this flow (each entry is an independent session — never reuse projectId from a previous entry):
 1. If the user shared a receipt photo, read it with vision to extract: date, amount, VAT, description, expense type.
 2. Call list_projects to find the project. Never skip this step.
 3. Present extracted/provided data for user confirmation before submitting.
 4. Only submit when the user confirms the details are correct.
-5. After creation, if the user shared a receipt image, automatically call upload_expense_attachment to attach it — no extra confirmation needed.`,
+5. After creation, if the user shared a receipt image, use the "Upload Expense Image Skill" skill to upload the image to the attachment URL returned in the response. If the skill is not available, provide the attachment URL to the user so they can upload manually.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -70,27 +67,6 @@ Follow this flow (each entry is an independent session — never reuse projectId
         notes: { type: 'string', description: 'Internal notes (not visible to client)' },
       },
       required: ['projectId', 'amount'],
-    },
-  },
-  {
-    name: 'upload_expense_attachment',
-    description:
-      `Upload a receipt image or file to an existing expense. Call this automatically after create_expense if the user shared a receipt image.
-
-IMPORTANT — Image size: Base64-encoded images consume significant context. Before encoding, always reduce image size:
-- Resize to max 1024px on the longest side
-- Use JPEG at 60-80% quality (convert PNG to JPEG unless transparency is needed)
-- Target under 500KB before base64 encoding
-This keeps the base64 string manageable and prevents context overflow.`,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        expenseId: { type: 'string', description: 'Expense ID to attach the file to' },
-        base64Data: { type: 'string', description: 'File content as base64-encoded string' },
-        filename: { type: 'string', description: 'Original filename (e.g. receipt.jpg)' },
-        mimeType: { type: 'string', description: 'MIME type (e.g. image/jpeg)' },
-      },
-      required: ['expenseId', 'base64Data', 'filename', 'mimeType'],
     },
   },
   {
@@ -172,15 +148,7 @@ const handlers = {
 
     const result = await expenseService.create(data);
 
-    return `Expense created (ID: ${result._id}): ${fmtGBP(result.amount)} (VAT ${fmtGBP(result.vatAmount)}, net ${fmtGBP(result.netAmount)}) on ${result.date}. Type: ${result.expenseType || '—'}. Description: ${result.description || '—'}`;
-  },
-
-  async upload_expense_attachment({ expenseId, base64Data, filename, mimeType }) {
-    const buffer = Buffer.from(base64Data, 'base64');
-    const file = { buffer, originalname: filename, mimetype: mimeType };
-    await attachmentService.saveAttachments(expenseId, [file]);
-
-    return `Attachment "${filename}" uploaded to expense ${expenseId}.`;
+    return `Expense created (ID: ${result._id}): ${fmtGBP(result.amount)} (VAT ${fmtGBP(result.vatAmount)}, net ${fmtGBP(result.netAmount)}) on ${result.date}. Type: ${result.expenseType || '—'}. Description: ${result.description || '—'}.\nAttachment upload path: /api/expenses/${result._id}/attachments`;
   },
 
   async list_recent_timesheets({ days: lookback } = {}) {
