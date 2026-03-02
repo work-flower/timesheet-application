@@ -23,6 +23,7 @@ router.get('/', async (req, res) => {
     const docs = await documentService.getAll(req.query);
     res.json(docs);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -34,6 +35,7 @@ router.get('/:id', async (req, res) => {
     if (!doc) return res.status(404).json({ error: 'Document not found' });
     res.json(doc);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -47,6 +49,7 @@ router.get('/:id/file', async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="${doc.filename}"`);
     res.sendFile(doc.filePath);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -84,6 +87,7 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(doc);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -94,6 +98,7 @@ router.delete('/:id', async (req, res) => {
     await documentService.remove(req.params.id);
     res.json({ success: true });
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });

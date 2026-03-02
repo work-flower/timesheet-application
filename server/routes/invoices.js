@@ -10,6 +10,7 @@ router.get('/', async (req, res) => {
     const result = await invoiceService.getAll(req.query);
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -20,6 +21,7 @@ router.get('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Invoice not found' });
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -29,6 +31,7 @@ router.post('/', async (req, res) => {
     const result = await invoiceService.create(req.body);
     res.status(201).json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -39,6 +42,7 @@ router.put('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Invoice not found' });
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -48,6 +52,7 @@ router.delete('/:id', async (req, res) => {
     await invoiceService.remove(req.params.id);
     res.json({ success: true });
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -57,6 +62,7 @@ router.post('/:id/confirm', async (req, res) => {
     const result = await invoiceService.confirm(req.params.id);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -66,6 +72,7 @@ router.post('/:id/post', async (req, res) => {
     const result = await invoiceService.post(req.params.id);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -75,6 +82,7 @@ router.post('/:id/unconfirm', async (req, res) => {
     const result = await invoiceService.unconfirm(req.params.id);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -84,6 +92,7 @@ router.post('/:id/add-line', async (req, res) => {
     const result = await invoiceService.addLine(req.params.id, req.body.items);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -93,6 +102,7 @@ router.post('/:id/recalculate', async (req, res) => {
     const result = await invoiceService.recalculate(req.params.id);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -102,6 +112,7 @@ router.post('/:id/consistency-check', async (req, res) => {
     const conflicts = await invoiceService.consistencyCheck(req.params.id);
     res.json({ conflicts });
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -111,6 +122,7 @@ router.put('/:id/payment', async (req, res) => {
     const result = await invoiceService.updatePayment(req.params.id, req.body);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -120,6 +132,7 @@ router.post('/:id/link-transaction', async (req, res) => {
     const result = await invoiceService.linkTransaction(req.params.id, req.body.transactionId);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -129,6 +142,7 @@ router.post('/:id/unlink-transaction', async (req, res) => {
     const result = await invoiceService.unlinkTransaction(req.params.id, req.body.transactionId);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -141,6 +155,7 @@ router.get('/:id/file', async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="${invoice.invoiceNumber || 'invoice'}.pdf"`);
     res.sendFile(invoice.pdfPath);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -156,6 +171,7 @@ router.get('/:id/pdf', async (req, res) => {
     pdfDoc.pipe(res);
     pdfDoc.end();
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });

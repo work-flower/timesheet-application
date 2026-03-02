@@ -279,6 +279,7 @@ router.post('/', async (req, res) => {
         content: [{ type: 'text', text }],
       }));
     } catch (err) {
+      console.error(err.message);
       return res.json(jsonrpc(id, {
         content: [{ type: 'text', text: `Error: ${err.message}` }],
         isError: true,

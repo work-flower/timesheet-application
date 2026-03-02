@@ -19,6 +19,7 @@ router.get('/', async (req, res) => {
     const result = await importJobService.getAll(req.query);
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -29,6 +30,7 @@ router.get('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Import job not found' });
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -71,6 +73,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     if (req.file && existsSync(req.file.path)) {
       rmSync(req.file.path, { force: true });
     }
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -131,6 +134,7 @@ router.put('/:id', upload.single('file'), async (req, res) => {
     if (req.file && existsSync(req.file.path)) {
       rmSync(req.file.path, { force: true });
     }
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -140,6 +144,7 @@ router.delete('/:id', async (req, res) => {
     await importJobService.remove(req.params.id);
     res.json({ success: true });
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -149,6 +154,7 @@ router.post('/:id/abandon', async (req, res) => {
     const result = await importJobService.abandon(req.params.id);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });

@@ -8,6 +8,7 @@ router.get('/', async (req, res) => {
     const result = await timesheetService.getAll(req.query);
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -18,6 +19,7 @@ router.get('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Timesheet entry not found' });
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -27,6 +29,7 @@ router.post('/', async (req, res) => {
     const result = await timesheetService.create(req.body);
     res.status(201).json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -37,6 +40,7 @@ router.put('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Timesheet entry not found' });
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -46,6 +50,7 @@ router.delete('/:id', async (req, res) => {
     await timesheetService.remove(req.params.id);
     res.json({ success: true });
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });

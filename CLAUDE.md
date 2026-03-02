@@ -296,15 +296,16 @@ Deleted when job is abandoned.
 28. **R2 log lifecycle:** Completed (non-active) log files can be uploaded to R2. Upload verifies integrity (filename + size + MD5 hash) after transfer, then deletes the local copy. The active log file (today's date) cannot be uploaded or deleted. Files can be downloaded from R2 back to local for searching.
 29. **Safe local delete:** Local log files can only be deleted if an identical copy exists in R2 (verified by filename + size + MD5 hash match). If the R2 copy differs or doesn't exist, deletion is blocked.
 30. **Automatic upload:** When enabled, a periodic cycle uploads all completed log files to R2. Files already in R2 with matching content are removed locally. Mismatches are logged as warnings.
+31. **Error logging levels:** All route-level catch blocks log before responding: `console.warn()` for managed exceptions (4xx — validation, business rules, lock checks) and `console.error()` for unexpected failures (5xx). MCP tool errors are logged as `console.error()` since they return HTTP 200 with `isError: true` and would otherwise be invisible. The request logging middleware separately logs the HTTP status line (`METHOD /path STATUS duration`).
 
 ### Transaction Imports
 
-31. **File upload:** Creating an import job requires a file upload (CSV, PDF, OFX, XML, TXT, XLS, XLSX). The file is stored on disk at `DATA_DIR/uploads/{jobId}/`.
-32. **AI parsing:** After upload, the file is sent to Claude API with the system prompt (from AI config) and the job's user prompt. Claude returns a JSON array of transactions. Parsing runs asynchronously — the job is created immediately with `processing` status.
-33. **Staged transactions:** Each parsed row becomes a staged transaction with a composite hash (MD5 of `filename-date-description-amount`). Staged transactions are semi-structured — all fields returned by the AI are stored.
-34. **Lifecycle:** `processing` → `ready_for_review` → `abandoned`. On failure: `processing` → `failed`. Failed jobs can be retried by re-uploading a file.
-35. **Abandon** deletes all staged transactions.
-36. **Delete** is only allowed for terminal-status jobs (`abandoned`, `failed`). Cascade-deletes staged transactions and the upload directory.
+32. **File upload:** Creating an import job requires a file upload (CSV, PDF, OFX, XML, TXT, XLS, XLSX). The file is stored on disk at `DATA_DIR/uploads/{jobId}/`.
+33. **AI parsing:** After upload, the file is sent to Claude API with the system prompt (from AI config) and the job's user prompt. Claude returns a JSON array of transactions. Parsing runs asynchronously — the job is created immediately with `processing` status.
+34. **Staged transactions:** Each parsed row becomes a staged transaction with a composite hash (MD5 of `filename-date-description-amount`). Staged transactions are semi-structured — all fields returned by the AI are stored.
+35. **Lifecycle:** `processing` → `ready_for_review` → `abandoned`. On failure: `processing` → `failed`. Failed jobs can be retried by re-uploading a file.
+36. **Abandon** deletes all staged transactions.
+37. **Delete** is only allowed for terminal-status jobs (`abandoned`, `failed`). Cascade-deletes staged transactions and the upload directory.
 
 ---
 

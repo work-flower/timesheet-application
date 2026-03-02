@@ -14,6 +14,7 @@ router.get('/operations', async (req, res) => {
     const summary = await getOperationsSummary();
     res.json(summary);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -28,6 +29,7 @@ router.get('/invoice-coverage', async (req, res) => {
     const coverage = await getInvoiceCoverage(start, end);
     res.json(coverage);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -39,6 +41,7 @@ router.get('/reconciliation', async (req, res) => {
     const summary = await getReconciliationSummary(startDate, endDate);
     res.json(summary);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -53,6 +56,7 @@ router.get('/financial', async (req, res) => {
     const summary = await getFinancialSummary(startDate, endDate);
     res.json(summary);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });

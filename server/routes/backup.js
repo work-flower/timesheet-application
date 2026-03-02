@@ -18,6 +18,7 @@ router.get('/config', async (req, res) => {
     const config = await getConfig();
     res.json(config);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -29,6 +30,7 @@ router.put('/config', async (req, res) => {
     updateSchedule(req.body.schedule || 'off');
     res.json(config);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -39,6 +41,7 @@ router.post('/test-connection', async (req, res) => {
     const result = await testConnection(req.body);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -49,6 +52,7 @@ router.post('/create', async (req, res) => {
     const result = await createBackup();
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -59,6 +63,7 @@ router.get('/list', async (req, res) => {
     const backups = await listBackups();
     res.json(backups);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -71,6 +76,7 @@ router.post('/restore', async (req, res) => {
     const result = await restoreFromBackup(backupKey);
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -81,6 +87,7 @@ router.delete('/:key(*)', async (req, res) => {
     const result = await deleteBackup(req.params.key);
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });

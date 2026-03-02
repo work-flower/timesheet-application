@@ -10,6 +10,7 @@ router.get('/', async (req, res) => {
     const docs = await settings.find({});
     res.json(docs[0] || null);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -62,6 +63,7 @@ router.put('/', async (req, res) => {
 
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });

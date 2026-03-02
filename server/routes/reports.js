@@ -23,6 +23,7 @@ router.get('/timesheet-pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="timesheet-${startDate}-to-${endDate}.pdf"`);
     res.send(buffer);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -42,6 +43,7 @@ router.get('/expense-pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="expenses-${startDate}-to-${endDate}.pdf"`);
     res.send(buffer);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -102,6 +104,7 @@ router.post('/combined-pdf', async (req, res) => {
     res.setHeader('Content-Disposition', 'inline; filename="combined-report.pdf"');
     res.send(combined);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -119,6 +122,7 @@ router.get('/income-expense-pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="income-expense-${startDate}-to-${endDate}.pdf"`);
     res.send(buffer);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -135,6 +139,7 @@ router.get('/income-expense-csv', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="income-expense-${startDate}-to-${endDate}.csv"`);
     res.send(csv);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -152,6 +157,7 @@ router.get('/vat-pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="vat-report-${startDate}-to-${endDate}.pdf"`);
     res.send(buffer);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -168,6 +174,7 @@ router.get('/vat-csv', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="vat-report-${startDate}-to-${endDate}.csv"`);
     res.send(csv);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });

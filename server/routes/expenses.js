@@ -12,6 +12,7 @@ router.get('/types', async (req, res) => {
     const types = await expenseService.getDistinctTypes();
     res.json(types);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -21,6 +22,7 @@ router.get('/', async (req, res) => {
     const result = await expenseService.getAll(req.query);
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -31,6 +33,7 @@ router.get('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Expense not found' });
     res.json(result);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -40,6 +43,7 @@ router.post('/', async (req, res) => {
     const result = await expenseService.create(req.body);
     res.status(201).json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -50,6 +54,7 @@ router.put('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Expense not found' });
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -59,6 +64,7 @@ router.delete('/:id', async (req, res) => {
     await expenseService.remove(req.params.id);
     res.json({ success: true });
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -68,6 +74,7 @@ router.post('/:id/link-transaction', async (req, res) => {
     const result = await expenseService.linkTransaction(req.params.id, req.body.transactionId);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -77,6 +84,7 @@ router.post('/:id/unlink-transaction', async (req, res) => {
     const result = await expenseService.unlinkTransaction(req.params.id, req.body.transactionId);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -90,6 +98,7 @@ router.post('/:id/attachments', upload.array('files', 10), async (req, res) => {
     const attachments = await attachmentService.saveAttachments(req.params.id, req.files);
     res.json(attachments);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -99,6 +108,7 @@ router.delete('/:id/attachments/:filename', async (req, res) => {
     const attachments = await attachmentService.removeAttachment(req.params.id, req.params.filename);
     res.json(attachments);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });

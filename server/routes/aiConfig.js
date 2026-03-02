@@ -13,6 +13,7 @@ router.get('/', async (req, res) => {
     const config = await getConfig();
     res.json(config);
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -23,6 +24,7 @@ router.put('/', async (req, res) => {
     const config = await updateConfig(req.body);
     res.json(config);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -33,6 +35,7 @@ router.post('/test-connection', async (req, res) => {
     const result = await testConnection(req.body);
     res.json(result);
   } catch (err) {
+    console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
 });
