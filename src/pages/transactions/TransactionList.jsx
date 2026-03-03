@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
@@ -7,6 +7,8 @@ import {
   ToggleButton,
   Select,
   Badge,
+  Button,
+  Tooltip,
   DataGrid,
   DataGridHeader,
   DataGridHeaderCell,
@@ -17,10 +19,12 @@ import {
   createTableColumn,
   Spinner,
 } from '@fluentui/react-components';
+import { OpenRegular } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { transactionsApi } from '../../api/index.js';
+import TransactionDrawer from './TransactionDrawer.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -127,7 +131,7 @@ const statusColors = {
   ignored: 'subtle',
 };
 
-const columns = [
+const baseColumns = [
   createTableColumn({
     columnId: 'date',
     compare: (a, b) => a.date.localeCompare(b.date),
@@ -195,6 +199,7 @@ export default function TransactionList() {
   const [accountFilter, setAccountFilter] = useState(() => localStorage.getItem('transactions.account') || '');
   const [customStart, setCustomStart] = useState(() => localStorage.getItem('transactions.customStart') || getWeekRange().startDate);
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('transactions.customEnd') || getWeekRange().endDate);
+  const [selectedTransactionId, setSelectedTransactionId] = useState(null);
 
   // Persist filter selections
   useEffect(() => { localStorage.setItem('transactions.status', statusFilter); }, [statusFilter]);
@@ -210,14 +215,16 @@ export default function TransactionList() {
     return {};
   }, [range, customStart, customEnd]);
 
-  useEffect(() => {
-    setLoading(true);
+  const refreshEntries = useCallback(() => {
     const params = { ...dateRange };
     if (statusFilter !== 'all') params.status = statusFilter;
-    transactionsApi.getAll(params)
-      .then(setEntries)
-      .finally(() => setLoading(false));
+    return transactionsApi.getAll(params).then(setEntries);
   }, [dateRange, statusFilter]);
+
+  useEffect(() => {
+    setLoading(true);
+    refreshEntries().finally(() => setLoading(false));
+  }, [refreshEntries]);
 
   const accounts = useMemo(() => {
     const names = [...new Set(entries.map((e) => e.accountName).filter(Boolean))];
@@ -245,6 +252,27 @@ export default function TransactionList() {
       (e.reference || '').toLowerCase().includes(q)
     );
   }, [entries, search, accountFilter]);
+
+  const columns = useMemo(() => [
+    createTableColumn({
+      columnId: 'actions',
+      renderHeaderCell: () => '',
+      renderCell: (item) => (
+        <TableCellLayout>
+          <Tooltip content="Quick view" relationship="label" withArrow>
+            <Button
+              appearance="subtle"
+              icon={<OpenRegular />}
+              size="small"
+              onClick={(e) => { e.stopPropagation(); setSelectedTransactionId(item._id); }}
+              style={{ minWidth: 'auto' }}
+            />
+          </Tooltip>
+        </TableCellLayout>
+      ),
+    }),
+    ...baseColumns,
+  ], []);
 
   const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered);
 
@@ -317,7 +345,15 @@ export default function TransactionList() {
         ) : filtered.length === 0 ? (
           <div className={styles.empty}><Text>No transactions found.</Text></div>
         ) : (
-          <DataGrid items={pageItems} columns={columns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+          <DataGrid
+            items={pageItems}
+            columns={columns}
+            sortable
+            resizableColumns
+            columnSizingOptions={{ actions: { idealWidth: 40, minWidth: 40 } }}
+            getRowId={(item) => item._id}
+            style={{ width: '100%' }}
+          >
             <DataGridHeader>
               <DataGridRow>
                 {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
@@ -365,6 +401,11 @@ export default function TransactionList() {
           </div>
         </div>
       )}
+      <TransactionDrawer
+        transactionId={selectedTransactionId}
+        onClose={() => setSelectedTransactionId(null)}
+        onMutate={refreshEntries}
+      />
     </div>
   );
 }
