@@ -296,3 +296,112 @@ const statusColors = { active: 'success', draft: 'warning', archived: 'subtle' }
   {item.status}
 </Badge>
 ```
+
+## Quick View (Optional)
+
+**IMPORTANT:** Quick View is NOT part of the default list view. Only implement it when the developer explicitly asks for a Quick View on a specific entity list. Never add it automatically.
+
+Quick View lets users view and act on a record from an `OverlayDrawer` without leaving the list page. Row click still navigates to the full form.
+
+### Trigger: Button Column
+
+Add a narrow button column as the **first** column. The button calls `e.stopPropagation()` to prevent row click navigation. Because it references component state (`setSelectedId`), the columns array must be built inside the component via `useMemo`:
+
+```jsx
+import { Button, Tooltip } from '@fluentui/react-components';
+import { OpenRegular } from '@fluentui/react-icons';
+
+// Inside component:
+const [selectedId, setSelectedId] = useState(null);
+
+const columns = useMemo(() => [
+  createTableColumn({
+    columnId: 'actions',
+    renderHeaderCell: () => '',
+    renderCell: (item) => (
+      <TableCellLayout>
+        <Tooltip content="Quick view" relationship="label" withArrow>
+          <Button
+            appearance="subtle"
+            icon={<OpenRegular />}
+            size="small"
+            onClick={(e) => { e.stopPropagation(); setSelectedId(item._id); }}
+            style={{ minWidth: 'auto' }}
+          />
+        </Tooltip>
+      </TableCellLayout>
+    ),
+  }),
+  ...baseColumns,   // the original columns array, renamed to baseColumns
+], []);
+```
+
+Constrain the actions column width via `columnSizingOptions` on the DataGrid:
+
+```jsx
+<DataGrid
+  items={pageItems}
+  columns={columns}
+  sortable
+  resizableColumns
+  columnSizingOptions={{ actions: { idealWidth: 40, minWidth: 40 } }}
+  getRowId={(item) => item._id}
+  style={{ width: '100%' }}
+>
+```
+
+### Drawer Component
+
+Create a separate `{EntityName}Drawer.jsx` file in the same directory. Structure:
+
+```
+OverlayDrawer (position="end", size="large")
+  └── DrawerHeader
+  │     └── DrawerHeaderTitle — record title + status badge
+  │           action: "Open full form" button + dismiss button
+  └── DrawerBody
+        └── Action toolbar (same actions as the full form's command bar)
+        └── Message bars (success/error/warning)
+        └── Read-only field sections (label/value pairs, balance, etc.)
+        └── Collapsible source/detail sections
+```
+
+**Props:** `entityId` (string|null — null = closed), `onClose`, `onMutate` (refresh list after changes)
+
+**Key patterns:**
+- `useEffect` keyed on `entityId` with a `cancelled` flag to prevent stale data on rapid clicks
+- After any mutation (link, unlink, ignore, restore): refresh drawer data + call `onMutate()`
+- Navigation actions (e.g. "Create Expense") call `onClose()` then `navigate()`
+- Sub-dialogs (pickers, confirm dialogs) render inside the drawer component — Fluent UI `Dialog` portals above the drawer automatically
+- This is a **read-only view with actions**, not an inline edit form — no dirty tracking or save pattern
+
+### List Integration
+
+Extract data fetching into a `refreshEntries` callback so it can be shared between the initial `useEffect` and the drawer's `onMutate`:
+
+```jsx
+const refreshEntries = useCallback(() => {
+  const params = { ...dateRange };
+  // apply filters...
+  return entityApi.getAll(params).then(setEntries);
+}, [dateRange, /* other filter deps */]);
+
+useEffect(() => {
+  setLoading(true);
+  refreshEntries().finally(() => setLoading(false));
+}, [refreshEntries]);
+```
+
+Render the drawer at the end of the list component:
+
+```jsx
+<EntityDrawer
+  entityId={selectedId}
+  onClose={() => setSelectedId(null)}
+  onMutate={refreshEntries}
+/>
+```
+
+### Reference Implementation
+
+See `src/pages/transactions/TransactionDrawer.jsx` and `src/pages/transactions/TransactionList.jsx` for a complete working example.
