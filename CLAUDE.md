@@ -263,6 +263,7 @@ Deleted when job is abandoned.
 
 5. Date must not be in the future. Hours must be 0.25–24 in 0.25 increments.
 6. `days` and `amount` computed and persisted on save. Source of truth once saved — no recomputation on read.
+7. **Rate/hours golden rule:** `effectiveRate` and `effectiveWorkingHours` are always derived from the project (and its client). On create and update, if the client provides values for either field that differ from the project's computed values, the client values are ignored and a `warnings` array is returned in the response listing each overridden field. Calculations always use project values: `days = hours / effectiveWorkingHours`, `amount = days × effectiveRate`. Neither field is stored on the timesheet record.
 
 ### Expenses
 
