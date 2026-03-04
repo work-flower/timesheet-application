@@ -13,7 +13,7 @@ const tools = [
     name: 'list_projects',
     description:
       `List active projects. IMPORTANT: Call this FIRST before every create_timesheet or create_expense call to get the correct projectId. Never reuse a projectId from a previous session.
-Returns: projectId, name, clientName, dailyRate, workingHoursPerDay.`,
+Returns: projectId, name, clientName, workingHoursPerDay.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -121,7 +121,7 @@ const handlers = {
     }
     const data = rows(await projectService.getAll(params));
     const projects = data.map(p => [
-      `${p.name} (${p.clientName}) — ${fmtGBP(p.effectiveRate)}/day, ${p.effectiveWorkingHours}h`,
+      `${p.name} (${p.clientName}) — ${p.effectiveWorkingHours}h/day`,
       `  projectId: ${p._id}`,
     ].join('\n')).join('\n\n');
 
@@ -136,7 +136,7 @@ const handlers = {
       notes: notes || '',
     });
 
-    let msg = `Timesheet created: ${result.hours} hours (${result.days.toFixed(2)} days, ${fmtGBP(result.amount)}) on ${result.date}. Notes: ${result.notes || '—'}`;
+    let msg = `Timesheet created: ${result.hours} hours (${result.days.toFixed(2)} days) on ${result.date}. Notes: ${result.notes || '—'}`;
     if (result.warnings?.length) {
       msg += `\n⚠️ ${result.warnings.join('\n⚠️ ')}`;
     }
@@ -167,17 +167,16 @@ const handlers = {
 
     const totalHours = data.reduce((s, e) => s + (e.hours || 0), 0);
     const totalDays = data.reduce((s, e) => s + (e.days || 0), 0);
-    const totalAmount = data.reduce((s, e) => s + (e.amount || 0), 0);
 
     const lines = data.map(e =>
-      `  ${e.date} | ${e.projectName} (${e.clientName}) | ${e.hours}h (${(e.days || 0).toFixed(2)}d) | ${fmtGBP(e.amount || 0)} | ${e.notes || '—'}`
+      `  ${e.date} | ${e.projectName} (${e.clientName}) | ${e.hours}h (${(e.days || 0).toFixed(2)}d) | ${e.notes || '—'}`
     );
 
     return [
       `Timesheets from ${startDate} to ${endDate}:`,
       ...lines,
       '',
-      `Totals: ${totalHours}h (${totalDays.toFixed(2)} days), ${fmtGBP(totalAmount)}`,
+      `Totals: ${totalHours}h (${totalDays.toFixed(2)} days)`,
     ].join('\n');
   },
 
