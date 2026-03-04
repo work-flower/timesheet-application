@@ -136,7 +136,11 @@ const handlers = {
       notes: notes || '',
     });
 
-    return `Timesheet created: ${result.hours} hours (${result.days.toFixed(2)} days, ${fmtGBP(result.amount)}) on ${result.date}. Notes: ${result.notes || '—'}`;
+    let msg = `Timesheet created: ${result.hours} hours (${result.days.toFixed(2)} days, ${fmtGBP(result.amount)}) on ${result.date}. Notes: ${result.notes || '—'}`;
+    if (result.warnings?.length) {
+      msg += `\n⚠️ ${result.warnings.join('\n⚠️ ')}`;
+    }
+    return msg;
   },
 
   async create_expense({ projectId, date, amount, expenseType, description, vatAmount, billable, externalReference, notes } = {}) {

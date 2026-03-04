@@ -150,8 +150,16 @@ export async function create(data) {
   const days = hours / effectiveWorkingHours;
   const amount = days * effectiveRate;
 
+  const warnings = [];
+  if (data.effectiveWorkingHours != null && data.effectiveWorkingHours !== effectiveWorkingHours) {
+    warnings.push(`effectiveWorkingHours ${data.effectiveWorkingHours} provided by client ignored — project value ${effectiveWorkingHours} used`);
+  }
+  if (data.effectiveRate != null && data.effectiveRate !== effectiveRate) {
+    warnings.push(`effectiveRate ${data.effectiveRate} provided by client ignored — project value ${effectiveRate} used`);
+  }
+
   const now = new Date().toISOString();
-  return timesheets.insert({
+  const inserted = await timesheets.insert({
     projectId: data.projectId,
     date: data.date,
     hours,
@@ -161,6 +169,9 @@ export async function create(data) {
     createdAt: now,
     updatedAt: now,
   });
+
+  if (warnings.length) inserted.warnings = warnings;
+  return inserted;
 }
 
 export async function update(id, data) {
@@ -194,6 +205,9 @@ export async function update(id, data) {
     }
   }
 
+  // Detect mismatched override fields
+  const warnings = [];
+
   // Recompute days and amount only when hours or project changed
   if (updateData.hours != null || updateData.projectId != null) {
     const finalHours = updateData.hours ?? existing.hours;
@@ -204,12 +218,26 @@ export async function update(id, data) {
     const effectiveRate = project.rate != null ? project.rate : (client?.defaultRate || 0);
     const effectiveWorkingHours = project.workingHoursPerDay != null
       ? project.workingHoursPerDay : (client?.workingHoursPerDay || 8);
+
+    if (updateData.effectiveWorkingHours != null && updateData.effectiveWorkingHours !== effectiveWorkingHours) {
+      warnings.push(`effectiveWorkingHours ${updateData.effectiveWorkingHours} provided by client ignored — project value ${effectiveWorkingHours} used`);
+    }
+    if (updateData.effectiveRate != null && updateData.effectiveRate !== effectiveRate) {
+      warnings.push(`effectiveRate ${updateData.effectiveRate} provided by client ignored — project value ${effectiveRate} used`);
+    }
+
     updateData.days = finalHours / effectiveWorkingHours;
     updateData.amount = updateData.days * effectiveRate;
   }
 
+  // Strip non-stored fields
+  delete updateData.effectiveRate;
+  delete updateData.effectiveWorkingHours;
+
   await timesheets.update({ _id: id }, { $set: updateData });
-  return getById(id);
+  const result = await getById(id);
+  if (warnings.length) result.warnings = warnings;
+  return result;
 }
 
 export async function remove(id) {
