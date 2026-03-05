@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -31,6 +31,7 @@ import FormCommandBar from '../../components/FormCommandBar.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -174,9 +175,9 @@ const documentColumns = [
 export default function ProjectForm() {
   const styles = useStyles();
   const { id } = useParams();
-  const navigate = useNavigate();
   const isNew = !id;
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const { registerGuard } = useUnsavedChanges();
+  const { navigate, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', clientId: '', endClientId: '', ir35Status: 'OUTSIDE_IR35',
@@ -330,7 +331,7 @@ export default function ProjectForm() {
   return (
     <div className={styles.page}>
       <FormCommandBar
-        onBack={() => guardedNavigate('/projects')}
+        onBack={() => goBack('/projects')}
         onSave={handleSave}
         onSaveAndClose={handleSaveAndClose}
         saveDisabled={!form.name || !form.clientId}
@@ -341,7 +342,7 @@ export default function ProjectForm() {
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbButton onClick={() => guardedNavigate('/projects')}>Projects</BreadcrumbButton>
+              <BreadcrumbButton onClick={() => goBack('/projects')}>Projects</BreadcrumbButton>
             </BreadcrumbItem>
             <BreadcrumbDivider />
             <BreadcrumbItem>
@@ -482,7 +483,7 @@ export default function ProjectForm() {
                     <DataGridRow
                       key={rowId}
                       className={styles.row}
-                      onClick={() => guardedNavigate(`/timesheets/${item._id}`)}
+                      onClick={() => navigate(`/timesheets/${item._id}`)}
                     >
                       {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                     </DataGridRow>
@@ -517,7 +518,7 @@ export default function ProjectForm() {
                     <DataGridRow
                       key={rowId}
                       className={styles.row}
-                      onClick={() => guardedNavigate(`/expenses/${item._id}`)}
+                      onClick={() => navigate(`/expenses/${item._id}`)}
                     >
                       {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                     </DataGridRow>
@@ -587,7 +588,7 @@ export default function ProjectForm() {
                     <DataGridRow
                       key={rowId}
                       className={styles.row}
-                      onClick={() => guardedNavigate(`/invoices/${item._id}`)}
+                      onClick={() => navigate(`/invoices/${item._id}`)}
                     >
                       {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                     </DataGridRow>

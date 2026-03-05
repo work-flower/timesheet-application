@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { useUnsavedChanges } from '../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../hooks/useAppNavigate.js';
 import { newTraceId, getTraceId } from '../api/traceId.js';
 import {
   makeStyles,
@@ -250,7 +250,7 @@ const navItems = [
 export default function AppLayout() {
   const styles = useStyles();
   const location = useLocation();
-  const { guardedNavigate } = useUnsavedChanges();
+  const { navigate } = useAppNavigate();
   const [collapsed, setCollapsed] = useState(false);
 
   // Generate a new traceId on every navigation and log it as a pageview
@@ -303,7 +303,7 @@ export default function AppLayout() {
         key={item.to}
         to={item.to}
         className={isActive(item) ? styles.navItemActive : styles.navItem}
-        onClick={(e) => { e.preventDefault(); guardedNavigate(item.to); }}
+        onClick={(e) => { e.preventDefault(); navigate(item.to); }}
       >
         <span className={styles.navIcon}>{item.icon}</span>
         {!collapsed && <span>{item.label}</span>}
@@ -329,7 +329,7 @@ export default function AppLayout() {
             key={child.to}
             to={child.to}
             className={childActive ? styles.navItemActive : styles.navItem}
-            onClick={(e) => { e.preventDefault(); guardedNavigate(child.to); }}
+            onClick={(e) => { e.preventDefault(); navigate(child.to); }}
           >
             <span className={styles.navIcon}>{child.icon}</span>
           </NavLink>
@@ -364,7 +364,7 @@ export default function AppLayout() {
               key={child.to}
               to={child.to}
               className={childActive ? styles.navChildActive : styles.navChild}
-              onClick={(e) => { e.preventDefault(); guardedNavigate(child.to); }}
+              onClick={(e) => { e.preventDefault(); navigate(child.to); }}
             >
               <span className={styles.navChildIcon}>{child.icon}</span>
               <span>{child.label}</span>
@@ -388,10 +388,10 @@ export default function AppLayout() {
           <Text className={styles.topBarTitle}>Timesheet Manager</Text>
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
-          <Button appearance="subtle" icon={<QuestionCircleRegular />} onClick={() => guardedNavigate('/help')}>
+          <Button appearance="subtle" icon={<QuestionCircleRegular />} onClick={() => navigate('/help')}>
             Help
           </Button>
-          <Button appearance="subtle" icon={<SettingsRegular />} onClick={() => guardedNavigate('/settings')}>
+          <Button appearance="subtle" icon={<SettingsRegular />} onClick={() => navigate('/settings')}>
             Settings
           </Button>
         </div>

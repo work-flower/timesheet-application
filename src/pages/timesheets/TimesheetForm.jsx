@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -26,6 +26,7 @@ import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -54,9 +55,9 @@ const EXCLUDE_FIELDS = ['days', 'amount'];
 export default function TimesheetForm() {
   const styles = useStyles();
   const { id } = useParams();
-  const navigate = useNavigate();
   const isNew = !id;
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const { registerGuard } = useUnsavedChanges();
+  const { navigate, goBack } = useAppNavigate();
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -224,7 +225,7 @@ export default function TimesheetForm() {
   return (
     <div className={styles.page}>
       <FormCommandBar
-        onBack={() => guardedNavigate('/timesheets')}
+        onBack={() => goBack('/timesheets')}
         onSave={handleSave}
         onSaveAndClose={handleSaveAndClose}
         onDelete={!isNew ? () => setDeleteOpen(true) : undefined}
@@ -248,7 +249,7 @@ export default function TimesheetForm() {
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbButton onClick={() => guardedNavigate('/timesheets')}>Timesheets</BreadcrumbButton>
+              <BreadcrumbButton onClick={() => goBack('/timesheets')}>Timesheets</BreadcrumbButton>
             </BreadcrumbItem>
             <BreadcrumbDivider />
             <BreadcrumbItem>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -66,6 +66,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -386,9 +387,9 @@ function round2(n) {
 export default function InvoiceForm() {
   const styles = useStyles();
   const { id } = useParams();
-  const navigate = useNavigate();
   const isNew = !id;
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const { registerGuard } = useUnsavedChanges();
+  const { navigate, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     clientId: '',
@@ -1146,7 +1147,7 @@ export default function InvoiceForm() {
     <div className={styles.page}>
       {/* Custom command bar with lifecycle actions */}
       <div className={styles.commandBar}>
-        <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => guardedNavigate('/invoices')} size="small">
+        <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => goBack('/invoices')} size="small">
           Back
         </Button>
         <ToolbarDivider />
@@ -1207,7 +1208,7 @@ export default function InvoiceForm() {
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbButton onClick={() => guardedNavigate('/invoices')}>Invoices</BreadcrumbButton>
+              <BreadcrumbButton onClick={() => goBack('/invoices')}>Invoices</BreadcrumbButton>
             </BreadcrumbItem>
             <BreadcrumbDivider />
             <BreadcrumbItem>
@@ -1434,7 +1435,7 @@ export default function InvoiceForm() {
                                     style={{ minWidth: 'auto', padding: '0 2px', height: '20px' }}
                                   />
                                 </Tooltip>
-                                <Link onClick={() => guardedNavigate(`/transactions/${tx._id}`)}>
+                                <Link onClick={() => navigate(`/transactions/${tx._id}`)}>
                                   {tx.description || 'Transaction'} {tx.date ? `(${tx.date})` : ''}
                                 </Link>
                               </span>

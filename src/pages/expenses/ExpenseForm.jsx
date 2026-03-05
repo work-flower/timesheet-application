@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -50,6 +50,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -150,9 +151,9 @@ const baseTransactionColumns = [
 export default function ExpenseForm() {
   const styles = useStyles();
   const { id } = useParams();
-  const navigate = useNavigate();
   const isNew = !id;
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const { registerGuard } = useUnsavedChanges();
+  const { navigate, goBack } = useAppNavigate();
   const sourceTransactionId = useMemo(() => {
     if (!isNew) return null;
     return new URLSearchParams(window.location.search).get('transactionId');
@@ -492,7 +493,7 @@ export default function ExpenseForm() {
   return (
     <div className={styles.page}>
       <FormCommandBar
-        onBack={() => guardedNavigate('/expenses')}
+        onBack={() => goBack('/expenses')}
         onSave={handleSave}
         onSaveAndClose={handleSaveAndClose}
         onDelete={!isNew ? () => setDeleteOpen(true) : undefined}
@@ -527,7 +528,7 @@ export default function ExpenseForm() {
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbButton onClick={() => guardedNavigate('/expenses')}>Expenses</BreadcrumbButton>
+              <BreadcrumbButton onClick={() => goBack('/expenses')}>Expenses</BreadcrumbButton>
             </BreadcrumbItem>
             <BreadcrumbDivider />
             <BreadcrumbItem>
@@ -756,7 +757,7 @@ export default function ExpenseForm() {
                               />
                             </Tooltip>
                           )}
-                          <Link onClick={() => guardedNavigate(`/transactions/${tx._id}`)}>
+                          <Link onClick={() => navigate(`/transactions/${tx._id}`)}>
                             {tx.description || 'Transaction'} {tx.date ? `(${tx.date})` : ''}
                           </Link>
                         </span>

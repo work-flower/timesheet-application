@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -38,6 +38,7 @@ import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -126,9 +127,9 @@ const EXCLUDED_KEYS = new Set(['_id', 'importJobId', 'createdAt', 'updatedAt', '
 export default function ImportJobForm() {
   const styles = useStyles();
   const { id } = useParams();
-  const navigate = useNavigate();
   const isNew = !id;
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const { registerGuard } = useUnsavedChanges();
+  const { navigate, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     userPrompt: 'Parse the attached bank statement.',
@@ -378,7 +379,7 @@ export default function ImportJobForm() {
     <div className={styles.page}>
       {/* Custom command bar */}
       <div className={styles.commandBar}>
-        <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => guardedNavigate('/import-jobs')} size="small">
+        <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => goBack('/import-jobs')} size="small">
           Back
         </Button>
         {(!isLocked && !isProcessing) && (
@@ -413,7 +414,7 @@ export default function ImportJobForm() {
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbButton onClick={() => guardedNavigate('/import-jobs')}>Import Transactions</BreadcrumbButton>
+              <BreadcrumbButton onClick={() => goBack('/import-jobs')}>Import Transactions</BreadcrumbButton>
             </BreadcrumbItem>
             <BreadcrumbDivider />
             <BreadcrumbItem>

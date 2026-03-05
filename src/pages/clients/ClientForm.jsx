@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -33,6 +33,7 @@ import FormCommandBar from '../../components/FormCommandBar.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -182,9 +183,9 @@ const invoiceColumns = [
 export default function ClientForm() {
   const styles = useStyles();
   const { id } = useParams();
-  const navigate = useNavigate();
   const isNew = !id;
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const { registerGuard } = useUnsavedChanges();
+  const { navigate, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     companyName: '', primaryContactName: '', primaryContactEmail: '',
@@ -292,7 +293,7 @@ export default function ClientForm() {
   return (
     <div className={styles.page}>
       <FormCommandBar
-        onBack={() => guardedNavigate('/clients')}
+        onBack={() => goBack('/clients')}
         onSave={handleSave}
         onSaveAndClose={handleSaveAndClose}
         saveDisabled={!form.companyName}
@@ -303,7 +304,7 @@ export default function ClientForm() {
         <div className={styles.header}>
           <Breadcrumb>
             <BreadcrumbItem>
-              <BreadcrumbButton onClick={() => guardedNavigate('/clients')}>Clients</BreadcrumbButton>
+              <BreadcrumbButton onClick={() => goBack('/clients')}>Clients</BreadcrumbButton>
             </BreadcrumbItem>
             <BreadcrumbDivider />
             <BreadcrumbItem>
@@ -436,7 +437,7 @@ export default function ClientForm() {
                 </DataGridHeader>
                 <DataGridBody>
                   {({ item, rowId }) => (
-                    <DataGridRow key={rowId} className={styles.row} onClick={() => guardedNavigate(`/projects/${item._id}`)}>
+                    <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/projects/${item._id}`)}>
                       {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                     </DataGridRow>
                   )}
@@ -457,7 +458,7 @@ export default function ClientForm() {
                 </DataGridHeader>
                 <DataGridBody>
                   {({ item, rowId }) => (
-                    <DataGridRow key={rowId} className={styles.row} onClick={() => guardedNavigate(`/timesheets/${item._id}`)}>
+                    <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/timesheets/${item._id}`)}>
                       {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                     </DataGridRow>
                   )}
@@ -478,7 +479,7 @@ export default function ClientForm() {
                 </DataGridHeader>
                 <DataGridBody>
                   {({ item, rowId }) => (
-                    <DataGridRow key={rowId} className={styles.row} onClick={() => guardedNavigate(`/expenses/${item._id}`)}>
+                    <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/expenses/${item._id}`)}>
                       {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                     </DataGridRow>
                   )}
@@ -499,7 +500,7 @@ export default function ClientForm() {
                 </DataGridHeader>
                 <DataGridBody>
                   {({ item, rowId }) => (
-                    <DataGridRow key={rowId} className={styles.row} onClick={() => guardedNavigate(`/invoices/${item._id}`)}>
+                    <DataGridRow key={rowId} className={styles.row} onClick={() => navigate(`/invoices/${item._id}`)}>
                       {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                     </DataGridRow>
                   )}

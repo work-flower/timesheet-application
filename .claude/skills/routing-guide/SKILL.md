@@ -1,6 +1,6 @@
 ---
 name: routing-guide
-description: Standards for routing and navigation. Load this skill when adding, modifying, or fixing routes, sidebar menu items, navigation guards, or breadcrumbs — covers App.jsx registration, AppLayout sidebar, guardedNavigate, and file structure conventions.
+description: Standards for routing and navigation. Load this skill when adding, modifying, or fixing routes, sidebar menu items, navigation guards, or breadcrumbs — covers App.jsx registration, AppLayout sidebar, useAppNavigate, and file structure conventions.
 user-invocable: true
 allowed-tools: Read, Grep, Glob
 ---
@@ -70,27 +70,31 @@ Import from `@fluentui/react-icons`. Use `*Regular` variants (not `*Filled`). Pa
 
 ## Navigation Guards
 
-All in-app navigation must use `guardedNavigate()` from `useUnsavedChanges()` context — never use `navigate()` directly for navigation within the app.
+All in-app navigation uses `useAppNavigate()` hook (`src/hooks/useAppNavigate.js`) which automatically checks the unsaved-changes guard before navigating. Never use React Router's `useNavigate()` directly in components that have dirty tracking.
+
+`useAppNavigate()` returns `{ navigate, goBack }`:
+- `navigate(to, options)` — guard-checked navigation to a route
+- `goBack(fallback)` — goes to previous page (`navigate(-1)`) when browser history exists, falls back to `fallback` route on direct URL access. Use for Back buttons and breadcrumbs.
 
 ```jsx
-const { guardedNavigate } = useUnsavedChanges();
+// In AppLayout sidebar:
+const { navigate } = useAppNavigate();
+onClick={(e) => { e.preventDefault(); navigate(item.to); }}
 
-// In sidebar links:
-onClick={(e) => { e.preventDefault(); guardedNavigate(item.to); }}
+// In forms:
+const { navigate, goBack } = useAppNavigate();
 
-// In form Back button:
-onBack={() => guardedNavigate('/entities')}
+// Back button:
+onBack={() => goBack('/entities')}
 
-// In breadcrumbs:
-<BreadcrumbButton onClick={() => guardedNavigate('/entities')}>Entities</BreadcrumbButton>
+// Breadcrumbs:
+<BreadcrumbButton onClick={() => goBack('/entities')}>Entities</BreadcrumbButton>
+
+// Forward navigation (row clicks, entity links):
+onClick={() => navigate(`/entities/${item._id}`)}
 ```
 
-The only exceptions where `navigate()` is used directly:
-- After a successful create (navigating to the new record)
-- After a successful delete (navigating to list)
-- After save & close (navigating to list)
-
-These are post-save navigations where there are no unsaved changes to guard.
+Post-save/delete navigation (create → record, save & close → list, delete → list) also uses `navigate()` from the hook — safe because `isDirty` is false after save.
 
 ## Breadcrumbs
 
@@ -99,7 +103,7 @@ Every form has a breadcrumb at the top:
 ```jsx
 <Breadcrumb>
   <BreadcrumbItem>
-    <BreadcrumbButton onClick={() => guardedNavigate('/entities')}>Entities</BreadcrumbButton>
+    <BreadcrumbButton onClick={() => goBack('/entities')}>Entities</BreadcrumbButton>
   </BreadcrumbItem>
   <BreadcrumbDivider />
   <BreadcrumbItem>

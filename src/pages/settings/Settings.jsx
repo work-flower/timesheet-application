@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -21,6 +20,7 @@ import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 import BackupSettings from './BackupSettings.jsx';
 import InvoicingSettings from './InvoicingSettings.jsx';
 import AiConfigSettings from './AiConfigSettings.jsx';
@@ -53,8 +53,8 @@ const useStyles = makeStyles({
 
 export default function Settings() {
   const styles = useStyles();
-  const navigate = useNavigate();
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const { registerGuard } = useUnsavedChanges();
+  const { navigate, goBack } = useAppNavigate();
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', email: '', phone: '', address: '',
     businessName: '', utrNumber: '', vatNumber: '', companyRegistration: '',
@@ -125,7 +125,7 @@ export default function Settings() {
   return (
     <div className={styles.page}>
       <FormCommandBar
-        onBack={() => guardedNavigate('/')}
+        onBack={() => goBack('/')}
         onSave={handleSave}
         onSaveAndClose={handleSaveAndClose}
         saving={saving}

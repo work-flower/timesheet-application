@@ -17,7 +17,7 @@ One component handles both create and edit — detected via `useParams().id`.
 
 ```jsx
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { makeStyles, tokens, Text, Input, Field, Spinner, MessageBar, MessageBarBody,
   Breadcrumb, BreadcrumbItem, BreadcrumbDivider, BreadcrumbButton } from '@fluentui/react-components';
 import { entityApi } from '../../api/index.js';
@@ -27,6 +27,7 @@ import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 ```
 
 ## Standard Styles
@@ -53,9 +54,9 @@ const useStyles = makeStyles({
 export default function EntityForm() {
   const styles = useStyles();
   const { id } = useParams();
-  const navigate = useNavigate();
   const isNew = !id;
-  const { registerGuard, guardedNavigate } = useUnsavedChanges();
+  const { registerGuard } = useUnsavedChanges();
+  const { navigate, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     // all form fields with defaults
@@ -256,7 +257,7 @@ All form content must be inside this wrapper:
 
 ```jsx
 <FormCommandBar
-  onBack={() => guardedNavigate('/entities')}
+  onBack={() => goBack('/entities')}
   onSave={handleSave}
   onSaveAndClose={handleSaveAndClose}
   onDelete={!isNew ? () => setDeleteOpen(true) : undefined}

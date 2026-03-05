@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import UnsavedChangesDialog from '../components/UnsavedChangesDialog.jsx';
 
 const UnsavedChangesContext = createContext(null);
@@ -9,7 +8,6 @@ export function useUnsavedChanges() {
 }
 
 export function UnsavedChangesProvider({ children }) {
-  const navigate = useNavigate();
   const guardRef = useRef(null);
   const [isAnyDirty, setIsAnyDirty] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -27,38 +25,20 @@ export function UnsavedChangesProvider({ children }) {
     };
   }, []);
 
-  const executePending = useCallback(() => {
-    const pending = pendingRef.current;
+  const checkGuard = useCallback((execute) => {
+    if (guardRef.current?.isDirty) {
+      pendingRef.current = execute;
+      setDialogOpen(true);
+    } else {
+      execute();
+    }
+  }, []);
+
+  const runPending = useCallback(() => {
+    const fn = pendingRef.current;
     pendingRef.current = null;
-    if (!pending) return;
-    if (pending.type === 'navigate') {
-      navigate(pending.to, pending.options);
-    } else if (pending.type === 'callback') {
-      pending.fn();
-    }
-  }, [navigate]);
-
-  const guardedNavigate = useCallback((to, options) => {
-    if (guardRef.current?.isDirty) {
-      pendingRef.current = { type: 'navigate', to, options };
-      setDialogOpen(true);
-    } else {
-      navigate(to, options);
-    }
-  }, [navigate]);
-
-  const requestNavigation = useCallback((action) => {
-    if (guardRef.current?.isDirty) {
-      pendingRef.current = action;
-      setDialogOpen(true);
-    } else {
-      if (action.type === 'navigate') {
-        navigate(action.to, action.options);
-      } else if (action.type === 'callback') {
-        action.fn();
-      }
-    }
-  }, [navigate]);
+    if (fn) fn();
+  }, []);
 
   const handleSave = useCallback(async () => {
     const guard = guardRef.current;
@@ -67,16 +47,16 @@ export function UnsavedChangesProvider({ children }) {
     const ok = typeof result === 'object' ? result.ok : result;
     setDialogOpen(false);
     if (ok) {
-      executePending();
+      runPending();
     } else {
       pendingRef.current = null;
     }
-  }, [executePending]);
+  }, [runPending]);
 
   const handleDiscard = useCallback(() => {
     setDialogOpen(false);
-    executePending();
-  }, [executePending]);
+    runPending();
+  }, [runPending]);
 
   const handleCancel = useCallback(() => {
     setDialogOpen(false);
@@ -113,10 +93,7 @@ export function UnsavedChangesProvider({ children }) {
       // Re-push sentinel to prevent navigation
       window.history.pushState({ sentinel: true }, '');
       // Show dialog with a callback that does history.go(-2)
-      pendingRef.current = {
-        type: 'callback',
-        fn: () => window.history.go(-2),
-      };
+      pendingRef.current = () => window.history.go(-2);
       setDialogOpen(true);
     };
 
@@ -136,7 +113,7 @@ export function UnsavedChangesProvider({ children }) {
     };
   }, [isAnyDirty]);
 
-  const value = { registerGuard, guardedNavigate, requestNavigation };
+  const value = { registerGuard, checkGuard };
 
   return (
     <UnsavedChangesContext.Provider value={value}>

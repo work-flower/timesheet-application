@@ -17,7 +17,7 @@ Sticky command bar at the top of all form views.
 
 | Prop | Type | Description |
 | --- | --- | --- |
-| `onBack` | `() => void` | Required. Navigate back (use `guardedNavigate`). |
+| `onBack` | `() => void` | Required. Navigate back (use `goBack` from `useAppNavigate`). |
 | `onSave` | `() => void` | Save handler. Hidden when `locked`. |
 | `onSaveAndClose` | `() => void` | Optional. Save & Close handler. Hidden when `locked`. |
 | `onDelete` | `() => void` | Optional. Opens delete confirmation. Hidden when `locked`. |
@@ -31,7 +31,7 @@ Sticky command bar at the top of all form views.
 Standard form:
 ```jsx
 <FormCommandBar
-  onBack={() => guardedNavigate('/entities')}
+  onBack={() => goBack('/entities')}
   onSave={handleSave}
   onSaveAndClose={handleSaveAndClose}
   onDelete={!isNew ? () => setDeleteOpen(true) : undefined}
