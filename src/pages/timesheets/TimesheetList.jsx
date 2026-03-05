@@ -22,6 +22,9 @@ import { OpenRegular } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
+import ViewToggle from '../../components/ViewToggle.jsx';
+import ListView from '../../components/ListView.jsx';
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import TimesheetDrawer from './TimesheetDrawer.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { timesheetsApi, clientsApi, projectsApi } from '../../api/index.js';
@@ -97,6 +100,50 @@ const useStyles = makeStyles({
     '&:hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
+  },
+  dateBold: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase300,
+    minWidth: '70px',
+    color: tokens.colorNeutralForeground1,
+  },
+  projectText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  clientText: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  dot: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  hoursText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  amountText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+    minWidth: '80px',
+    textAlign: 'right',
+  },
+  notesText: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+    lineHeight: tokens.lineHeightBase200,
+  },
+  cardNotesText: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+    lineHeight: tokens.lineHeightBase300,
   },
 });
 
@@ -183,6 +230,7 @@ export default function TimesheetList() {
   const [customStart, setCustomStart] = useState(() => localStorage.getItem('timesheets.customStart') || getWeekRange().startDate);
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('timesheets.customEnd') || getWeekRange().endDate);
   const [selectedTimesheetId, setSelectedTimesheetId] = useState(null);
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('timesheets.viewMode') || 'grid');
 
   // Persist filter selections to localStorage
   useEffect(() => { localStorage.setItem('timesheets.range', range); }, [range]);
@@ -190,6 +238,7 @@ export default function TimesheetList() {
   useEffect(() => { localStorage.setItem('timesheets.projectId', projectId); }, [projectId]);
   useEffect(() => { localStorage.setItem('timesheets.customStart', customStart); }, [customStart]);
   useEffect(() => { localStorage.setItem('timesheets.customEnd', customEnd); }, [customEnd]);
+  useEffect(() => { localStorage.setItem('timesheets.viewMode', viewMode); }, [viewMode]);
 
   const filteredProjects = useMemo(
     () => clientId ? allProjects.filter((p) => p.clientId === clientId) : allProjects,
@@ -327,13 +376,16 @@ export default function TimesheetList() {
             <option key={p._id} value={p._id}>{p.name}</option>
           ))}
         </Select>
+        <div style={{ marginLeft: 'auto' }}>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div className={styles.loading}><Spinner label="Loading..." /></div>
         ) : entries.length === 0 ? (
           <div className={styles.empty}><Text>No timesheet entries found for this period.</Text></div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <DataGrid
             items={pageItems}
             columns={columns}
@@ -359,6 +411,73 @@ export default function TimesheetList() {
               )}
             </DataGridBody>
           </DataGrid>
+        ) : viewMode === 'list' ? (
+          <ListView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/timesheets/${item._id}`)}
+            renderTopLine={(item) => (
+              <>
+                <Text className={styles.dateBold}>{item.date}</Text>
+                <Text className={styles.projectText}>{item.projectName}</Text>
+                <Text className={styles.dot}>·</Text>
+                <Text className={styles.clientText}>{item.clientName}</Text>
+              </>
+            )}
+            renderActions={(item) => (
+              <>
+                <Text className={styles.hoursText}>{item.hours}h</Text>
+                <Text className={styles.amountText}>{fmt.format(item.amount || 0)}</Text>
+                <Tooltip content="Quick view" relationship="label" withArrow>
+                  <Button
+                    appearance="subtle"
+                    icon={<OpenRegular />}
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); setSelectedTimesheetId(item._id); }}
+                    style={{ minWidth: 'auto' }}
+                  />
+                </Tooltip>
+              </>
+            )}
+            renderBottomLine={(item) => item.notes ? (
+              <Text className={styles.notesText}>{item.notes}</Text>
+            ) : null}
+          />
+        ) : (
+          <CardView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/timesheets/${item._id}`)}
+            renderHeader={(item) => (
+              <>
+                <Text className={styles.dateBold}>{item.date}</Text>
+                <Text className={styles.projectText}>{item.projectName}</Text>
+                <Text className={styles.dot}>·</Text>
+                <Text className={styles.clientText}>{item.clientName}</Text>
+              </>
+            )}
+            renderActions={(item) => (
+              <Tooltip content="Quick view" relationship="label" withArrow>
+                <Button
+                  appearance="subtle"
+                  icon={<OpenRegular />}
+                  size="small"
+                  onClick={(e) => { e.stopPropagation(); setSelectedTimesheetId(item._id); }}
+                  style={{ minWidth: 'auto' }}
+                />
+              </Tooltip>
+            )}
+            renderMeta={(item) => (
+              <>
+                <CardMetaItem label="Hours" value={item.hours} />
+                <CardMetaItem label="Days" value={item.days != null ? item.days.toFixed(2) : '—'} />
+                <CardMetaItem label="Amount" value={fmt.format(item.amount || 0)} />
+              </>
+            )}
+            renderFooter={(item) => item.notes ? (
+              <Text className={styles.cardNotesText}>{item.notes}</Text>
+            ) : null}
+          />
         )}
       </div>
       <PaginationControls

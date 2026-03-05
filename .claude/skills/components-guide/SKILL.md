@@ -1,6 +1,6 @@
 ---
 name: components-guide
-description: Standards for shared components and hooks. Load this skill when using or modifying FormCommandBar, CommandBar, FormSection, FormField, ConfirmDialog, MarkdownEditor, PaginationControls, AttachmentGallery, useFormTracker, or usePagination — covers props, contracts, and usage patterns.
+description: Standards for shared components and hooks. Load this skill when using or modifying FormCommandBar, CommandBar, FormSection, FormField, ConfirmDialog, MarkdownEditor, PaginationControls, AttachmentGallery, ViewToggle, ListView, CardView, useFormTracker, or usePagination — covers props, contracts, and usage patterns.
 user-invocable: true
 allowed-tools: Read, Grep, Glob
 ---
@@ -232,6 +232,92 @@ File upload and thumbnail gallery for expense attachments. Only shown on edit (n
     readOnly={!!isLocked}
   />
 )}
+```
+
+---
+
+## ViewToggle
+
+**Location:** `src/components/ViewToggle.jsx`
+
+Three-button toggle for switching between grid, list, and card view modes. Consumer manages state and localStorage persistence.
+
+### Props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `value` | `'grid'\|'list'\|'card'` | Current view mode. |
+| `onChange` | `(mode) => void` | Mode change callback. |
+
+### Usage
+
+```jsx
+<ViewToggle value={viewMode} onChange={setViewMode} />
+```
+
+---
+
+## ListView
+
+**Location:** `src/components/ListView.jsx`
+
+Generic two-line row layout using render props. Each row has a top line, optional bottom line, and optional right-aligned actions.
+
+### Props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `items` | `Array` | Paginated items (`pageItems`). |
+| `getRowId` | `(item) => string` | Unique key extractor. |
+| `onItemClick` | `(item) => void` | Row click handler. |
+| `renderTopLine` | `(item) => ReactNode` | First line content (fragments OK). |
+| `renderBottomLine` | `(item) => ReactNode\|null` | Optional second line (shown only if truthy). |
+| `renderActions` | `(item) => ReactNode` | Optional right-aligned actions area. |
+
+---
+
+## CardView
+
+**Location:** `src/components/CardView.jsx`
+
+Generic card layout with header, meta, footer, and actions sections. Also exports `CardMetaItem` as a named export.
+
+### CardView Props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `items` | `Array` | Paginated items. |
+| `getRowId` | `(item) => string` | Unique key extractor. |
+| `onItemClick` | `(item) => void` | Card click handler. |
+| `renderHeader` | `(item) => ReactNode` | Card header line. |
+| `renderMeta` | `(item) => ReactNode` | Optional metrics section. |
+| `renderFooter` | `(item) => ReactNode\|null` | Optional footer (gets top border). |
+| `renderActions` | `(item) => ReactNode` | Optional right-aligned header actions. |
+
+### CardMetaItem Props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `label` | `string` | Uppercase label text. |
+| `value` | `ReactNode` | Bold value content. |
+
+### Usage
+
+```jsx
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
+
+<CardView
+  items={pageItems}
+  getRowId={(item) => item._id}
+  onItemClick={(item) => navigate(`/entities/${item._id}`)}
+  renderHeader={(item) => <Text>{item.name}</Text>}
+  renderMeta={(item) => (
+    <>
+      <CardMetaItem label="Hours" value={item.hours} />
+      <CardMetaItem label="Amount" value={fmt.format(item.amount)} />
+    </>
+  )}
+/>
 ```
 
 ---

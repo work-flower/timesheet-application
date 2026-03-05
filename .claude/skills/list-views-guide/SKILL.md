@@ -26,6 +26,11 @@ import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { entityApi } from '../../api/index.js';
+
+// Optional — only when using alternative view modes:
+// import ViewToggle from '../../components/ViewToggle.jsx';
+// import ListView from '../../components/ListView.jsx';
+// import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 ```
 
 ## Standard Styles
@@ -91,9 +96,9 @@ const useStyles = makeStyles({
 page
   └── header (title)
   └── CommandBar (New, Delete, Search)
-  └── filters (ToggleButtons, Selects, date pickers)
+  └── filters (ToggleButtons, Selects, date pickers, optional ViewToggle at right)
   └── grid wrapper (flex: 1, overflow: auto)
-        └── loading spinner OR empty message OR DataGrid
+        └── loading spinner OR empty message OR DataGrid (or ListView/CardView)
   └── PaginationControls
   └── summary footer (totals)
   └── ConfirmDialog for delete
@@ -413,3 +418,126 @@ Render the drawer at the end of the list component:
 ### Reference Implementation
 
 See `src/pages/transactions/TransactionDrawer.jsx` and `src/pages/transactions/TransactionList.jsx` for a complete working example.
+
+## Alternative View Modes (Optional)
+
+**IMPORTANT:** List and Card views are NOT part of the default list view pattern. Only add them when the developer explicitly requests alternative view modes. The default is always a DataGrid.
+
+### ViewToggle
+
+Three-button toggle (grid/list/card) placed at the right edge of the filters bar:
+
+```jsx
+import ViewToggle from '../../components/ViewToggle.jsx';
+
+// State + localStorage persistence (consumer manages):
+const [viewMode, setViewMode] = useState(() => localStorage.getItem('entities.viewMode') || 'grid');
+useEffect(() => { localStorage.setItem('entities.viewMode', viewMode); }, [viewMode]);
+
+// In filters bar, at the right edge:
+<div style={{ marginLeft: 'auto' }}>
+  <ViewToggle value={viewMode} onChange={setViewMode} />
+</div>
+```
+
+### ListView
+
+Generic two-line row layout using render props:
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `items` | `Array` | Paginated items (`pageItems`) |
+| `getRowId` | `(item) => string` | Unique key |
+| `onItemClick` | `(item) => void` | Row click handler |
+| `renderTopLine` | `(item) => ReactNode` | First line content |
+| `renderBottomLine` | `(item) => ReactNode\|null` | Optional second line (shown only if truthy) |
+| `renderActions` | `(item) => ReactNode` | Optional right-aligned actions |
+
+```jsx
+import ListView from '../../components/ListView.jsx';
+
+<ListView
+  items={pageItems}
+  getRowId={(item) => item._id}
+  onItemClick={(item) => navigate(`/entities/${item._id}`)}
+  renderTopLine={(item) => (
+    <>
+      <Text className={styles.dateBold}>{item.date}</Text>
+      <Text className={styles.nameText}>{item.name}</Text>
+    </>
+  )}
+  renderActions={(item) => (
+    <>
+      <Text className={styles.valueText}>{item.value}</Text>
+      <QuickViewButton item={item} />
+    </>
+  )}
+  renderBottomLine={(item) => item.notes ? (
+    <Text className={styles.notesText}>{item.notes}</Text>
+  ) : null}
+/>
+```
+
+### CardView + CardMetaItem
+
+Generic card layout with header/meta/footer sections:
+
+**CardView props:**
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `items` | `Array` | Paginated items |
+| `getRowId` | `(item) => string` | Unique key |
+| `onItemClick` | `(item) => void` | Card click handler |
+| `renderHeader` | `(item) => ReactNode` | Card header line |
+| `renderMeta` | `(item) => ReactNode` | Optional metrics section (use CardMetaItem) |
+| `renderFooter` | `(item) => ReactNode\|null` | Optional footer (gets top border separator) |
+| `renderActions` | `(item) => ReactNode` | Optional right-aligned header actions |
+
+**CardMetaItem props:** `label` (string), `value` (ReactNode) — uppercase label + bold value pair.
+
+```jsx
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
+
+<CardView
+  items={pageItems}
+  getRowId={(item) => item._id}
+  onItemClick={(item) => navigate(`/entities/${item._id}`)}
+  renderHeader={(item) => (
+    <>
+      <Text className={styles.dateBold}>{item.date}</Text>
+      <Text className={styles.nameText}>{item.name}</Text>
+    </>
+  )}
+  renderActions={(item) => <QuickViewButton item={item} />}
+  renderMeta={(item) => (
+    <>
+      <CardMetaItem label="Hours" value={item.hours} />
+      <CardMetaItem label="Amount" value={fmt.format(item.amount)} />
+    </>
+  )}
+  renderFooter={(item) => item.notes ? (
+    <Text className={styles.notesText}>{item.notes}</Text>
+  ) : null}
+/>
+```
+
+### Conditional Rendering Pattern
+
+```jsx
+{loading ? (
+  <Spinner />
+) : entries.length === 0 ? (
+  <EmptyMessage />
+) : viewMode === 'grid' ? (
+  <DataGrid ... />
+) : viewMode === 'list' ? (
+  <ListView ... />
+) : (
+  <CardView ... />
+)}
+```
+
+### Reference Implementation
+
+See `src/pages/timesheets/TimesheetList.jsx` for a complete working example with all three view modes.
