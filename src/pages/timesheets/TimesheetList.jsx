@@ -1,9 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
   Text,
+  Button,
+  Tooltip,
   ToggleButton,
   Select,
   DataGrid,
@@ -16,9 +18,11 @@ import {
   createTableColumn,
   Spinner,
 } from '@fluentui/react-components';
+import { OpenRegular } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
+import TimesheetDrawer from './TimesheetDrawer.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { timesheetsApi, clientsApi, projectsApi } from '../../api/index.js';
 
@@ -119,7 +123,7 @@ function getMonthRange() {
   };
 }
 
-const columns = [
+const baseColumns = [
   createTableColumn({
     columnId: 'date',
     compare: (a, b) => a.date.localeCompare(b.date),
@@ -178,6 +182,7 @@ export default function TimesheetList() {
   const [projectId, setProjectId] = useState(() => localStorage.getItem('timesheets.projectId') || '');
   const [customStart, setCustomStart] = useState(() => localStorage.getItem('timesheets.customStart') || getWeekRange().startDate);
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('timesheets.customEnd') || getWeekRange().endDate);
+  const [selectedTimesheetId, setSelectedTimesheetId] = useState(null);
 
   // Persist filter selections to localStorage
   useEffect(() => { localStorage.setItem('timesheets.range', range); }, [range]);
@@ -211,7 +216,7 @@ export default function TimesheetList() {
     return {};
   }, [range, customStart, customEnd]);
 
-  useEffect(() => {
+  const refreshEntries = useCallback(() => {
     setLoading(true);
     const params = { ...dateRange };
     if (clientId) params.clientId = clientId;
@@ -220,6 +225,29 @@ export default function TimesheetList() {
       .then(setEntries)
       .finally(() => setLoading(false));
   }, [dateRange, clientId, projectId]);
+
+  useEffect(() => { refreshEntries(); }, [refreshEntries]);
+
+  const columns = useMemo(() => [
+    createTableColumn({
+      columnId: 'actions',
+      renderHeaderCell: () => '',
+      renderCell: (item) => (
+        <TableCellLayout>
+          <Tooltip content="Quick view" relationship="label" withArrow>
+            <Button
+              appearance="subtle"
+              icon={<OpenRegular />}
+              size="small"
+              onClick={(e) => { e.stopPropagation(); setSelectedTimesheetId(item._id); }}
+              style={{ minWidth: 'auto' }}
+            />
+          </Tooltip>
+        </TableCellLayout>
+      ),
+    }),
+    ...baseColumns,
+  ], []);
 
   const totals = useMemo(() => {
     const totalHours = entries.reduce((sum, e) => sum + (e.hours || 0), 0);
@@ -310,6 +338,8 @@ export default function TimesheetList() {
             items={pageItems}
             columns={columns}
             sortable
+            resizableColumns
+            columnSizingOptions={{ actions: { idealWidth: 40, minWidth: 40 } }}
             getRowId={(item) => item._id}
             selectionMode="multiselect"
             selectedItems={selected}
@@ -361,6 +391,11 @@ export default function TimesheetList() {
         onConfirm={handleDelete}
         title="Delete Timesheet Entry"
         message="Are you sure you want to delete this timesheet entry?"
+      />
+      <TimesheetDrawer
+        timesheetId={selectedTimesheetId}
+        onClose={() => setSelectedTimesheetId(null)}
+        onMutate={refreshEntries}
       />
     </div>
   );

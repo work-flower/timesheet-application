@@ -355,7 +355,7 @@ Constrain the actions column width via `columnSizingOptions` on the DataGrid:
 Create a separate `{EntityName}Drawer.jsx` file in the same directory. Structure:
 
 ```
-OverlayDrawer (position="end", size="large")
+OverlayDrawer (position="end", size="{see sizing}")
   └── DrawerHeader
   │     └── DrawerHeaderTitle — record title + status badge
   │           action: "Open full form" button + dismiss button
@@ -365,6 +365,14 @@ OverlayDrawer (position="end", size="large")
         └── Read-only field sections (label/value pairs, balance, etc.)
         └── Collapsible source/detail sections
 ```
+
+**Drawer sizes:**
+
+| Size | Width | Use when |
+|------|-------|----------|
+| `small` | 320px | Simple read-only preview with few fields |
+| `medium` | 592px | Standard Quick View — field summary, links, notes |
+| `large` | 940px | Complex drawers with action toolbars, grids, pickers, or multi-section layouts |
 
 **Props:** `entityId` (string|null — null = closed), `onClose`, `onMutate` (refresh list after changes)
 
