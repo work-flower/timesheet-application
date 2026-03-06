@@ -426,8 +426,7 @@ export default function ExpenseForm() {
     setTxLoading(true);
     try {
       const result = await transactionsApi.getAll();
-      // Debit transactions only (amount < 0) for expenses
-      setTxList(result.filter(tx => tx.amount < 0));
+      setTxList(result);
     } catch (err) {
       setError(err.message);
     } finally {
