@@ -475,9 +475,7 @@ export default function ExpenseList() {
                 {item.transactions?.length > 0 && (
                   <Badge size="small" appearance="filled" color="brand">{item.transactions.length} linked</Badge>
                 )}
-                {!item.billable && (
-                  <Badge size="small" appearance="filled" color="warning">Non-billable</Badge>
-                )}
+                <Badge size="small" appearance="filled" color={item.billable ? 'success' : 'warning'}>{item.billable ? 'Billable' : 'Non-billable'}</Badge>
                 <Text className={styles.amountText}>{fmt.format(item.amount || 0)}</Text>
               </>
             )}
@@ -499,9 +497,7 @@ export default function ExpenseList() {
                 {item.transactions?.length > 0 && (
                   <Badge size="small" appearance="filled" color="brand">{item.transactions.length} linked</Badge>
                 )}
-                {!item.billable && (
-                  <Badge size="small" appearance="filled" color="warning">Non-billable</Badge>
-                )}
+                <Badge size="small" appearance="filled" color={item.billable ? 'success' : 'warning'}>{item.billable ? 'Billable' : 'Non-billable'}</Badge>
               </>
             )}
             renderMeta={(item) => (
