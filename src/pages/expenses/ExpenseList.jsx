@@ -226,11 +226,11 @@ export default function ExpenseList() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useListState('expenses', {
-    range: 'month', clientId: '', projectId: '', expenseType: '', search: '',
+    range: 'month', clientId: '', projectId: '', expenseType: '', billableFilter: '', search: '',
     customStart: getWeekRange().startDate, customEnd: getWeekRange().endDate,
     viewMode: 'grid', page: 1, pageSize: 25,
   });
-  const { range, clientId, projectId, expenseType, customStart, customEnd, viewMode, search } = filters;
+  const { range, clientId, projectId, expenseType, billableFilter, customStart, customEnd, viewMode, search } = filters;
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [clients, setClients] = useState([]);
@@ -279,18 +279,23 @@ export default function ExpenseList() {
   }, [dateRange, clientId, projectId, expenseType]);
 
   const filteredEntries = useMemo(() => {
-    if (!search) return entries;
-    const q = String(search).toLowerCase();
-    return entries.filter((e) =>
-      (e.date || '').includes(q) ||
-      String(e.description || '').toLowerCase().includes(q) ||
-      String(e.expenseType || '').toLowerCase().includes(q) ||
-      String(e.externalReference || '').toLowerCase().includes(q) ||
-      String(e.clientName || '').toLowerCase().includes(q) ||
-      String(e.projectName || '').toLowerCase().includes(q) ||
-      String(e.amount ?? '').includes(q)
-    );
-  }, [entries, search]);
+    let result = entries;
+    if (billableFilter === 'billable') result = result.filter((e) => e.billable);
+    else if (billableFilter === 'nonbillable') result = result.filter((e) => !e.billable);
+    if (search) {
+      const q = String(search).toLowerCase();
+      result = result.filter((e) =>
+        (e.date || '').includes(q) ||
+        String(e.description || '').toLowerCase().includes(q) ||
+        String(e.expenseType || '').toLowerCase().includes(q) ||
+        String(e.externalReference || '').toLowerCase().includes(q) ||
+        String(e.clientName || '').toLowerCase().includes(q) ||
+        String(e.projectName || '').toLowerCase().includes(q) ||
+        String(e.amount ?? '').includes(q)
+      );
+    }
+    return result;
+  }, [entries, billableFilter, search]);
 
   const totals = useMemo(() => {
     const billableTotal = filteredEntries.filter((e) => e.billable).reduce((sum, e) => sum + (e.amount || 0), 0);
@@ -401,6 +406,17 @@ export default function ExpenseList() {
           {expenseTypes.map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
+        </Select>
+        <Text size={200} weight="semibold">Billable:</Text>
+        <Select
+          size="small"
+          value={billableFilter}
+          onChange={(e, data) => setFilters({ billableFilter: data.value, page: 1 })}
+          style={{ minWidth: 120 }}
+        >
+          <option value="">All</option>
+          <option value="billable">Billable</option>
+          <option value="nonbillable">Non-Billable</option>
         </Select>
         <div style={{ marginLeft: 'auto' }}>
           <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
