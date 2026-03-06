@@ -22,6 +22,9 @@ import {
 import { OpenRegular } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
+import ViewToggle from '../../components/ViewToggle.jsx';
+import ListView from '../../components/ListView.jsx';
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { transactionsApi } from '../../api/index.js';
 import TransactionDrawer from './TransactionDrawer.jsx';
@@ -97,6 +100,34 @@ const useStyles = makeStyles({
     ':hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
+  },
+  dateBold: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase300,
+    minWidth: '70px',
+    color: tokens.colorNeutralForeground1,
+  },
+  descText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  secondaryText: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  dot: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  amountText: {
+    fontSize: tokens.fontSizeBase300,
+    fontWeight: tokens.fontWeightSemibold,
+    minWidth: '80px',
+    textAlign: 'right',
   },
 });
 
@@ -200,6 +231,7 @@ export default function TransactionList() {
   const [customStart, setCustomStart] = useState(() => localStorage.getItem('transactions.customStart') || getWeekRange().startDate);
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('transactions.customEnd') || getWeekRange().endDate);
   const [selectedTransactionId, setSelectedTransactionId] = useState(null);
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('transactions.viewMode') || 'grid');
 
   // Persist filter selections
   useEffect(() => { localStorage.setItem('transactions.status', statusFilter); }, [statusFilter]);
@@ -207,6 +239,7 @@ export default function TransactionList() {
   useEffect(() => { localStorage.setItem('transactions.account', accountFilter); }, [accountFilter]);
   useEffect(() => { localStorage.setItem('transactions.customStart', customStart); }, [customStart]);
   useEffect(() => { localStorage.setItem('transactions.customEnd', customEnd); }, [customEnd]);
+  useEffect(() => { localStorage.setItem('transactions.viewMode', viewMode); }, [viewMode]);
 
   const dateRange = useMemo(() => {
     if (range === 'week') return getWeekRange();
@@ -338,13 +371,16 @@ export default function TransactionList() {
             </Select>
           </>
         )}
+        <div style={{ marginLeft: 'auto' }}>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div className={styles.loading}><Spinner label="Loading..." /></div>
         ) : filtered.length === 0 ? (
           <div className={styles.empty}><Text>No transactions found.</Text></div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <DataGrid
             items={pageItems}
             columns={columns}
@@ -367,6 +403,82 @@ export default function TransactionList() {
               )}
             </DataGridBody>
           </DataGrid>
+        ) : viewMode === 'list' ? (
+          <ListView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/transactions/${item._id}`)}
+            renderTopLine={(item) => (
+              <>
+                <Text className={styles.dateBold}>{item.date}</Text>
+                <Text className={styles.descText}>{item.description}</Text>
+                <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
+                  {item.status}
+                </Badge>
+              </>
+            )}
+            renderActions={(item) => (
+              <>
+                <Text className={styles.amountText} style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
+                  {fmtGBP.format(item.amount)}
+                </Text>
+                <Tooltip content="Quick view" relationship="label" withArrow>
+                  <Button
+                    appearance="subtle"
+                    icon={<OpenRegular />}
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); setSelectedTransactionId(item._id); }}
+                    style={{ minWidth: 'auto' }}
+                  />
+                </Tooltip>
+              </>
+            )}
+            renderBottomLine={(item) => (
+              <Text className={styles.secondaryText}>
+                {[item.accountName, item.accountNumber, item.reference].filter(Boolean).join(' · ')}
+              </Text>
+            )}
+          />
+        ) : (
+          <CardView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/transactions/${item._id}`)}
+            renderHeader={(item) => (
+              <>
+                <Text className={styles.dateBold}>{item.date}</Text>
+                <Text className={styles.descText}>{item.description}</Text>
+                <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
+                  {item.status}
+                </Badge>
+              </>
+            )}
+            renderActions={(item) => (
+              <Tooltip content="Quick view" relationship="label" withArrow>
+                <Button
+                  appearance="subtle"
+                  icon={<OpenRegular />}
+                  size="small"
+                  onClick={(e) => { e.stopPropagation(); setSelectedTransactionId(item._id); }}
+                  style={{ minWidth: 'auto' }}
+                />
+              </Tooltip>
+            )}
+            renderMeta={(item) => (
+              <>
+                <CardMetaItem label="Amount" value={
+                  <span style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
+                    {fmtGBP.format(item.amount)}
+                  </span>
+                } />
+                <CardMetaItem label="Account" value={item.accountName || '—'} />
+                {item.reference && <CardMetaItem label="Reference" value={item.reference} />}
+              </>
+            )}
+            renderFooter={(item) => item.accountNumber ? (
+              <Text className={styles.secondaryText}>Account No. {item.accountNumber}</Text>
+            ) : null}
+          />
         )}
       </div>
       <PaginationControls
