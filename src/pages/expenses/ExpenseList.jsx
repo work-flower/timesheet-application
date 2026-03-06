@@ -287,7 +287,8 @@ export default function ExpenseList() {
       String(e.expenseType || '').toLowerCase().includes(q) ||
       String(e.externalReference || '').toLowerCase().includes(q) ||
       String(e.clientName || '').toLowerCase().includes(q) ||
-      String(e.projectName || '').toLowerCase().includes(q)
+      String(e.projectName || '').toLowerCase().includes(q) ||
+      String(e.amount ?? '').includes(q)
     );
   }, [entries, search]);
 
