@@ -87,9 +87,9 @@ export async function getById(id) {
       amount: tx.amount,
       status: tx.status,
     }));
-    transactionsTotal = linkedTransactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+    transactionsTotal = linkedTransactions.reduce((sum, tx) => sum + tx.amount, 0);
   }
-  const remainingBalance = Math.abs(entry.amount || 0) - transactionsTotal;
+  const remainingBalance = (entry.amount || 0) + transactionsTotal;
 
   return {
     ...entry,

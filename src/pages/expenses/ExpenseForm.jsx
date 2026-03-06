@@ -738,7 +738,7 @@ export default function ExpenseForm() {
               <div className={styles.balanceSection}>
                 <div className={styles.balanceRow}>
                   <span>Expense Amount</span>
-                  <span>{fmtGBP.format(Math.abs(loadedData?.amount || 0))}</span>
+                  <span>{fmtGBP.format(loadedData?.amount || 0)}</span>
                 </div>
 
                 {loadedData?.linkedTransactions?.length > 0 && (
@@ -765,7 +765,7 @@ export default function ExpenseForm() {
                             {tx.description || 'Transaction'} {tx.date ? `(${tx.date})` : ''}
                           </Link>
                         </span>
-                        <span>{fmtGBP.format(Math.abs(tx.amount))}</span>
+                        <span>{fmtGBP.format(tx.amount)}</span>
                       </div>
                     ))}
                   </>
@@ -776,21 +776,14 @@ export default function ExpenseForm() {
                   const remaining = loadedData?.remainingBalance ?? (loadedData?.amount || 0);
                   const balanceColor = remaining === 0
                     ? tokens.colorPaletteGreenForeground1
-                    : remaining < 0
-                      ? tokens.colorPaletteRedForeground1
-                      : tokens.colorStatusWarningForeground3;
+                    : tokens.colorStatusWarningForeground3;
                   return (
                     <div className={styles.balanceTotal}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         Remaining Balance
-                        {remaining > 0 && (
-                          <Tooltip content="Expense not fully covered by linked transactions" relationship="label" withArrow>
+                        {remaining !== 0 && (
+                          <Tooltip content="Balance not fully reconciled" relationship="label" withArrow>
                             <WarningFilled style={{ color: tokens.colorStatusWarningForeground3, fontSize: '20px' }} />
-                          </Tooltip>
-                        )}
-                        {remaining < 0 && (
-                          <Tooltip content="Linked amounts exceed the expense amount" relationship="label" withArrow>
-                            <WarningFilled style={{ color: tokens.colorPaletteRedForeground1, fontSize: '20px' }} />
                           </Tooltip>
                         )}
                       </span>
