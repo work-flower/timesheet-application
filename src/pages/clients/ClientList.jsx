@@ -4,6 +4,7 @@ import {
   makeStyles,
   tokens,
   Text,
+  Badge,
   DataGrid,
   DataGridHeader,
   DataGridHeaderCell,
@@ -212,6 +213,9 @@ export default function ClientList() {
             renderTopLine={(item) => (
               <>
                 <Text className={styles.companyName}>{item.companyName}</Text>
+                {item.isLocked && (
+                  <Badge size="small" appearance="filled" color="informative">{item.isLockedReason}</Badge>
+                )}
                 {item.primaryContactName && (
                   <>
                     <Text className={styles.dot}>·</Text>
@@ -235,7 +239,12 @@ export default function ClientList() {
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/clients/${item._id}`)}
             renderHeader={(item) => (
-              <Text className={styles.companyName}>{item.companyName}</Text>
+              <>
+                <Text className={styles.companyName}>{item.companyName}</Text>
+                {item.isLocked && (
+                  <Badge size="small" appearance="filled" color="informative">{item.isLockedReason}</Badge>
+                )}
+              </>
             )}
             renderMeta={(item) => (
               <>
