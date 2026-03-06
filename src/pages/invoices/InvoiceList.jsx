@@ -20,6 +20,9 @@ import {
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
+import ViewToggle from '../../components/ViewToggle.jsx';
+import ListView from '../../components/ListView.jsx';
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { invoicesApi, clientsApi } from '../../api/index.js';
 
@@ -83,6 +86,35 @@ const useStyles = makeStyles({
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
   },
+  invoiceNum: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    minWidth: '80px',
+  },
+  clientText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  secondaryText: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  dot: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  amountText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+    minWidth: '80px',
+    textAlign: 'right',
+  },
 });
 
 const statusColors = {
@@ -96,6 +128,13 @@ const paymentColors = {
   paid: 'success',
   overdue: 'danger',
 };
+
+function lineBreakdown(lines) {
+  const ts = (lines || []).filter(l => l.type === 'timesheet').reduce((s, l) => s + (l.grossAmount || 0), 0);
+  const exp = (lines || []).filter(l => l.type === 'expense').reduce((s, l) => s + (l.grossAmount || 0), 0);
+  const wi = (lines || []).filter(l => l.type === 'write-in').reduce((s, l) => s + (l.grossAmount || 0), 0);
+  return { ts, exp, wi };
+}
 
 const columns = [
   createTableColumn({
@@ -181,9 +220,11 @@ export default function InvoiceList() {
   const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('invoices.status') || '');
   const [clientId, setClientId] = useState(() => localStorage.getItem('invoices.clientId') || '');
   const [paymentFilter, setPaymentFilter] = useState(() => localStorage.getItem('invoices.payment') || '');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('invoices.viewMode') || 'grid');
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  useEffect(() => { localStorage.setItem('invoices.viewMode', viewMode); }, [viewMode]);
   useEffect(() => { localStorage.setItem('invoices.status', statusFilter); }, [statusFilter]);
   useEffect(() => { localStorage.setItem('invoices.clientId', clientId); }, [clientId]);
   useEffect(() => { localStorage.setItem('invoices.payment', paymentFilter); }, [paymentFilter]);
@@ -285,13 +326,16 @@ export default function InvoiceList() {
           <option value="paid">Paid</option>
           <option value="overdue">Overdue</option>
         </Select>
+        <div style={{ marginLeft: 'auto' }}>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div className={styles.loading}><Spinner label="Loading..." /></div>
         ) : filteredInvoices.length === 0 ? (
           <div className={styles.empty}><Text>No invoices found.</Text></div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <DataGrid
             items={pageItems}
             columns={columns}
@@ -315,6 +359,95 @@ export default function InvoiceList() {
               )}
             </DataGridBody>
           </DataGrid>
+        ) : viewMode === 'list' ? (
+          <ListView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/invoices/${item._id}`)}
+            renderTopLine={(item) => (
+              <>
+                <Text className={styles.invoiceNum}>{item.invoiceNumber || 'Draft'}</Text>
+                <Text className={styles.clientText}>{item.clientName}</Text>
+                <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
+                  {item.status?.charAt(0).toUpperCase() + item.status?.slice(1)}
+                </Badge>
+                {item.status === 'posted' && (
+                  <Badge appearance="filled" color={paymentColors[item.paymentStatus] || 'informative'} size="small">
+                    {item.paymentStatus?.charAt(0).toUpperCase() + item.paymentStatus?.slice(1)}
+                  </Badge>
+                )}
+              </>
+            )}
+            renderActions={(item) => (
+              <Text className={styles.amountText}>{fmt.format(item.total || 0)}</Text>
+            )}
+            renderBottomLine={(item) => {
+              const b = lineBreakdown(item.lines);
+              const hasPeriod = item.servicePeriodStart && item.servicePeriodEnd;
+              return (
+                <>
+                  <Text className={styles.secondaryText}>{item.invoiceDate}</Text>
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                    {b.ts > 0 && <Badge size="small" appearance="tint" color="brand">Timesheets {fmt.format(b.ts)}</Badge>}
+                    {b.exp > 0 && <Badge size="small" appearance="tint" color="warning">Expenses {fmt.format(b.exp)}</Badge>}
+                    {b.wi > 0 && <Badge size="small" appearance="tint" color="informative">Write-in {fmt.format(b.wi)}</Badge>}
+                    {item.transactions?.length > 0 && <Badge size="small" appearance="tint" color="success">{item.transactions.length} linked trans.</Badge>}
+                  </div>
+                  {hasPeriod && (
+                    <Text className={styles.secondaryText} style={{ marginTop: '4px' }}>
+                      Period: {item.servicePeriodStart} – {item.servicePeriodEnd}
+                    </Text>
+                  )}
+                </>
+              );
+            }}
+          />
+        ) : (
+          <CardView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/invoices/${item._id}`)}
+            renderHeader={(item) => (
+              <>
+                <Text className={styles.invoiceNum}>{item.invoiceNumber || 'Draft'}</Text>
+                <Text className={styles.clientText}>{item.clientName}</Text>
+                <Badge appearance="filled" color={statusColors[item.status] || 'informative'} size="small">
+                  {item.status?.charAt(0).toUpperCase() + item.status?.slice(1)}
+                </Badge>
+                {item.status === 'posted' && (
+                  <Badge appearance="filled" color={paymentColors[item.paymentStatus] || 'informative'} size="small">
+                    {item.paymentStatus?.charAt(0).toUpperCase() + item.paymentStatus?.slice(1)}
+                  </Badge>
+                )}
+              </>
+            )}
+            renderMeta={(item) => (
+              <>
+                <CardMetaItem label="Total" value={fmt.format(item.total || 0)} />
+                <CardMetaItem label="Date" value={item.invoiceDate || '—'} />
+                <CardMetaItem label="Due" value={item.dueDate || '—'} />
+              </>
+            )}
+            renderFooter={(item) => {
+              const b = lineBreakdown(item.lines);
+              const hasPeriod = item.servicePeriodStart && item.servicePeriodEnd;
+              return (
+                <>
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: hasPeriod ? '6px' : 0 }}>
+                    {b.ts > 0 && <Badge size="small" appearance="tint" color="brand">Timesheets {fmt.format(b.ts)}</Badge>}
+                    {b.exp > 0 && <Badge size="small" appearance="tint" color="warning">Expenses {fmt.format(b.exp)}</Badge>}
+                    {b.wi > 0 && <Badge size="small" appearance="tint" color="informative">Write-in {fmt.format(b.wi)}</Badge>}
+                    {item.transactions?.length > 0 && <Badge size="small" appearance="tint" color="success">{item.transactions.length} linked trans.</Badge>}
+                  </div>
+                  {hasPeriod && (
+                    <Text className={styles.secondaryText}>
+                      Period: {item.servicePeriodStart} – {item.servicePeriodEnd}
+                    </Text>
+                  )}
+                </>
+              );
+            }}
+          />
         )}
       </div>
       <PaginationControls
