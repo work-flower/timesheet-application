@@ -26,6 +26,7 @@ import ViewToggle from '../../components/ViewToggle.jsx';
 import ListView from '../../components/ListView.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
+import { useListState } from '../../hooks/useListState.js';
 import { transactionsApi } from '../../api/index.js';
 import TransactionDrawer from './TransactionDrawer.jsx';
 
@@ -225,21 +226,13 @@ export default function TransactionList() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('transactions.status') || 'all');
-  const [range, setRange] = useState(() => localStorage.getItem('transactions.range') || 'all');
-  const [accountFilter, setAccountFilter] = useState(() => localStorage.getItem('transactions.account') || '');
-  const [customStart, setCustomStart] = useState(() => localStorage.getItem('transactions.customStart') || getWeekRange().startDate);
-  const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('transactions.customEnd') || getWeekRange().endDate);
+  const [filters, setFilters] = useListState('transactions', {
+    statusFilter: 'all', range: 'all', accountFilter: '',
+    customStart: getWeekRange().startDate, customEnd: getWeekRange().endDate,
+    viewMode: 'grid', page: 1, pageSize: 25,
+  });
+  const { statusFilter, range, accountFilter, customStart, customEnd, viewMode } = filters;
   const [selectedTransactionId, setSelectedTransactionId] = useState(null);
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem('transactions.viewMode') || 'grid');
-
-  // Persist filter selections
-  useEffect(() => { localStorage.setItem('transactions.status', statusFilter); }, [statusFilter]);
-  useEffect(() => { localStorage.setItem('transactions.range', range); }, [range]);
-  useEffect(() => { localStorage.setItem('transactions.account', accountFilter); }, [accountFilter]);
-  useEffect(() => { localStorage.setItem('transactions.customStart', customStart); }, [customStart]);
-  useEffect(() => { localStorage.setItem('transactions.customEnd', customEnd); }, [customEnd]);
-  useEffect(() => { localStorage.setItem('transactions.viewMode', viewMode); }, [viewMode]);
 
   const dateRange = useMemo(() => {
     if (range === 'week') return getWeekRange();
@@ -268,7 +261,7 @@ export default function TransactionList() {
   // Validate persisted account filter against loaded data
   useEffect(() => {
     const accountNames = new Set(entries.map((e) => e.accountName).filter(Boolean));
-    setAccountFilter((prev) => prev && !accountNames.has(prev) ? '' : prev);
+    if (filters.accountFilter && !accountNames.has(filters.accountFilter)) setFilters({ accountFilter: '' });
   }, [entries]);
 
   const filtered = useMemo(() => {
@@ -307,7 +300,11 @@ export default function TransactionList() {
     ...baseColumns,
   ], []);
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered);
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered, {
+    page: filters.page, pageSize: filters.pageSize,
+    onPageChange: (p) => setFilters({ page: p }),
+    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
+  });
 
   const totals = useMemo(() => {
     const credits = filtered.filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0);
@@ -327,30 +324,30 @@ export default function TransactionList() {
       />
       <div className={styles.filters}>
         <Text size={200} weight="semibold">Status:</Text>
-        <ToggleButton size="small" checked={statusFilter === 'all'} onClick={() => setStatusFilter('all')}>All</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'unmatched'} onClick={() => setStatusFilter('unmatched')}>Unmatched</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'matched'} onClick={() => setStatusFilter('matched')}>Matched</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'ignored'} onClick={() => setStatusFilter('ignored')}>Ignored</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'all'} onClick={() => setFilters({ statusFilter: 'all', page: 1 })}>All</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'unmatched'} onClick={() => setFilters({ statusFilter: 'unmatched', page: 1 })}>Unmatched</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'matched'} onClick={() => setFilters({ statusFilter: 'matched', page: 1 })}>Matched</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'ignored'} onClick={() => setFilters({ statusFilter: 'ignored', page: 1 })}>Ignored</ToggleButton>
 
         <Text size={200} weight="semibold" style={{ marginLeft: 12 }}>Period:</Text>
-        <ToggleButton size="small" checked={range === 'all'} onClick={() => setRange('all')}>All Time</ToggleButton>
-        <ToggleButton size="small" checked={range === 'month'} onClick={() => setRange('month')}>This Month</ToggleButton>
-        <ToggleButton size="small" checked={range === 'week'} onClick={() => setRange('week')}>This Week</ToggleButton>
-        <ToggleButton size="small" checked={range === 'custom'} onClick={() => setRange('custom')}>Custom</ToggleButton>
+        <ToggleButton size="small" checked={range === 'all'} onClick={() => setFilters({ range: 'all', page: 1 })}>All Time</ToggleButton>
+        <ToggleButton size="small" checked={range === 'month'} onClick={() => setFilters({ range: 'month', page: 1 })}>This Month</ToggleButton>
+        <ToggleButton size="small" checked={range === 'week'} onClick={() => setFilters({ range: 'week', page: 1 })}>This Week</ToggleButton>
+        <ToggleButton size="small" checked={range === 'custom'} onClick={() => setFilters({ range: 'custom', page: 1 })}>Custom</ToggleButton>
         {range === 'custom' && (
           <>
             <input
               type="date"
               className={styles.dateInput}
               value={customStart}
-              onChange={(e) => setCustomStart(e.target.value)}
+              onChange={(e) => setFilters({ customStart: e.target.value, page: 1 })}
             />
             <Text size={200}>to</Text>
             <input
               type="date"
               className={styles.dateInput}
               value={customEnd}
-              onChange={(e) => setCustomEnd(e.target.value)}
+              onChange={(e) => setFilters({ customEnd: e.target.value, page: 1 })}
             />
           </>
         )}
@@ -361,7 +358,7 @@ export default function TransactionList() {
             <Select
               size="small"
               value={accountFilter}
-              onChange={(e, data) => setAccountFilter(data.value)}
+              onChange={(e, data) => setFilters({ accountFilter: data.value, page: 1 })}
               style={{ minWidth: 160 }}
             >
               <option value="">All Accounts</option>
@@ -372,7 +369,7 @@ export default function TransactionList() {
           </>
         )}
         <div style={{ marginLeft: 'auto' }}>
-          <ViewToggle value={viewMode} onChange={setViewMode} />
+          <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>

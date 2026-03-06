@@ -23,6 +23,7 @@ import ViewToggle from '../../components/ViewToggle.jsx';
 import ListView from '../../components/ListView.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
+import { useListState } from '../../hooks/useListState.js';
 import { projectsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -111,13 +112,11 @@ export default function ProjectList() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [showArchived, setShowArchived] = useState(() => localStorage.getItem('projects.showArchived') === 'true');
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem('projects.viewMode') || 'grid');
+  const [filters, setFilters] = useListState('projects', { showArchived: false, viewMode: 'grid', page: 1, pageSize: 25 });
+  const { showArchived, viewMode } = filters;
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
-
-  useEffect(() => { localStorage.setItem('projects.viewMode', viewMode); }, [viewMode]);
 
   useEffect(() => {
     projectsApi.getAll()
@@ -145,7 +144,11 @@ export default function ProjectList() {
     }
   };
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered);
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered, {
+    page: filters.page, pageSize: filters.pageSize,
+    onPageChange: (p) => setFilters({ page: p }),
+    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
+  });
 
   const selectedId = selected.size === 1 ? [...selected][0] : null;
   const selectedProject = selectedId ? projects.find((p) => p._id === selectedId) : null;
@@ -173,16 +176,12 @@ export default function ProjectList() {
         <ToggleButton
           size="small"
           checked={showArchived}
-          onClick={() => {
-            const next = !showArchived;
-            setShowArchived(next);
-            localStorage.setItem('projects.showArchived', String(next));
-          }}
+          onClick={() => setFilters({ showArchived: !showArchived, page: 1 })}
         >
           Show Archived
         </ToggleButton>
         <div style={{ marginLeft: 'auto' }}>
-          <ViewToggle value={viewMode} onChange={setViewMode} />
+          <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
         </div>
       </div>
       {deleteError && (

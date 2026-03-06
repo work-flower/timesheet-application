@@ -2,22 +2,31 @@ import { useState, useMemo, useEffect } from 'react';
 
 export const PAGE_SIZES = [10, 25, 50, 100];
 
-export function usePagination(items, { defaultPageSize = 25 } = {}) {
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(defaultPageSize);
+export function usePagination(items, { defaultPageSize = 25, page: extPage, pageSize: extPageSize, onPageChange, onPageSizeChange } = {}) {
+  const [intPage, setIntPage] = useState(1);
+  const [intPageSize, setIntPageSize] = useState(defaultPageSize);
 
-  // Reset to page 1 when items change or pageSize changes
+  const isExternal = extPage !== undefined;
+  const page = isExternal ? extPage : intPage;
+  const pageSize = isExternal ? (extPageSize ?? defaultPageSize) : intPageSize;
+  const setPage = isExternal ? onPageChange : setIntPage;
+  const setPageSize = isExternal ? onPageSizeChange : setIntPageSize;
+
+  // Internal mode only: reset page on items/pageSize change
   useEffect(() => {
-    setPage(1);
-  }, [items, pageSize]);
+    if (!isExternal) setIntPage(1);
+  }, [items, intPageSize, isExternal]);
 
   const totalItems = items.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
-  const pageItems = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return items.slice(start, start + pageSize);
-  }, [items, page, pageSize]);
+  // Clamp page to valid range (handles stale stored values)
+  const effectivePage = Math.min(Math.max(1, page), totalPages);
 
-  return { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems };
+  const pageItems = useMemo(() => {
+    const start = (effectivePage - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, effectivePage, pageSize]);
+
+  return { pageItems, page: effectivePage, pageSize, setPage, setPageSize, totalPages, totalItems };
 }

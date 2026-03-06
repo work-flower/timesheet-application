@@ -22,6 +22,7 @@ import ViewToggle from '../../components/ViewToggle.jsx';
 import ListView from '../../components/ListView.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
+import { useListState } from '../../hooks/useListState.js';
 import { clientsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -125,11 +126,10 @@ export default function ClientList() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients.viewMode') || 'grid');
+  const [filters, setFilters] = useListState('clients', { viewMode: 'grid', page: 1, pageSize: 25 });
+  const { viewMode } = filters;
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
-
-  useEffect(() => { localStorage.setItem('clients.viewMode', viewMode); }, [viewMode]);
 
   useEffect(() => {
     clientsApi.getAll()
@@ -150,7 +150,11 @@ export default function ClientList() {
     setSelected(new Set());
   };
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered);
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered, {
+    page: filters.page, pageSize: filters.pageSize,
+    onPageChange: (p) => setFilters({ page: p }),
+    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
+  });
 
   const selectedId = selected.size === 1 ? [...selected][0] : null;
 
@@ -169,7 +173,7 @@ export default function ClientList() {
       />
       <div className={styles.filters}>
         <div style={{ marginLeft: 'auto' }}>
-          <ViewToggle value={viewMode} onChange={setViewMode} />
+          <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>

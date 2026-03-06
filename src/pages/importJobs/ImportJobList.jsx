@@ -20,6 +20,7 @@ import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
+import { useListState } from '../../hooks/useListState.js';
 import { importJobsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -142,11 +143,10 @@ export default function ImportJobList() {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('importJobs.status') || '');
+  const [filters, setFilters] = useListState('importJobs', { statusFilter: '', page: 1, pageSize: 25 });
+  const { statusFilter } = filters;
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
-
-  useEffect(() => { localStorage.setItem('importJobs.status', statusFilter); }, [statusFilter]);
 
   // Fetch filtered jobs
   useEffect(() => {
@@ -170,7 +170,11 @@ export default function ImportJobList() {
     setSelected(new Set());
   };
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(jobs);
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(jobs, {
+    page: filters.page, pageSize: filters.pageSize,
+    onPageChange: (p) => setFilters({ page: p }),
+    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
+  });
 
   const selectedId = selected.size === 1 ? [...selected][0] : null;
   const selectedJob = selectedId ? jobs.find(j => j._id === selectedId) : null;
@@ -192,7 +196,7 @@ export default function ImportJobList() {
         <Select
           size="small"
           value={statusFilter}
-          onChange={(e, data) => setStatusFilter(data.value)}
+          onChange={(e, data) => setFilters({ statusFilter: data.value, page: 1 })}
           style={{ minWidth: 160 }}
         >
           <option value="">All</option>

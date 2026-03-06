@@ -29,6 +29,7 @@ import {
 } from '@fluentui/react-icons';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
+import { useListState } from '../../hooks/useListState.js';
 import { logApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -173,11 +174,8 @@ export default function LogViewer() {
   const [loading, setLoading] = useState(true);
 
   // Filters — persisted to localStorage
-  const [startDate, setStartDate] = useState(() => localStorage.getItem('logs.startDate') || getToday());
-  const [endDate, setEndDate] = useState(() => localStorage.getItem('logs.endDate') || getToday());
-  const [level, setLevel] = useState(() => localStorage.getItem('logs.level') || '');
-  const [source, setSource] = useState(() => localStorage.getItem('logs.source') || '');
-  const [keyword, setKeyword] = useState(() => localStorage.getItem('logs.keyword') || '');
+  const [filters, setFilters] = useListState('logs', { startDate: getToday(), endDate: getToday(), level: '', source: '', keyword: '', page: 1, pageSize: 25 });
+  const { startDate, endDate, level, source, keyword } = filters;
 
   // TraceId filter
   const [traceIdFilter, setTraceIdFilter] = useState('');
@@ -198,12 +196,6 @@ export default function LogViewer() {
     return () => clearTimeout(debounceRef.current);
   }, [keyword]);
 
-  // Persist filters
-  useEffect(() => { localStorage.setItem('logs.startDate', startDate); }, [startDate]);
-  useEffect(() => { localStorage.setItem('logs.endDate', endDate); }, [endDate]);
-  useEffect(() => { localStorage.setItem('logs.level', level); }, [level]);
-  useEffect(() => { localStorage.setItem('logs.source', source); }, [source]);
-  useEffect(() => { localStorage.setItem('logs.keyword', keyword); }, [keyword]);
 
   // Fetch entries
   useEffect(() => {
@@ -237,7 +229,11 @@ export default function LogViewer() {
       .finally(() => setLoading(false));
   }, [startDate, endDate, level, source, debouncedKeyword, traceIdFilter]);
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(entries);
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(entries, {
+    page: filters.page, pageSize: filters.pageSize,
+    onPageChange: (p) => setFilters({ page: p }),
+    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
+  });
 
   const handleTraceClick = (traceId) => {
     setTraceIdFilter(traceId);
@@ -341,7 +337,7 @@ export default function LogViewer() {
             type="date"
             size="small"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => setFilters({ startDate: e.target.value, page: 1 })}
             style={{ width: 140 }}
           />
         </div>
@@ -351,7 +347,7 @@ export default function LogViewer() {
             type="date"
             size="small"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            onChange={(e) => setFilters({ endDate: e.target.value, page: 1 })}
             style={{ width: 140 }}
           />
         </div>
@@ -360,7 +356,7 @@ export default function LogViewer() {
           <Select
             size="small"
             value={level}
-            onChange={(e, data) => setLevel(data.value)}
+            onChange={(e, data) => setFilters({ level: data.value, page: 1 })}
             style={{ minWidth: 100 }}
           >
             <option value="">All</option>
@@ -375,7 +371,7 @@ export default function LogViewer() {
           <Select
             size="small"
             value={source}
-            onChange={(e, data) => setSource(data.value)}
+            onChange={(e, data) => setFilters({ source: data.value, page: 1 })}
             style={{ minWidth: 120 }}
           >
             <option value="">All</option>
@@ -389,7 +385,7 @@ export default function LogViewer() {
             size="small"
             placeholder="Search messages..."
             value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
+            onChange={(e) => setFilters({ keyword: e.target.value, page: 1 })}
             contentBefore={<SearchRegular />}
             style={{ minWidth: 180 }}
           />

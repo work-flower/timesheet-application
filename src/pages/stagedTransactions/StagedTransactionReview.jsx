@@ -22,6 +22,7 @@ import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
+import { useListState } from '../../hooks/useListState.js';
 import FieldMappingConfig, { autoDetectMapping, getMissingRequiredTargets } from './FieldMappingConfig.jsx';
 import { importJobsApi, stagedTransactionsApi, transactionsApi } from '../../api/index.js';
 
@@ -143,8 +144,8 @@ export default function StagedTransactionReview() {
 
   // State
   const [importJobs, setImportJobs] = useState([]);
-  const [selectedJobId, setSelectedJobId] = useState(() => localStorage.getItem('stagedTx.importJobId') || '');
-  const [actionFilter, setActionFilter] = useState(() => localStorage.getItem('stagedTx.action') || 'all');
+  const [filters, setFilters] = useListState('stagedTx', { selectedJobId: '', actionFilter: 'all', page: 1, pageSize: 25 });
+  const { selectedJobId, actionFilter } = filters;
   const [stagedTxs, setStagedTxs] = useState([]);
   const [fieldMapping, setFieldMapping] = useState({});
   const [duplicateMap, setDuplicateMap] = useState({});
@@ -156,9 +157,6 @@ export default function StagedTransactionReview() {
   const [submitting, setSubmitting] = useState(false);
   const [abandonConfirm, setAbandonConfirm] = useState(false);
 
-  // Persist filters
-  useEffect(() => { localStorage.setItem('stagedTx.importJobId', selectedJobId); }, [selectedJobId]);
-  useEffect(() => { localStorage.setItem('stagedTx.action', actionFilter); }, [actionFilter]);
 
   // Load import jobs with ready_for_review status
   useEffect(() => {
@@ -221,7 +219,11 @@ export default function StagedTransactionReview() {
     return stagedTxs.filter((tx) => tx.action === actionFilter);
   }, [stagedTxs, actionFilter]);
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredTxs);
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredTxs, {
+    page: filters.page, pageSize: filters.pageSize,
+    onPageChange: (p) => setFilters({ page: p }),
+    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
+  });
 
   // Counts
   const unmarkedCount = stagedTxs.filter((tx) => tx.action === 'unmarked').length;
@@ -294,7 +296,7 @@ export default function StagedTransactionReview() {
       await importJobsApi.abandon(selectedJobId);
       // Remove the job from the dropdown and clear selection
       setImportJobs((prev) => prev.filter((j) => j._id !== selectedJobId));
-      setSelectedJobId('');
+      setFilters({ selectedJobId: '' });
       setStagedTxs([]);
       showSuccess('Import job abandoned.');
     } catch (err) {
@@ -361,7 +363,7 @@ export default function StagedTransactionReview() {
         <Select
           size="small"
           value={selectedJobId}
-          onChange={(e, data) => setSelectedJobId(data.value)}
+          onChange={(e, data) => setFilters({ selectedJobId: data.value, page: 1 })}
           style={{ minWidth: 250 }}
           disabled={jobsLoading}
         >
@@ -381,7 +383,7 @@ export default function StagedTransactionReview() {
               size="small"
               appearance={actionFilter === opt.value ? 'primary' : 'outline'}
               checked={actionFilter === opt.value}
-              onClick={() => setActionFilter(opt.value)}
+              onClick={() => setFilters({ actionFilter: opt.value, page: 1 })}
             >
               {opt.label}
             </ToggleButton>

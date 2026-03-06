@@ -24,6 +24,7 @@ import ViewToggle from '../../components/ViewToggle.jsx';
 import ListView from '../../components/ListView.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
+import { useListState } from '../../hooks/useListState.js';
 import { invoicesApi, clientsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -217,24 +218,17 @@ export default function InvoiceList() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState([]);
-  const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('invoices.status') || '');
-  const [clientId, setClientId] = useState(() => localStorage.getItem('invoices.clientId') || '');
-  const [paymentFilter, setPaymentFilter] = useState(() => localStorage.getItem('invoices.payment') || '');
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem('invoices.viewMode') || 'grid');
+  const [filters, setFilters] = useListState('invoices', { statusFilter: '', clientId: '', paymentFilter: '', viewMode: 'grid', page: 1, pageSize: 25 });
+  const { statusFilter, clientId, paymentFilter, viewMode } = filters;
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
-
-  useEffect(() => { localStorage.setItem('invoices.viewMode', viewMode); }, [viewMode]);
-  useEffect(() => { localStorage.setItem('invoices.status', statusFilter); }, [statusFilter]);
-  useEffect(() => { localStorage.setItem('invoices.clientId', clientId); }, [clientId]);
-  useEffect(() => { localStorage.setItem('invoices.payment', paymentFilter); }, [paymentFilter]);
 
   useEffect(() => {
     clientsApi.getAll().then((c) => {
       setClients(c);
       // Clear stale localStorage ID that no longer exists
       const clientIds = new Set(c.map((cl) => cl._id));
-      setClientId((prev) => clientIds.has(prev) ? prev : '');
+      if (!clientIds.has(filters.clientId)) setFilters({ clientId: '' });
     });
   }, []);
 
@@ -276,7 +270,11 @@ export default function InvoiceList() {
     setSelected(new Set());
   };
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredInvoices);
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredInvoices, {
+    page: filters.page, pageSize: filters.pageSize,
+    onPageChange: (p) => setFilters({ page: p }),
+    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
+  });
 
   const selectedId = selected.size === 1 ? [...selected][0] : null;
   const selectedInvoice = selectedId ? invoices.find(i => i._id === selectedId) : null;
@@ -296,16 +294,16 @@ export default function InvoiceList() {
       />
       <div className={styles.filters}>
         <Text size={200} weight="semibold">Status:</Text>
-        <ToggleButton size="small" checked={statusFilter === ''} onClick={() => setStatusFilter('')}>All</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'draft'} onClick={() => setStatusFilter('draft')}>Draft</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'confirmed'} onClick={() => setStatusFilter('confirmed')}>Confirmed</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'posted'} onClick={() => setStatusFilter('posted')}>Posted</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === ''} onClick={() => setFilters({ statusFilter: '', page: 1 })}>All</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'draft'} onClick={() => setFilters({ statusFilter: 'draft', page: 1 })}>Draft</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'confirmed'} onClick={() => setFilters({ statusFilter: 'confirmed', page: 1 })}>Confirmed</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'posted'} onClick={() => setFilters({ statusFilter: 'posted', page: 1 })}>Posted</ToggleButton>
 
         <Text size={200} weight="semibold" style={{ marginLeft: 12 }}>Client:</Text>
         <Select
           size="small"
           value={clientId}
-          onChange={(e, data) => setClientId(data.value)}
+          onChange={(e, data) => setFilters({ clientId: data.value, page: 1 })}
           style={{ minWidth: 160 }}
         >
           <option value="">All Clients</option>
@@ -318,7 +316,7 @@ export default function InvoiceList() {
         <Select
           size="small"
           value={paymentFilter}
-          onChange={(e, data) => setPaymentFilter(data.value)}
+          onChange={(e, data) => setFilters({ paymentFilter: data.value, page: 1 })}
           style={{ minWidth: 120 }}
         >
           <option value="">All</option>
@@ -327,7 +325,7 @@ export default function InvoiceList() {
           <option value="overdue">Overdue</option>
         </Select>
         <div style={{ marginLeft: 'auto' }}>
-          <ViewToggle value={viewMode} onChange={setViewMode} />
+          <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
