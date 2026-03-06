@@ -738,14 +738,14 @@ export default function ExpenseForm() {
               <div className={styles.balanceSection}>
                 <div className={styles.balanceRow}>
                   <span>Expense Amount</span>
-                  <span>{fmtGBP.format(loadedData?.amount || 0)}</span>
+                  <span>{fmtGBP.format(Math.abs(loadedData?.amount || 0))}</span>
                 </div>
 
                 {loadedData?.linkedTransactions?.length > 0 && (
                   <>
                     <div className={styles.balanceGroupLabel}>
                       <span>Linked Transactions</span>
-                      <span>{fmtGBP.format(-(loadedData.transactionsTotal || 0))}</span>
+                      <span>{fmtGBP.format(loadedData.transactionsTotal || 0)}</span>
                     </div>
                     {loadedData.linkedTransactions.map((tx) => (
                       <div key={tx._id} className={styles.balanceSubRow}>
@@ -765,7 +765,7 @@ export default function ExpenseForm() {
                             {tx.description || 'Transaction'} {tx.date ? `(${tx.date})` : ''}
                           </Link>
                         </span>
-                        <span>{fmtGBP.format(-Math.abs(tx.amount))}</span>
+                        <span>{fmtGBP.format(Math.abs(tx.amount))}</span>
                       </div>
                     ))}
                   </>

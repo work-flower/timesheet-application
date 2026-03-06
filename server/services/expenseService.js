@@ -89,7 +89,7 @@ export async function getById(id) {
     }));
     transactionsTotal = linkedTransactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
   }
-  const remainingBalance = (entry.amount || 0) - transactionsTotal;
+  const remainingBalance = Math.abs(entry.amount || 0) - transactionsTotal;
 
   return {
     ...entry,
