@@ -16,12 +16,15 @@ import {
   createTableColumn,
   Spinner,
 } from '@fluentui/react-components';
-import { Button } from '@fluentui/react-components';
+import { Badge, Button } from '@fluentui/react-components';
 import { ScanDashRegular } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import ReceiptUploadDialog from './ReceiptUploadDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
+import ViewToggle from '../../components/ViewToggle.jsx';
+import ListView from '../../components/ListView.jsx';
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { expensesApi, clientsApi, projectsApi } from '../../api/index.js';
 
@@ -96,6 +99,35 @@ const useStyles = makeStyles({
     '&:hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
+  },
+  dateBold: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase300,
+    minWidth: '70px',
+    color: tokens.colorNeutralForeground1,
+  },
+  descText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  secondaryText: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  dot: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  amountText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+    minWidth: '80px',
+    textAlign: 'right',
   },
 });
 
@@ -204,6 +236,7 @@ export default function ExpenseList() {
   const [customStart, setCustomStart] = useState(() => localStorage.getItem('expenses.customStart') || getWeekRange().startDate);
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('expenses.customEnd') || getWeekRange().endDate);
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('expenses.viewMode') || 'grid');
 
   // Persist filter selections
   useEffect(() => { localStorage.setItem('expenses.range', range); }, [range]);
@@ -212,6 +245,7 @@ export default function ExpenseList() {
   useEffect(() => { localStorage.setItem('expenses.expenseType', expenseType); }, [expenseType]);
   useEffect(() => { localStorage.setItem('expenses.customStart', customStart); }, [customStart]);
   useEffect(() => { localStorage.setItem('expenses.customEnd', customEnd); }, [customEnd]);
+  useEffect(() => { localStorage.setItem('expenses.viewMode', viewMode); }, [viewMode]);
 
   const filteredProjects = useMemo(
     () => clientId ? allProjects.filter((p) => p.clientId === clientId) : allProjects,
@@ -268,54 +302,6 @@ export default function ExpenseList() {
   const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(entries);
 
   const selectedId = selected.size === 1 ? [...selected][0] : null;
-
-  const renderGrid = () => {
-    if (loading) {
-      return (
-        <div className={styles.loading}>
-          <Spinner label="Loading..." />
-        </div>
-      );
-    }
-    if (!entries || entries.length === 0) {
-      return (
-        <div className={styles.empty}>
-          <Text>No expenses found for this period.</Text>
-        </div>
-      );
-    }
-    return (
-      <DataGrid
-        items={pageItems}
-        columns={gridColumns}
-        sortable
-        getRowId={(item) => item._id}
-        selectionMode="multiselect"
-        selectedItems={selected}
-        onSelectionChange={(e, data) => setSelected(data.selectedItems)}
-        style={{ width: '100%' }}
-      >
-        <DataGridHeader>
-          <DataGridRow>
-            {({ renderHeaderCell }) => (
-              <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
-            )}
-          </DataGridRow>
-        </DataGridHeader>
-        <DataGridBody>
-          {({ item, rowId }) => (
-            <DataGridRow
-              key={rowId}
-              className={styles.row}
-              onClick={() => navigate(`/expenses/${item._id}`)}
-            >
-              {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
-            </DataGridRow>
-          )}
-        </DataGridBody>
-      </DataGrid>
-    );
-  };
 
   return (
     <div className={styles.page}>
@@ -396,9 +382,107 @@ export default function ExpenseList() {
             <option key={t} value={t}>{t}</option>
           ))}
         </Select>
+        <div style={{ marginLeft: 'auto' }}>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {renderGrid()}
+        {loading ? (
+          <div className={styles.loading}><Spinner label="Loading..." /></div>
+        ) : entries.length === 0 ? (
+          <div className={styles.empty}><Text>No expenses found for this period.</Text></div>
+        ) : viewMode === 'grid' ? (
+          <DataGrid
+            items={pageItems}
+            columns={gridColumns}
+            sortable
+            getRowId={(item) => item._id}
+            selectionMode="multiselect"
+            selectedItems={selected}
+            onSelectionChange={(e, data) => setSelected(data.selectedItems)}
+            style={{ width: '100%' }}
+          >
+            <DataGridHeader>
+              <DataGridRow>
+                {({ renderHeaderCell }) => (
+                  <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
+                )}
+              </DataGridRow>
+            </DataGridHeader>
+            <DataGridBody>
+              {({ item, rowId }) => (
+                <DataGridRow
+                  key={rowId}
+                  className={styles.row}
+                  onClick={() => navigate(`/expenses/${item._id}`)}
+                >
+                  {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                </DataGridRow>
+              )}
+            </DataGridBody>
+          </DataGrid>
+        ) : viewMode === 'list' ? (
+          <ListView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/expenses/${item._id}`)}
+            renderTopLine={(item) => (
+              <>
+                <Text className={styles.dateBold}>{item.date}</Text>
+                <Text className={styles.descText}>{item.description || item.expenseType}</Text>
+                <Text className={styles.dot}>·</Text>
+                <Text className={styles.secondaryText}>{item.projectName}</Text>
+              </>
+            )}
+            renderActions={(item) => (
+              <>
+                {item.transactions?.length > 0 && (
+                  <Badge size="small" appearance="filled" color="brand">{item.transactions.length} linked</Badge>
+                )}
+                {!item.billable && (
+                  <Badge size="small" appearance="filled" color="warning">Non-billable</Badge>
+                )}
+                <Text className={styles.amountText}>{fmt.format(item.amount || 0)}</Text>
+              </>
+            )}
+            renderBottomLine={(item) => (
+              <Text className={styles.secondaryText}>
+                {[item.expenseType, item.clientName].filter(Boolean).join(' · ')}
+              </Text>
+            )}
+          />
+        ) : (
+          <CardView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/expenses/${item._id}`)}
+            renderHeader={(item) => (
+              <>
+                <Text className={styles.dateBold}>{item.date}</Text>
+                <Text className={styles.descText}>{item.description || item.expenseType}</Text>
+                {item.transactions?.length > 0 && (
+                  <Badge size="small" appearance="filled" color="brand">{item.transactions.length} linked</Badge>
+                )}
+                {!item.billable && (
+                  <Badge size="small" appearance="filled" color="warning">Non-billable</Badge>
+                )}
+              </>
+            )}
+            renderMeta={(item) => (
+              <>
+                <CardMetaItem label="Amount" value={fmt.format(item.amount || 0)} />
+                <CardMetaItem label="VAT" value={item.vatAmount ? fmt.format(item.vatAmount) : '—'} />
+                <CardMetaItem label="Net" value={fmt.format(item.netAmount ?? ((item.amount || 0) - (item.vatAmount || 0)))} />
+                <CardMetaItem label="Type" value={item.expenseType || '—'} />
+              </>
+            )}
+            renderFooter={(item) => (
+              <Text className={styles.secondaryText}>
+                {[item.clientName, item.projectName].filter(Boolean).join(' · ')}
+              </Text>
+            )}
+          />
+        )}
       </div>
       <PaginationControls
         page={page} pageSize={pageSize} totalItems={totalItems}
