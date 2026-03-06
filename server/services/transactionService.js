@@ -58,15 +58,9 @@ export async function getById(id) {
       amount: exp.amount || 0,
     }));
 
-  const isDebit = entry.amount < 0;
-  const absAmount = Math.abs(entry.amount);
   const invoicesTotal = linkedInvoices.reduce((sum, inv) => sum + inv.total, 0);
   const expensesTotal = linkedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-
-  // Debit → matched against expenses; Credit → matched against invoices
-  const remainingBalance = isDebit
-    ? absAmount - expensesTotal
-    : absAmount - invoicesTotal;
+  const remainingBalance = Math.abs(entry.amount) - invoicesTotal - Math.abs(expensesTotal);
 
   return {
     ...entry,

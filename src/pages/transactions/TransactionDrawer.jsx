@@ -22,6 +22,7 @@ import {
   DialogContent,
   DialogActions,
   Field,
+  Input,
   Textarea,
   DataGrid,
   DataGridHeader,
@@ -262,6 +263,10 @@ export default function TransactionDrawer({ transactionId, onClose, onMutate }) 
   // Unlink confirmation state
   const [unlinkTarget, setUnlinkTarget] = useState(null);
 
+  // Credit confirmation state: { action: 'create'|'link' }
+  const [creditConfirm, setCreditConfirm] = useState(null);
+  const [creditConfirmText, setCreditConfirmText] = useState('');
+
   // Ignore dialog state
   const [ignoreDialogOpen, setIgnoreDialogOpen] = useState(false);
   const [ignoreReason, setIgnoreReason] = useState('');
@@ -304,7 +309,7 @@ export default function TransactionDrawer({ transactionId, onClose, onMutate }) 
     if (!data) return;
     const params = new URLSearchParams();
     params.set('date', data.date);
-    params.set('amount', String(Math.abs(data.amount)));
+    params.set('amount', String(-data.amount));
     params.set('description', data.description || '');
     if (data.reference) params.set('externalReference', data.reference);
     params.set('transactionId', transactionId);
@@ -570,21 +575,17 @@ export default function TransactionDrawer({ transactionId, onClose, onMutate }) 
             <>
               {/* Action Toolbar */}
               <div className={styles.toolbar}>
-                <Tooltip content="Only debit transactions can be converted to expenses" relationship="description" withArrow>
-                  <Button appearance="outline" icon={<AddRegular />} onClick={handleCreateExpense} disabled={!isDebit || isIgnored} size="small">
-                    Create Expense
-                  </Button>
-                </Tooltip>
+                <Button appearance="outline" icon={<AddRegular />} onClick={() => isDebit ? handleCreateExpense() : (setCreditConfirmText(''), setCreditConfirm({ action: 'create' }))} disabled={isIgnored} size="small">
+                  Create Expense
+                </Button>
                 <Tooltip content="Only credit transactions can be linked to invoices" relationship="description" withArrow>
                   <Button appearance="outline" icon={<LinkRegular />} onClick={handleOpenInvoicePicker} disabled={isDebit || isIgnored} size="small">
                     Link to Invoice
                   </Button>
                 </Tooltip>
-                <Tooltip content="Only debit transactions can be linked to expenses" relationship="description" withArrow>
-                  <Button appearance="outline" icon={<LinkRegular />} onClick={handleOpenExpensePicker} disabled={!isDebit || isIgnored} size="small">
-                    Link to Expense
-                  </Button>
-                </Tooltip>
+                <Button appearance="outline" icon={<LinkRegular />} onClick={() => isDebit ? handleOpenExpensePicker() : (setCreditConfirmText(''), setCreditConfirm({ action: 'link' }))} disabled={isIgnored} size="small">
+                  Link to Expense
+                </Button>
                 <Button appearance="outline" icon={<EyeOffRegular />} onClick={() => { setIgnoreReason(''); setIgnoreDialogOpen(true); }} disabled={!isUnmatched} size="small">
                   Ignore
                 </Button>
@@ -631,14 +632,14 @@ export default function TransactionDrawer({ transactionId, onClose, onMutate }) 
                 <div className={styles.balanceSection}>
                   <div className={styles.balanceRow}>
                     <span>Transaction Amount</span>
-                    <span>{fmtGBP.format(Math.abs(data.amount))}</span>
+                    <span>{fmtGBP.format(data.amount)}</span>
                   </div>
 
-                  {!isDebit && data.linkedInvoices?.length > 0 && (
+                  {data.linkedInvoices?.length > 0 && (
                     <>
                       <div className={styles.balanceGroupLabel}>
                         <span>Linked Invoices</span>
-                        <span>{fmtGBP.format(-data.invoicesTotal)}</span>
+                        <span>{fmtGBP.format(data.invoicesTotal)}</span>
                       </div>
                       {data.linkedInvoices.map((inv) => (
                         <div key={inv._id} className={styles.balanceSubRow}>
@@ -656,17 +657,17 @@ export default function TransactionDrawer({ transactionId, onClose, onMutate }) 
                               {inv.invoiceNumber || 'Draft'} {inv.invoiceDate ? `(${inv.invoiceDate})` : ''}
                             </Link>
                           </span>
-                          <span>{fmtGBP.format(-inv.total)}</span>
+                          <span>{fmtGBP.format(inv.total)}</span>
                         </div>
                       ))}
                     </>
                   )}
 
-                  {isDebit && data.linkedExpenses?.length > 0 && (
+                  {data.linkedExpenses?.length > 0 && (
                     <>
                       <div className={styles.balanceGroupLabel}>
                         <span>Linked Expenses</span>
-                        <span>{fmtGBP.format(-data.expensesTotal)}</span>
+                        <span>{fmtGBP.format(data.expensesTotal)}</span>
                       </div>
                       {data.linkedExpenses.map((exp) => (
                         <div key={exp._id} className={styles.balanceSubRow}>
@@ -684,7 +685,7 @@ export default function TransactionDrawer({ transactionId, onClose, onMutate }) 
                               {exp.expenseType || exp.description || 'Expense'} {exp.date ? `(${exp.date})` : ''}
                             </Link>
                           </span>
-                          <span>{fmtGBP.format(-exp.amount)}</span>
+                          <span>{fmtGBP.format(exp.amount)}</span>
                         </div>
                       ))}
                     </>
@@ -692,12 +693,10 @@ export default function TransactionDrawer({ transactionId, onClose, onMutate }) 
 
                   <div className={styles.balanceDivider} />
                   {(() => {
-                    const remaining = data.remainingBalance ?? Math.abs(data.amount);
+                    const remaining = data.remainingBalance ?? data.amount;
                     const balanceColor = remaining === 0
                       ? tokens.colorPaletteGreenForeground1
-                      : remaining < 0
-                        ? tokens.colorPaletteRedForeground1
-                        : tokens.colorStatusWarningForeground3;
+                      : tokens.colorStatusWarningForeground3;
                     return (
                       <div className={styles.balanceTotal}>
                         <span>Remaining Balance</span>
@@ -928,6 +927,45 @@ export default function TransactionDrawer({ transactionId, onClose, onMutate }) 
             <DialogActions>
               <Button appearance="secondary" onClick={() => setIgnoreDialogOpen(false)}>Cancel</Button>
               <Button appearance="primary" onClick={handleIgnoreConfirm} disabled={!ignoreReason.trim()}>Confirm</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Credit Transaction Confirmation */}
+      <Dialog open={!!creditConfirm} onOpenChange={(e, d) => { if (!d.open) setCreditConfirm(null); }}>
+        <DialogSurface style={{ maxWidth: '480px' }}>
+          <DialogBody>
+            <DialogTitle>Credit Transaction Warning</DialogTitle>
+            <DialogContent>
+              <Text style={{ display: 'block', marginBottom: '12px' }}>
+                This is a credit transaction (positive amount). Only refund expenses should be created from or linked to credit transactions.
+              </Text>
+              <Text style={{ display: 'block', marginBottom: '12px' }}>
+                Type <strong>confirm</strong> to proceed.
+              </Text>
+              <Field>
+                <Input
+                  value={creditConfirmText}
+                  onChange={(e, d) => setCreditConfirmText(d.value)}
+                  placeholder="Type confirm"
+                />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setCreditConfirm(null)}>Cancel</Button>
+              <Button
+                appearance="primary"
+                disabled={creditConfirmText.toLowerCase() !== 'confirm'}
+                onClick={() => {
+                  const action = creditConfirm?.action;
+                  setCreditConfirm(null);
+                  if (action === 'create') handleCreateExpense();
+                  else if (action === 'link') handleOpenExpensePicker();
+                }}
+              >
+                Confirm
+              </Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
