@@ -17,6 +17,9 @@ import {
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
+import ViewToggle from '../../components/ViewToggle.jsx';
+import ListView from '../../components/ListView.jsx';
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { clientsApi } from '../../api/index.js';
 
@@ -33,10 +36,13 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase500,
   },
-  gridContainer: {
-    flex: 1,
-    overflow: 'hidden',
-    width: '100%',
+  filters: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 16px',
+    backgroundColor: tokens.colorNeutralBackground1,
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
   },
   loading: {
     display: 'flex',
@@ -56,6 +62,26 @@ const useStyles = makeStyles({
     '&:hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
+  },
+  companyName: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+  },
+  contactText: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  dot: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  rateText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+    minWidth: '80px',
+    textAlign: 'right',
   },
 });
 
@@ -98,8 +124,11 @@ export default function ClientList() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients.viewMode') || 'grid');
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  useEffect(() => { localStorage.setItem('clients.viewMode', viewMode); }, [viewMode]);
 
   useEffect(() => {
     clientsApi.getAll()
@@ -137,12 +166,17 @@ export default function ClientList() {
         searchValue={search}
         onSearchChange={setSearch}
       />
+      <div className={styles.filters}>
+        <div style={{ marginLeft: 'auto' }}>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+      </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div className={styles.loading}><Spinner label="Loading..." /></div>
         ) : filtered.length === 0 ? (
           <div className={styles.empty}><Text>No clients found. Click 'New Client' to create one.</Text></div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <DataGrid
             items={pageItems}
             columns={columns}
@@ -170,6 +204,50 @@ export default function ClientList() {
               )}
             </DataGridBody>
           </DataGrid>
+        ) : viewMode === 'list' ? (
+          <ListView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/clients/${item._id}`)}
+            renderTopLine={(item) => (
+              <>
+                <Text className={styles.companyName}>{item.companyName}</Text>
+                {item.primaryContactName && (
+                  <>
+                    <Text className={styles.dot}>·</Text>
+                    <Text className={styles.contactText}>{item.primaryContactName}</Text>
+                  </>
+                )}
+              </>
+            )}
+            renderActions={(item) => (
+              <Text className={styles.rateText}>
+                {item.defaultRate ? `£${item.defaultRate}/day` : '—'}
+              </Text>
+            )}
+            renderBottomLine={(item) => item.primaryContactEmail ? (
+              <Text className={styles.contactText}>{item.primaryContactEmail}</Text>
+            ) : null}
+          />
+        ) : (
+          <CardView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/clients/${item._id}`)}
+            renderHeader={(item) => (
+              <Text className={styles.companyName}>{item.companyName}</Text>
+            )}
+            renderMeta={(item) => (
+              <>
+                <CardMetaItem label="Contact" value={item.primaryContactName || '—'} />
+                <CardMetaItem label="Rate" value={item.defaultRate ? `£${item.defaultRate}/day` : '—'} />
+                <CardMetaItem label="Currency" value={item.currency || '—'} />
+              </>
+            )}
+            renderFooter={(item) => item.primaryContactEmail ? (
+              <Text className={styles.contactText}>{item.primaryContactEmail}</Text>
+            ) : null}
+          />
         )}
       </div>
       <PaginationControls
