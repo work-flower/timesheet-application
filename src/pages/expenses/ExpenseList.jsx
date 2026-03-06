@@ -226,11 +226,11 @@ export default function ExpenseList() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useListState('expenses', {
-    range: 'month', clientId: '', projectId: '', expenseType: '',
+    range: 'month', clientId: '', projectId: '', expenseType: '', search: '',
     customStart: getWeekRange().startDate, customEnd: getWeekRange().endDate,
     viewMode: 'grid', page: 1, pageSize: 25,
   });
-  const { range, clientId, projectId, expenseType, customStart, customEnd, viewMode } = filters;
+  const { range, clientId, projectId, expenseType, customStart, customEnd, viewMode, search } = filters;
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [clients, setClients] = useState([]);
@@ -278,11 +278,23 @@ export default function ExpenseList() {
       .finally(() => setLoading(false));
   }, [dateRange, clientId, projectId, expenseType]);
 
+  const filteredEntries = useMemo(() => {
+    if (!search) return entries;
+    const q = search.toLowerCase();
+    return entries.filter((e) =>
+      (e.description || '').toLowerCase().includes(q) ||
+      (e.expenseType || '').toLowerCase().includes(q) ||
+      (e.externalReference || '').toLowerCase().includes(q) ||
+      (e.clientName || '').toLowerCase().includes(q) ||
+      (e.projectName || '').toLowerCase().includes(q)
+    );
+  }, [entries, search]);
+
   const totals = useMemo(() => {
-    const billableTotal = entries.filter((e) => e.billable).reduce((sum, e) => sum + (e.amount || 0), 0);
-    const nonBillableTotal = entries.filter((e) => !e.billable).reduce((sum, e) => sum + (e.amount || 0), 0);
-    return { billableTotal, nonBillableTotal, count: entries.length };
-  }, [entries]);
+    const billableTotal = filteredEntries.filter((e) => e.billable).reduce((sum, e) => sum + (e.amount || 0), 0);
+    const nonBillableTotal = filteredEntries.filter((e) => !e.billable).reduce((sum, e) => sum + (e.amount || 0), 0);
+    return { billableTotal, nonBillableTotal, count: filteredEntries.length };
+  }, [filteredEntries]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -292,7 +304,7 @@ export default function ExpenseList() {
     setSelected(new Set());
   };
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(entries, {
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredEntries, {
     page: filters.page, pageSize: filters.pageSize,
     onPageChange: (p) => setFilters({ page: p }),
     onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
@@ -310,6 +322,8 @@ export default function ExpenseList() {
         newLabel="New Expense"
         onDelete={selectedId ? () => setDeleteTarget(selectedId) : undefined}
         deleteDisabled={!selectedId}
+        searchValue={search}
+        onSearchChange={(v) => setFilters({ search: v, page: 1 })}
       >
         <Button
           appearance="subtle"
@@ -386,8 +400,8 @@ export default function ExpenseList() {
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div className={styles.loading}><Spinner label="Loading..." /></div>
-        ) : entries.length === 0 ? (
-          <div className={styles.empty}><Text>No expenses found for this period.</Text></div>
+        ) : filteredEntries.length === 0 ? (
+          <div className={styles.empty}><Text>{search ? 'No expenses match your search.' : 'No expenses found for this period.'}</Text></div>
         ) : viewMode === 'grid' ? (
           <DataGrid
             items={pageItems}
@@ -485,7 +499,7 @@ export default function ExpenseList() {
         page={page} pageSize={pageSize} totalItems={totalItems}
         totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
       />
-      {entries.length > 0 && (
+      {filteredEntries.length > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Billable Total</Text>
