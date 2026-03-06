@@ -12,20 +12,13 @@ import {
   MessageBarBody,
   Tooltip,
   ToggleButton,
-  DataGrid,
-  DataGridHeader,
-  DataGridHeaderCell,
-  DataGridBody,
-  DataGridRow,
-  DataGridCell,
-  TableCellLayout,
-  createTableColumn,
 } from '@fluentui/react-components';
 import {
   SendRegular,
   DismissCircleRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
@@ -315,66 +308,23 @@ export default function StagedTransactionReview() {
     setTimeout(() => setSuccess(null), 3000);
   };
 
-  // Build dynamic columns from field mapping
-  const columns = useMemo(() => {
-    const cols = [];
-
-    // All source fields as read-only columns
-    for (const sourceField of sourceFields) {
-      const targetField = fieldMapping[sourceField];
-      const isMapped = !!targetField;
-
-      cols.push(createTableColumn({
-        columnId: sourceField,
-        compare: targetField === 'amount' || targetField === 'balance'
-          ? (a, b) => (Number(a[sourceField]) || 0) - (Number(b[sourceField]) || 0)
-          : (a, b) => (String(a[sourceField] ?? '')).localeCompare(String(b[sourceField] ?? '')),
-        renderHeaderCell: () => sourceField,
-        renderCell: (item) => {
-          const value = item[sourceField];
-          const isDuplicate = duplicateMap[item._id];
-          return (
-            <TableCellLayout>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {sourceField === sourceFields[0] && isDuplicate && (
-                  <Tooltip content="Potential duplicate — a transaction with the same hash already exists" relationship="label">
-                    <WarningRegular style={{ color: tokens.colorPaletteYellowForeground1, fontSize: '16px', flexShrink: 0 }} />
-                  </Tooltip>
-                )}
-                <span className={!isMapped ? styles.unmappedCell : undefined}>{value ?? '—'}</span>
-              </span>
-            </TableCellLayout>
-          );
-        },
-      }));
-    }
-
-    // Mark as column (last)
-    cols.push(createTableColumn({
-      columnId: '_action',
-      renderHeaderCell: () => 'Mark as',
-      renderCell: (item) => {
-        const action = item.action || 'unmarked';
-        return (
-          <TableCellLayout>
-            <Tooltip content={ACTION_TOOLTIPS[action]} relationship="label">
-              <InteractionTag
-                size="small"
-                appearance="outline"
-                shape="circular"
-                onClick={(e) => { e.stopPropagation(); handleCycleAction(item._id, action); }}
-                style={{ cursor: 'pointer', ...ACTION_TAG_STYLES[action] }}
-              >
-                <InteractionTagPrimary style={ACTION_TAG_STYLES[action]}>{ACTION_LABELS[action]}</InteractionTagPrimary>
-              </InteractionTag>
-            </Tooltip>
-          </TableCellLayout>
-        );
-      },
-    }));
-
-    return cols;
-  }, [fieldMapping, duplicateMap, sourceFields, styles.unmappedCell]);
+  // Action badge component
+  const renderActionBadge = useCallback((item) => {
+    const action = item.action || 'unmarked';
+    return (
+      <Tooltip content={ACTION_TOOLTIPS[action]} relationship="label">
+        <InteractionTag
+          size="small"
+          appearance="outline"
+          shape="circular"
+          onClick={(e) => { e.stopPropagation(); handleCycleAction(item._id, action); }}
+          style={{ cursor: 'pointer', ...ACTION_TAG_STYLES[action] }}
+        >
+          <InteractionTagPrimary style={ACTION_TAG_STYLES[action]}>{ACTION_LABELS[action]}</InteractionTagPrimary>
+        </InteractionTag>
+      </Tooltip>
+    );
+  }, []);
 
   return (
     <div className={styles.page}>
@@ -439,7 +389,7 @@ export default function StagedTransactionReview() {
         </div>
       </div>
       <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic', padding: '4px 16px 0' }}>
-        Columns may vary between imports depending on the source file format.
+        Fields may vary between imports depending on the source file format.
       </Text>
 
       {/* Messages */}
@@ -470,26 +420,33 @@ export default function StagedTransactionReview() {
         ) : filteredTxs.length === 0 ? (
           <div className={styles.empty}><Text>No staged transactions found.</Text></div>
         ) : (
-          <DataGrid
+          <CardView
             items={pageItems}
-            columns={columns}
-            sortable
             getRowId={(item) => item._id}
-            style={{ width: '100%' }}
-          >
-            <DataGridHeader>
-              <DataGridRow>
-                {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
-              </DataGridRow>
-            </DataGridHeader>
-            <DataGridBody>
-              {({ item, rowId }) => (
-                <DataGridRow key={rowId}>
-                  {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
-                </DataGridRow>
-              )}
-            </DataGridBody>
-          </DataGrid>
+            renderHeader={(item) => (
+              <>
+                {duplicateMap[item._id] && (
+                  <Tooltip content="Potential duplicate — a transaction with the same hash already exists" relationship="label">
+                    <WarningRegular style={{ color: tokens.colorPaletteYellowForeground1, fontSize: '16px', flexShrink: 0 }} />
+                  </Tooltip>
+                )}
+                <Text weight="semibold">{item[sourceFields[0]] ?? '—'}</Text>
+                {sourceFields[1] && <Text style={{ color: tokens.colorNeutralForeground3 }}>{item[sourceFields[1]] ?? ''}</Text>}
+              </>
+            )}
+            renderActions={renderActionBadge}
+            renderMeta={(item) => (
+              <>
+                {sourceFields.slice(2).map((field) => (
+                  <CardMetaItem
+                    key={field}
+                    label={field}
+                    value={<span className={!fieldMapping[field] ? styles.unmappedCell : undefined}>{item[field] ?? '—'}</span>}
+                  />
+                ))}
+              </>
+            )}
+          />
         )}
       </div>
 
