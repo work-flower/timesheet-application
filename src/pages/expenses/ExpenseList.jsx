@@ -280,7 +280,7 @@ export default function ExpenseList() {
 
   const filteredEntries = useMemo(() => {
     if (!search) return entries;
-    const q = search.toLowerCase();
+    const q = String(search).toLowerCase();
     return entries.filter((e) =>
       (e.description || '').toLowerCase().includes(q) ||
       (e.expenseType || '').toLowerCase().includes(q) ||
