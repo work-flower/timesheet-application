@@ -389,7 +389,7 @@ export default function InvoiceForm() {
   const { id } = useParams();
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
-  const { navigate, goBack } = useAppNavigate();
+  const { navigate, navigateRaw, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     clientId: '',
@@ -580,7 +580,7 @@ export default function InvoiceForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigate('/invoices');
+    if (result.ok) navigateRaw('/invoices');
   };
 
   const handleDelete = async () => {

@@ -129,7 +129,7 @@ export default function ImportJobForm() {
   const { id } = useParams();
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
-  const { navigate, goBack } = useAppNavigate();
+  const { navigate, navigateRaw, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     userPrompt: 'Parse the attached bank statement.',
@@ -270,7 +270,7 @@ export default function ImportJobForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigate('/import-jobs');
+    if (result.ok) navigateRaw('/import-jobs');
   };
 
   const handleDelete = async () => {

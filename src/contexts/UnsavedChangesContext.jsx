@@ -47,6 +47,10 @@ export function UnsavedChangesProvider({ children }) {
     const ok = typeof result === 'object' ? result.ok : result;
     setDialogOpen(false);
     if (ok) {
+      // Neutralize guard before navigating — React hasn't flushed setBase()
+      // yet so isDirty is stale. Without this, popstate handler re-triggers
+      // the dialog and a second save creates a duplicate record.
+      if (guardRef.current) guardRef.current.isDirty = false;
       runPending();
     } else {
       pendingRef.current = null;
@@ -55,6 +59,7 @@ export function UnsavedChangesProvider({ children }) {
 
   const handleDiscard = useCallback(() => {
     setDialogOpen(false);
+    if (guardRef.current) guardRef.current.isDirty = false;
     runPending();
   }, [runPending]);
 
@@ -113,7 +118,7 @@ export function UnsavedChangesProvider({ children }) {
     };
   }, [isAnyDirty]);
 
-  const value = { registerGuard, checkGuard };
+  const value = { registerGuard, checkGuard, isAnyDirty };
 
   return (
     <UnsavedChangesContext.Provider value={value}>

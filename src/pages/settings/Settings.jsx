@@ -54,7 +54,7 @@ const useStyles = makeStyles({
 export default function Settings() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
-  const { navigate, goBack } = useAppNavigate();
+  const { navigate, navigateRaw, goBack } = useAppNavigate();
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', email: '', phone: '', address: '',
     businessName: '', utrNumber: '', vatNumber: '', companyRegistration: '',
@@ -113,7 +113,7 @@ export default function Settings() {
 
   const handleSaveAndClose = async () => {
     const { ok } = await saveForm();
-    if (ok) navigate('/');
+    if (ok) navigateRaw('/');
   };
 
   useEffect(() => {

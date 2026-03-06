@@ -177,7 +177,7 @@ export default function ProjectForm() {
   const { id } = useParams();
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
-  const { navigate, goBack } = useAppNavigate();
+  const { navigate, navigateRaw, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', clientId: '', endClientId: '', ir35Status: 'OUTSIDE_IR35',
@@ -311,7 +311,7 @@ export default function ProjectForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigate('/projects');
+    if (result.ok) navigateRaw('/projects');
   };
 
   useEffect(() => {
