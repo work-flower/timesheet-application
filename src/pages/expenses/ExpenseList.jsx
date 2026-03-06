@@ -282,11 +282,11 @@ export default function ExpenseList() {
     if (!search) return entries;
     const q = String(search).toLowerCase();
     return entries.filter((e) =>
-      (e.description || '').toLowerCase().includes(q) ||
-      (e.expenseType || '').toLowerCase().includes(q) ||
-      (e.externalReference || '').toLowerCase().includes(q) ||
-      (e.clientName || '').toLowerCase().includes(q) ||
-      (e.projectName || '').toLowerCase().includes(q)
+      String(e.description || '').toLowerCase().includes(q) ||
+      String(e.expenseType || '').toLowerCase().includes(q) ||
+      String(e.externalReference || '').toLowerCase().includes(q) ||
+      String(e.clientName || '').toLowerCase().includes(q) ||
+      String(e.projectName || '').toLowerCase().includes(q)
     );
   }, [entries, search]);
 
