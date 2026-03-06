@@ -51,6 +51,7 @@ import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { deriveVatFromPercent, deriveVatFromAmount } from '../../../shared/expenseVatCalc.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -251,6 +252,22 @@ export default function ExpenseForm() {
             externalReference: '',
             notes: '',
           });
+
+          // Apply query string pre-fill as user changes (e.g. from "Create Expense" on transaction)
+          const qs = new URLSearchParams(window.location.search);
+          if (qs.has('amount') || qs.has('date') || qs.has('description') || qs.has('externalReference')) {
+            const prefill = {};
+            if (qs.has('amount')) prefill.amount = parseFloat(qs.get('amount')) || 0;
+            if (qs.has('date')) prefill.date = qs.get('date');
+            if (qs.has('description')) prefill.description = qs.get('description');
+            if (qs.has('externalReference')) prefill.externalReference = qs.get('externalReference');
+            setForm((prev) => {
+              const next = { ...prev, ...prefill };
+              next.netAmount = Math.round((next.amount - next.vatAmount) * 100) / 100;
+              return next;
+            });
+            setSpinKeys((k) => ({ amount: k.amount + 1, vatAmount: k.vatAmount + 1, vatPercent: k.vatPercent + 1 }));
+          }
         }
       } catch (err) {
         setError(err.message);
@@ -554,14 +571,13 @@ export default function ExpenseForm() {
                   if (val != null && !isNaN(val)) {
                     setForm((prev) => {
                       const next = { ...prev, amount: val };
-                      const absVal = Math.abs(val);
-                      if (prev.vatPercent !== 0 && absVal > 0) {
-                        next.vatAmount = Math.sign(val) * Math.round(absVal * prev.vatPercent / (100 + prev.vatPercent) * 100) / 100;
-                      } else if (prev.vatAmount !== 0 && absVal > Math.abs(prev.vatAmount)) {
-                        const absVat = Math.abs(prev.vatAmount);
-                        next.vatPercent = Math.round((absVat / (absVal - absVat)) * 10000) / 100;
+                      if (prev.vatPercent !== 0) {
+                        Object.assign(next, deriveVatFromPercent(val, prev.vatPercent));
+                      } else if (prev.vatAmount !== 0) {
+                        Object.assign(next, deriveVatFromAmount(val, prev.vatAmount));
+                      } else {
+                        next.netAmount = Math.round((val - prev.vatAmount) * 100) / 100;
                       }
-                      next.netAmount = Math.round((val - (next.vatAmount ?? prev.vatAmount)) * 100) / 100;
                       return next;
                     });
                     setSpinKeys((k) => ({ ...k, vatAmount: k.vatAmount + 1, vatPercent: k.vatPercent + 1 }));
@@ -584,15 +600,10 @@ export default function ExpenseForm() {
                 onChange={(e, data) => {
                   const val = data.value ?? parseFloat(data.displayValue);
                   if (val != null && !isNaN(val)) {
-                    setForm((prev) => {
-                      const next = { ...prev, vatPercent: val };
-                      const absAmount = Math.abs(prev.amount);
-                      if (absAmount > 0) {
-                        next.vatAmount = Math.sign(prev.amount) * Math.round(absAmount * val / (100 + val) * 100) / 100;
-                      }
-                      next.netAmount = Math.round((prev.amount - (next.vatAmount ?? prev.vatAmount)) * 100) / 100;
-                      return next;
-                    });
+                    setForm((prev) => ({
+                      ...prev,
+                      ...deriveVatFromPercent(prev.amount, val),
+                    }));
                     setSpinKeys((k) => ({ ...k, vatAmount: k.vatAmount + 1 }));
                   }
                 }}
@@ -624,16 +635,10 @@ export default function ExpenseForm() {
                 onChange={(e, data) => {
                   const val = data.value ?? parseFloat(data.displayValue);
                   if (val != null && !isNaN(val)) {
-                    setForm((prev) => {
-                      const next = { ...prev, vatAmount: val };
-                      const absAmount = Math.abs(prev.amount);
-                      const absVat = Math.abs(val);
-                      if (absAmount > absVat) {
-                        next.vatPercent = Math.round((absVat / (absAmount - absVat)) * 10000) / 100;
-                      }
-                      next.netAmount = Math.round((prev.amount - val) * 100) / 100;
-                      return next;
-                    });
+                    setForm((prev) => ({
+                      ...prev,
+                      ...deriveVatFromAmount(prev.amount, val),
+                    }));
                     setSpinKeys((k) => ({ ...k, vatPercent: k.vatPercent + 1 }));
                   }
                 }}

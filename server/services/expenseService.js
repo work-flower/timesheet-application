@@ -2,6 +2,7 @@ import { clients, projects, expenses, transactions } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
 import { assertNotLocked } from './lockCheck.js';
+import { computeVat } from '../../shared/expenseVatCalc.js';
 
 export async function getAll(query = {}) {
   // Build base filter from legacy params
@@ -113,21 +114,8 @@ export async function create(data) {
   const client = await clients.findOne({ _id: project.clientId });
 
   const amount = Number(data.amount) || 0;
-  const absAmount = Math.abs(amount);
-  let vatAmount = Number(data.vatAmount) || 0;
-  let vatPercent = Number(data.vatPercent) || 0;
-
-  // Golden rule: if one is non-zero and the other is 0, derive the 0 from the non-zero
-  if (vatPercent !== 0 && vatAmount === 0 && absAmount > 0) {
-    // Derive vatAmount from vatPercent: vatAmount = amount * vat% / (100 + vat%)
-    vatAmount = Math.sign(amount) * Math.round(absAmount * vatPercent / (100 + vatPercent) * 100) / 100;
-  } else if (vatAmount !== 0 && vatPercent === 0 && absAmount > 0) {
-    // Derive vatPercent from vatAmount: vat% = |vatAmount| / |netAmount| * 100
-    const absVat = Math.abs(vatAmount);
-    const absNet = absAmount - absVat;
-    vatPercent = absNet > 0 ? Math.round((absVat / absNet) * 100 * 100) / 100 : 0;
-  }
-  const netAmount = Math.round((amount - vatAmount) * 100) / 100;
+  const vat = computeVat(amount, Number(data.vatAmount) || 0, Number(data.vatPercent) || 0);
+  const { vatAmount, vatPercent, netAmount } = vat;
 
   const now = new Date().toISOString();
   return expenses.insert({
@@ -177,24 +165,14 @@ export async function update(id, data) {
   // Recompute VAT fields and netAmount when amount/vatAmount/vatPercent changes
   if (updateData.amount !== undefined || updateData.vatAmount !== undefined || updateData.vatPercent !== undefined) {
     const finalAmount = updateData.amount ?? existing.amount ?? 0;
-    const absFinalAmount = Math.abs(finalAmount);
-    let vatAmount = Number(updateData.vatAmount ?? existing.vatAmount ?? 0);
-    let vatPercent = Number(updateData.vatPercent ?? existing.vatPercent ?? 0);
-
-    // Golden rule: if one is non-zero and the other is 0, derive the 0 from the non-zero
-    if (vatPercent !== 0 && vatAmount === 0 && absFinalAmount > 0) {
-      // Derive vatAmount from vatPercent: vatAmount = amount * vat% / (100 + vat%)
-      vatAmount = Math.sign(finalAmount) * Math.round(absFinalAmount * vatPercent / (100 + vatPercent) * 100) / 100;
-    } else if (vatAmount !== 0 && vatPercent === 0 && absFinalAmount > 0) {
-      // Derive vatPercent from vatAmount: vat% = |vatAmount| / |netAmount| * 100
-      const absVat = Math.abs(vatAmount);
-      const absNet = absFinalAmount - absVat;
-      vatPercent = absNet > 0 ? Math.round((absVat / absNet) * 100 * 100) / 100 : 0;
-    }
-
-    updateData.vatAmount = vatAmount;
-    updateData.vatPercent = vatPercent;
-    updateData.netAmount = Math.round((finalAmount - vatAmount) * 100) / 100;
+    const vat = computeVat(
+      finalAmount,
+      Number(updateData.vatAmount ?? existing.vatAmount ?? 0),
+      Number(updateData.vatPercent ?? existing.vatPercent ?? 0),
+    );
+    updateData.vatAmount = vat.vatAmount;
+    updateData.vatPercent = vat.vatPercent;
+    updateData.netAmount = vat.netAmount;
   }
 
   await expenses.update({ _id: id }, { $set: updateData });
