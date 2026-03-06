@@ -282,6 +282,7 @@ export default function ExpenseList() {
     if (!search) return entries;
     const q = String(search).toLowerCase();
     return entries.filter((e) =>
+      (e.date || '').includes(q) ||
       String(e.description || '').toLowerCase().includes(q) ||
       String(e.expenseType || '').toLowerCase().includes(q) ||
       String(e.externalReference || '').toLowerCase().includes(q) ||
