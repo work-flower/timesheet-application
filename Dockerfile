@@ -12,6 +12,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 COPY server/ server/
+COPY shared/ shared/
 COPY src/help/ src/help/
 COPY --from=build /app/dist dist/
 
