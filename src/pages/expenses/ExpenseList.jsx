@@ -306,7 +306,14 @@ export default function ExpenseList() {
     setSelected(new Set());
   };
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredEntries, {
+  const sortedEntries = useMemo(() => {
+    if (viewMode === 'grid') return filteredEntries;
+    return [...filteredEntries].sort((a, b) =>
+      b.date.localeCompare(a.date) || (b.amount || 0) - (a.amount || 0)
+    );
+  }, [filteredEntries, viewMode]);
+
+  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(sortedEntries, {
     page: filters.page, pageSize: filters.pageSize,
     onPageChange: (p) => setFilters({ page: p }),
     onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
