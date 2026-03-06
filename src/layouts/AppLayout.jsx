@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import useAppNavigate from '../hooks/useAppNavigate.js';
 import { newTraceId, getTraceId } from '../api/traceId.js';
+import { settingsApi, clientsApi } from '../api/index.js';
 import {
   makeStyles,
   tokens,
@@ -252,6 +253,18 @@ export default function AppLayout() {
   const location = useLocation();
   const { navigate } = useAppNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [appTitle, setAppTitle] = useState('');
+
+  useEffect(() => {
+    settingsApi.get().then((data) => {
+      if (data?.businessClientId) {
+        return clientsApi.getById(data.businessClientId).then((client) => {
+          setAppTitle(client?.companyName || 'Timesheet Manager');
+        });
+      }
+      setAppTitle('Timesheet Manager');
+    }).catch(() => setAppTitle('Timesheet Manager'));
+  }, []);
 
   // Generate a new traceId on every navigation and log it as a pageview
   useEffect(() => {
@@ -385,7 +398,7 @@ export default function AppLayout() {
             onClick={() => setCollapsed((c) => !c)}
             size="small"
           />
-          <Text className={styles.topBarTitle}>Timesheet Manager</Text>
+          <Text className={styles.topBarTitle}>{appTitle}</Text>
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
           <Button appearance="subtle" icon={<QuestionCircleRegular />} onClick={() => navigate('/help')}>
