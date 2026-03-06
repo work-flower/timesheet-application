@@ -226,11 +226,11 @@ export default function ExpenseList() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useListState('expenses', {
-    range: 'month', clientId: '', projectId: '', expenseType: '', billableFilter: '', search: '',
+    range: 'month', clientId: '', projectId: '', expenseType: '', billableFilter: '', linkedFilter: '', search: '',
     customStart: getWeekRange().startDate, customEnd: getWeekRange().endDate,
     viewMode: 'grid', page: 1, pageSize: 25,
   });
-  const { range, clientId, projectId, expenseType, billableFilter, customStart, customEnd, viewMode, search } = filters;
+  const { range, clientId, projectId, expenseType, billableFilter, linkedFilter, customStart, customEnd, viewMode, search } = filters;
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [clients, setClients] = useState([]);
@@ -282,6 +282,8 @@ export default function ExpenseList() {
     let result = entries;
     if (billableFilter === 'billable') result = result.filter((e) => e.billable);
     else if (billableFilter === 'nonbillable') result = result.filter((e) => !e.billable);
+    if (linkedFilter === 'linked') result = result.filter((e) => e.transactions?.length > 0);
+    else if (linkedFilter === 'unlinked') result = result.filter((e) => !e.transactions?.length);
     if (search) {
       const q = String(search).toLowerCase();
       result = result.filter((e) =>
@@ -295,7 +297,7 @@ export default function ExpenseList() {
       );
     }
     return result;
-  }, [entries, billableFilter, search]);
+  }, [entries, billableFilter, linkedFilter, search]);
 
   const totals = useMemo(() => {
     const billableTotal = filteredEntries.filter((e) => e.billable).reduce((sum, e) => sum + (e.amount || 0), 0);
@@ -417,6 +419,17 @@ export default function ExpenseList() {
           <option value="">All</option>
           <option value="billable">Billable</option>
           <option value="nonbillable">Non-Billable</option>
+        </Select>
+        <Text size={200} weight="semibold">Linked:</Text>
+        <Select
+          size="small"
+          value={linkedFilter}
+          onChange={(e, data) => setFilters({ linkedFilter: data.value, page: 1 })}
+          style={{ minWidth: 120 }}
+        >
+          <option value="">All</option>
+          <option value="linked">Linked</option>
+          <option value="unlinked">Unlinked</option>
         </Select>
         <div style={{ marginLeft: 'auto' }}>
           <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
