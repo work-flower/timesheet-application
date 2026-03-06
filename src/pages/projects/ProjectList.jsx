@@ -4,6 +4,7 @@ import {
   makeStyles,
   tokens,
   Text,
+  Badge,
   ToggleButton,
   DataGrid,
   DataGridHeader,
@@ -18,6 +19,9 @@ import {
 import CommandBar from '../../components/CommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
+import ViewToggle from '../../components/ViewToggle.jsx';
+import ListView from '../../components/ListView.jsx';
+import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { projectsApi } from '../../api/index.js';
 
@@ -46,6 +50,26 @@ const useStyles = makeStyles({
   loading: { display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '48px' },
   empty: { display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '48px', color: tokens.colorNeutralForeground3 },
   row: { cursor: 'pointer', '&:hover': { backgroundColor: tokens.colorNeutralBackground1Hover } },
+  projectName: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+  },
+  clientText: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  dot: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  rateText: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+    minWidth: '80px',
+    textAlign: 'right',
+  },
 });
 
 const columns = [
@@ -88,9 +112,12 @@ export default function ProjectList() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(() => localStorage.getItem('projects.showArchived') === 'true');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('projects.viewMode') || 'grid');
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
+
+  useEffect(() => { localStorage.setItem('projects.viewMode', viewMode); }, [viewMode]);
 
   useEffect(() => {
     projectsApi.getAll()
@@ -154,6 +181,9 @@ export default function ProjectList() {
         >
           Show Archived
         </ToggleButton>
+        <div style={{ marginLeft: 'auto' }}>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
       </div>
       {deleteError && (
         <div style={{ padding: '8px 16px' }}>
@@ -165,7 +195,7 @@ export default function ProjectList() {
           <div className={styles.loading}><Spinner label="Loading..." /></div>
         ) : filtered.length === 0 ? (
           <div className={styles.empty}><Text>No projects found. Click 'New Project' to create one.</Text></div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <DataGrid
             items={pageItems}
             columns={columns}
@@ -189,6 +219,55 @@ export default function ProjectList() {
               )}
             </DataGridBody>
           </DataGrid>
+        ) : viewMode === 'list' ? (
+          <ListView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/projects/${item._id}`)}
+            renderTopLine={(item) => (
+              <>
+                <Text className={styles.projectName}>{item.name}</Text>
+                <Text className={styles.dot}>·</Text>
+                <Text className={styles.clientText}>{item.clientName}</Text>
+              </>
+            )}
+            renderActions={(item) => (
+              <>
+                <Badge
+                  size="small"
+                  appearance="filled"
+                  color={item.status === 'active' ? 'success' : 'informative'}
+                >{item.status === 'active' ? 'Active' : 'Archived'}</Badge>
+                <Text className={styles.rateText}>£{item.effectiveRate}/day</Text>
+              </>
+            )}
+            renderBottomLine={(item) => item.ir35Status ? (
+              <Text className={styles.clientText}>{item.ir35Status.replace(/_/g, ' ')}</Text>
+            ) : null}
+          />
+        ) : (
+          <CardView
+            items={pageItems}
+            getRowId={(item) => item._id}
+            onItemClick={(item) => navigate(`/projects/${item._id}`)}
+            renderHeader={(item) => (
+              <>
+                <Text className={styles.projectName}>{item.name}</Text>
+                <Badge
+                  size="small"
+                  appearance="filled"
+                  color={item.status === 'active' ? 'success' : 'informative'}
+                >{item.status === 'active' ? 'Active' : 'Archived'}</Badge>
+              </>
+            )}
+            renderMeta={(item) => (
+              <>
+                <CardMetaItem label="Client" value={item.clientName || '—'} />
+                <CardMetaItem label="Rate" value={`£${item.effectiveRate}/day`} />
+                <CardMetaItem label="IR35" value={item.ir35Status?.replace(/_/g, ' ') || '—'} />
+              </>
+            )}
+          />
         )}
       </div>
       <PaginationControls
