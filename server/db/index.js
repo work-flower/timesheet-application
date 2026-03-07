@@ -2,6 +2,7 @@ import Datastore from 'nedb-promises';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync } from 'fs';
+import { wrapCollection } from '../pipeline/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,15 +14,28 @@ mkdirSync(join(dataDir, 'documents'), { recursive: true });
 mkdirSync(join(dataDir, 'expenses'), { recursive: true });
 mkdirSync(join(dataDir, 'imports'), { recursive: true });
 
-const clients = Datastore.create({ filename: join(dataDir, 'clients.db'), autoload: true });
-const projects = Datastore.create({ filename: join(dataDir, 'projects.db'), autoload: true });
-const timesheets = Datastore.create({ filename: join(dataDir, 'timesheets.db'), autoload: true });
-const settings = Datastore.create({ filename: join(dataDir, 'settings.db'), autoload: true });
-const documents = Datastore.create({ filename: join(dataDir, 'documents.db'), autoload: true });
-const expenses = Datastore.create({ filename: join(dataDir, 'expenses.db'), autoload: true });
-const invoices = Datastore.create({ filename: join(dataDir, 'invoices.db'), autoload: true });
-const transactions = Datastore.create({ filename: join(dataDir, 'transactions.db'), autoload: true });
-const importJobs = Datastore.create({ filename: join(dataDir, 'importJobs.db'), autoload: true });
-const stagedTransactions = Datastore.create({ filename: join(dataDir, 'stagedTransactions.db'), autoload: true });
+// Raw datastores
+const _clients = Datastore.create({ filename: join(dataDir, 'clients.db'), autoload: true });
+const _projects = Datastore.create({ filename: join(dataDir, 'projects.db'), autoload: true });
+const _timesheets = Datastore.create({ filename: join(dataDir, 'timesheets.db'), autoload: true });
+const _settings = Datastore.create({ filename: join(dataDir, 'settings.db'), autoload: true });
+const _documents = Datastore.create({ filename: join(dataDir, 'documents.db'), autoload: true });
+const _expenses = Datastore.create({ filename: join(dataDir, 'expenses.db'), autoload: true });
+const _invoices = Datastore.create({ filename: join(dataDir, 'invoices.db'), autoload: true });
+const _transactions = Datastore.create({ filename: join(dataDir, 'transactions.db'), autoload: true });
+const _importJobs = Datastore.create({ filename: join(dataDir, 'importJobs.db'), autoload: true });
+const _stagedTransactions = Datastore.create({ filename: join(dataDir, 'stagedTransactions.db'), autoload: true });
+
+// Wrapped with execution pipeline
+const clients = wrapCollection('clients', _clients);
+const projects = wrapCollection('projects', _projects);
+const timesheets = wrapCollection('timesheets', _timesheets);
+const settings = wrapCollection('settings', _settings);
+const documents = wrapCollection('documents', _documents);
+const expenses = wrapCollection('expenses', _expenses);
+const invoices = wrapCollection('invoices', _invoices);
+const transactions = wrapCollection('transactions', _transactions);
+const importJobs = wrapCollection('importJobs', _importJobs);
+const stagedTransactions = wrapCollection('stagedTransactions', _stagedTransactions);
 
 export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions };
