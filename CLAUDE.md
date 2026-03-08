@@ -24,7 +24,7 @@ Project standards are enforced via Claude Code skills (`.claude/skills/`). These
 2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
 3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
 
-Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`
 
 ### Keeping Wiring Docs Up to Date (MANDATORY)
 
@@ -289,13 +289,9 @@ Detailed business rules for each entity (golden rules, validation, computation, 
 
 ### Logging
 
-5. **Log files:** JSON Lines format (`app-YYYY-MM-DD.log`), one entry per line. Files rotate when exceeding max file size (numbered suffix: `app-YYYY-MM-DD-1.log`). Stored in a dedicated log directory.
-6. **TraceId correlation:** Each page navigation generates a client-side UUID. All API requests from that navigation share the same traceId via `X-Trace-Id` header. Server stores it in AsyncLocalStorage and writes it to every log entry. Enables filtering all requests triggered by a single user action.
-7. **Message filter:** Regex pattern tested against the full serialized JSON log entry before writing to file. Filters by any field (source, path, level, message). Empty pattern logs everything.
-8. **Payload logging:** Opt-in, debug-level only. Logs POST/PUT/PATCH request bodies. Sensitive fields automatically masked using a key-name pattern (`secret`, `password`, `apikey`). Payloads truncated at 2000 characters.
-9. **R2 log lifecycle:** Completed (non-active) log files can be uploaded to R2. Upload verifies integrity (filename + size + MD5 hash) after transfer, then deletes the local copy. The active log file (today's date) cannot be uploaded or deleted. Files can be downloaded from R2 back to local for searching.
-10. **Safe local delete:** Local log files can only be deleted if an identical copy exists in R2 (verified by filename + size + MD5 hash match).
-11. **Error logging levels:** `console.warn()` for managed exceptions (4xx), `console.error()` for unexpected failures (5xx). MCP tool errors logged as `console.error()`.
+Full logging infrastructure is documented in `logging.md` wiring doc. Key cross-cutting rule:
+
+- **Error logging convention (all route handlers):** `console.warn()` for 4xx (managed exceptions), `console.error()` for 5xx (unexpected failures). MCP tool errors logged as `console.error()`.
 
 ### MCP (Model Context Protocol)
 
