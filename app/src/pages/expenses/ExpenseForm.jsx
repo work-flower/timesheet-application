@@ -51,7 +51,7 @@ import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
-import { deriveVatFromPercent, deriveVatFromAmount } from '../../../shared/expenseVatCalc.js';
+import { deriveVatFromPercent, deriveVatFromAmount } from '../../../../shared/expenseVatCalc.js';
 
 const useStyles = makeStyles({
   page: {},

@@ -15,7 +15,6 @@ import ExpenseForm from './pages/expenses/ExpenseForm.jsx';
 import ExpenseAttachmentUpload from './pages/expenses/ExpenseAttachmentUpload.jsx';
 import InvoiceList from './pages/invoices/InvoiceList.jsx';
 import InvoiceForm from './pages/invoices/InvoiceForm.jsx';
-import Settings from './pages/settings/Settings.jsx';
 import ImportJobList from './pages/importJobs/ImportJobList.jsx';
 import ImportJobForm from './pages/importJobs/ImportJobForm.jsx';
 import StagedTransactionReview from './pages/stagedTransactions/StagedTransactionReview.jsx';
@@ -29,7 +28,6 @@ import HelpIndex from './pages/help/HelpIndex.jsx';
 import HelpTopic from './pages/help/HelpTopic.jsx';
 import ReconciliationDashboard from './pages/dashboards/ReconciliationDashboard.jsx';
 import FinancialDashboard from './pages/dashboards/FinancialDashboard.jsx';
-import LogViewer from './pages/logs/LogViewer.jsx';
 
 export default function App() {
   return (
@@ -70,8 +68,6 @@ export default function App() {
               <Route path="/reports/vat" element={<VatReport />} />
               <Route path="/help" element={<HelpIndex />} />
               <Route path="/help/:topicId" element={<HelpTopic />} />
-              <Route path="/logs" element={<LogViewer />} />
-              <Route path="/settings" element={<Settings />} />
             </Route>
           </Routes>
         </UnsavedChangesProvider>

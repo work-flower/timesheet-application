@@ -23,7 +23,6 @@ import {
   TableRegular,
   WalletRegular,
   ArrowSwapRegular,
-  SettingsRegular,
   NavigationRegular,
   QuestionCircleRegular,
   ChevronDownRegular,
@@ -31,7 +30,6 @@ import {
   DataBarVerticalRegular,
   CalculatorRegular,
   DocumentTextRegular,
-  TextBulletListSquareRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -228,11 +226,10 @@ const navItems = [
   {
     label: 'Data Management',
     icon: <DatabaseRegular />,
-    prefix: ['/import-jobs', '/staged-transactions', '/logs'],
+    prefix: ['/import-jobs', '/staged-transactions'],
     children: [
       { to: '/import-jobs', label: 'Import Transactions', icon: <ArrowImportRegular /> },
       { to: '/staged-transactions', label: 'Staged Transactions', icon: <TableRegular /> },
-      { to: '/logs', label: 'Application Logs', icon: <TextBulletListSquareRegular /> },
     ],
   },
   {
@@ -403,9 +400,6 @@ export default function AppLayout() {
         <div style={{ display: 'flex', gap: '4px' }}>
           <Button appearance="subtle" icon={<QuestionCircleRegular />} onClick={() => navigate('/help')}>
             Help
-          </Button>
-          <Button appearance="subtle" icon={<SettingsRegular />} onClick={() => navigate('/settings')}>
-            Settings
           </Button>
         </div>
       </div>

@@ -138,10 +138,17 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Serve help topic assets (images etc.) from src/help/
-app.use('/help', express.static(join(__dirname, '..', 'src', 'help')));
+// Serve help topic assets (images etc.) from app/src/help/
+app.use('/help', express.static(join(__dirname, '..', 'app', 'src', 'help')));
 
-// Serve static frontend in production
+// Serve admin app in production
+const adminDistPath = join(__dirname, '..', 'dist-admin');
+app.use('/admin', express.static(adminDistPath));
+app.get('/admin/*', (req, res) => {
+  res.sendFile(join(adminDistPath, 'index.html'));
+});
+
+// Serve main app in production
 const distPath = join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
 app.get('*', (req, res) => {

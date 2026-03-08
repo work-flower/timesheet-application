@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 
 const router = Router();
 
-const HELP_ROOT = join(__dirname, '..', '..', 'src', 'help');
+const HELP_ROOT = join(__dirname, '..', '..', 'app', 'src', 'help');
 
 // Find a skill folder by name across all help topics.
 // Searches src/help/{topic}/skill/{skillFolder}/

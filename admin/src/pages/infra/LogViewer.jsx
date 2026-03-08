@@ -173,20 +173,13 @@ export default function LogViewer() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Filters — persisted to localStorage
   const [filters, setFilters] = useListState('logs', { startDate: getToday(), endDate: getToday(), level: '', source: '', keyword: '', page: 1, pageSize: 25 });
   const { startDate, endDate, level, source, keyword } = filters;
 
-  // TraceId filter
   const [traceIdFilter, setTraceIdFilter] = useState('');
-
-  // Detail panel
   const [selectedEntry, setSelectedEntry] = useState(null);
-
-  // Sources extracted from data for filter dropdown
   const [sources, setSources] = useState([]);
 
-  // Debounce keyword search
   const debounceRef = useRef(null);
   const [debouncedKeyword, setDebouncedKeyword] = useState(keyword);
 
@@ -196,13 +189,9 @@ export default function LogViewer() {
     return () => clearTimeout(debounceRef.current);
   }, [keyword]);
 
-
-  // Fetch entries
   useEffect(() => {
     setLoading(true);
-    const params = {
-      limit: 5000,
-    };
+    const params = { limit: 5000 };
     if (startDate) params.startDate = startDate;
     if (endDate) params.endDate = endDate;
     if (level) params.level = level;
@@ -214,10 +203,8 @@ export default function LogViewer() {
       .then((result) => {
         setEntries(result.entries || []);
         setTotal(result.total || 0);
-        // Extract unique sources for filter
         const uniqueSources = [...new Set((result.entries || []).map(e => e.source).filter(Boolean))].sort();
         setSources((prev) => {
-          // Merge with previous to avoid losing options on filter
           const merged = [...new Set([...prev, ...uniqueSources])].sort();
           return merged;
         });
@@ -288,11 +275,7 @@ export default function LogViewer() {
       renderCell: (item) => (
         <TableCellLayout>
           {item.traceId ? (
-            <span
-              className={styles.traceLink}
-              title={item.traceId}
-              onClick={(e) => { e.stopPropagation(); handleTraceClick(item.traceId); }}
-            >
+            <span className={styles.traceLink} title={item.traceId} onClick={(e) => { e.stopPropagation(); handleTraceClick(item.traceId); }}>
               {item.traceId.slice(0, 8)}
             </span>
           ) : '\u2014'}
@@ -333,32 +316,15 @@ export default function LogViewer() {
       <div className={styles.filters}>
         <div className={styles.filterGroup}>
           <Text size={200} weight="semibold">From:</Text>
-          <Input
-            type="date"
-            size="small"
-            value={startDate}
-            onChange={(e) => setFilters({ startDate: e.target.value, page: 1 })}
-            style={{ width: 140 }}
-          />
+          <Input type="date" size="small" value={startDate} onChange={(e) => setFilters({ startDate: e.target.value, page: 1 })} style={{ width: 140 }} />
         </div>
         <div className={styles.filterGroup}>
           <Text size={200} weight="semibold">To:</Text>
-          <Input
-            type="date"
-            size="small"
-            value={endDate}
-            onChange={(e) => setFilters({ endDate: e.target.value, page: 1 })}
-            style={{ width: 140 }}
-          />
+          <Input type="date" size="small" value={endDate} onChange={(e) => setFilters({ endDate: e.target.value, page: 1 })} style={{ width: 140 }} />
         </div>
         <div className={styles.filterGroup}>
           <Text size={200} weight="semibold">Level:</Text>
-          <Select
-            size="small"
-            value={level}
-            onChange={(e, data) => setFilters({ level: data.value, page: 1 })}
-            style={{ minWidth: 100 }}
-          >
+          <Select size="small" value={level} onChange={(e, data) => setFilters({ level: data.value, page: 1 })} style={{ minWidth: 100 }}>
             <option value="">All</option>
             <option value="error">Error</option>
             <option value="warn">Warn</option>
@@ -368,12 +334,7 @@ export default function LogViewer() {
         </div>
         <div className={styles.filterGroup}>
           <Text size={200} weight="semibold">Source:</Text>
-          <Select
-            size="small"
-            value={source}
-            onChange={(e, data) => setFilters({ source: data.value, page: 1 })}
-            style={{ minWidth: 120 }}
-          >
+          <Select size="small" value={source} onChange={(e, data) => setFilters({ source: data.value, page: 1 })} style={{ minWidth: 120 }}>
             <option value="">All</option>
             {sources.map((s) => (
               <option key={s} value={s}>{s}</option>
@@ -381,21 +342,10 @@ export default function LogViewer() {
           </Select>
         </div>
         <div className={styles.filterGroup}>
-          <Input
-            size="small"
-            placeholder="Search messages..."
-            value={keyword}
-            onChange={(e) => setFilters({ keyword: e.target.value, page: 1 })}
-            contentBefore={<SearchRegular />}
-            style={{ minWidth: 180 }}
-          />
+          <Input size="small" placeholder="Search messages..." value={keyword} onChange={(e) => setFilters({ keyword: e.target.value, page: 1 })} contentBefore={<SearchRegular />} style={{ minWidth: 180 }} />
         </div>
         {traceIdFilter && (
-          <div
-            className={styles.traceChip}
-            onClick={() => setTraceIdFilter('')}
-            title="Click to clear trace filter"
-          >
+          <div className={styles.traceChip} onClick={() => setTraceIdFilter('')} title="Click to clear trace filter">
             Trace: {traceIdFilter.slice(0, 8)}
             <DismissCircleRegular style={{ fontSize: '14px' }} />
           </div>
@@ -403,35 +353,17 @@ export default function LogViewer() {
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
-          <div className={styles.loading}>
-            <Spinner label="Loading..." />
-          </div>
+          <div className={styles.loading}><Spinner label="Loading..." /></div>
         ) : entries.length === 0 ? (
-          <div className={styles.empty}>
-            <Text>No log entries found.</Text>
-          </div>
+          <div className={styles.empty}><Text>No log entries found.</Text></div>
         ) : (
-          <DataGrid
-            items={pageItems}
-            columns={columns}
-            sortable
-            getRowId={(item, index) => `${item.timestamp}-${index}`}
-            style={{ width: '100%' }}
-          >
+          <DataGrid items={pageItems} columns={columns} sortable getRowId={(item, index) => `${item.timestamp}-${index}`} style={{ width: '100%' }}>
             <DataGridHeader>
-              <DataGridRow>
-                {({ renderHeaderCell }) => (
-                  <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
-                )}
-              </DataGridRow>
+              <DataGridRow>{({ renderHeaderCell }) => (<DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>)}</DataGridRow>
             </DataGridHeader>
             <DataGridBody>
               {({ item, rowId }) => (
-                <DataGridRow
-                  key={rowId}
-                  className={styles.clickableRow}
-                  onClick={() => setSelectedEntry(item)}
-                >
+                <DataGridRow key={rowId} className={styles.clickableRow} onClick={() => setSelectedEntry(item)}>
                   {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
                 </DataGridRow>
               )}
@@ -439,10 +371,7 @@ export default function LogViewer() {
           </DataGrid>
         )}
       </div>
-      <PaginationControls
-        page={page} pageSize={pageSize} totalItems={totalItems}
-        totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
-      />
+      <PaginationControls page={page} pageSize={pageSize} totalItems={totalItems} totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize} />
       <div className={styles.summary}>
         <div className={styles.summaryItem}>
           <Text className={styles.summaryLabel}>Entries</Text>
@@ -450,31 +379,15 @@ export default function LogViewer() {
         </div>
       </div>
 
-      {/* Detail Panel */}
-      <OverlayDrawer
-        position="end"
-        size="medium"
-        open={!!selectedEntry}
-        onOpenChange={(_, data) => { if (!data.open) setSelectedEntry(null); }}
-      >
+      <OverlayDrawer position="end" size="medium" open={!!selectedEntry} onOpenChange={(_, data) => { if (!data.open) setSelectedEntry(null); }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={
-              <Button
-                appearance="subtle"
-                icon={<DismissRegular />}
-                onClick={() => setSelectedEntry(null)}
-              />
-            }
+            action={<Button appearance="subtle" icon={<DismissRegular />} onClick={() => setSelectedEntry(null)} />}
           >
             {selectedEntry && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>{formatTimestamp(selectedEntry.timestamp)}</span>
-                <Badge
-                  appearance="filled"
-                  color={levelColors[selectedEntry.level] || 'informative'}
-                  size="small"
-                >
+                <Badge appearance="filled" color={levelColors[selectedEntry.level] || 'informative'} size="small">
                   {(selectedEntry?.level || '').toUpperCase()}
                 </Badge>
               </div>
@@ -493,42 +406,24 @@ export default function LogViewer() {
                     <div key={key} className={styles.drawerField}>
                       <Text className={styles.drawerLabel}>{label}</Text>
                       {isTrace ? (
-                        <span
-                          className={styles.traceLink}
-                          onClick={() => handleTraceClick(value)}
-                        >
-                          {value}
-                        </span>
+                        <span className={styles.traceLink} onClick={() => handleTraceClick(value)}>{value}</span>
                       ) : (
-                        <Text className={styles.drawerValue}>
-                          {format ? format(value) : value}
-                        </Text>
+                        <Text className={styles.drawerValue}>{format ? format(value) : value}</Text>
                       )}
                     </div>
                   );
                 })}
               </div>
-
               <div className={styles.section}>
                 <Text className={styles.sectionTitle}>Message</Text>
                 <pre className={styles.pre}>{selectedEntry.message}</pre>
               </div>
-
               <div className={styles.section}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                   <Text className={styles.sectionTitle} style={{ marginBottom: 0 }}>Raw JSON</Text>
-                  <Button
-                    size="small"
-                    appearance="subtle"
-                    icon={<CopyRegular />}
-                    onClick={() => navigator.clipboard.writeText(JSON.stringify(selectedEntry, null, 2))}
-                  >
-                    Copy JSON
-                  </Button>
+                  <Button size="small" appearance="subtle" icon={<CopyRegular />} onClick={() => navigator.clipboard.writeText(JSON.stringify(selectedEntry, null, 2))}>Copy JSON</Button>
                 </div>
-                <pre className={styles.pre}>
-                  {JSON.stringify(selectedEntry, null, 2)}
-                </pre>
+                <pre className={styles.pre}>{JSON.stringify(selectedEntry, null, 2)}</pre>
               </div>
             </>
           )}

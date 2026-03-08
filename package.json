@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"node server/index.js\" \"vite\"",
-    "build": "vite build",
+    "dev": "concurrently \"node server/index.js\" \"vite\" \"vite --config vite.admin.config.js\"",
+    "dev:app": "vite",
+    "dev:admin": "vite --config vite.admin.config.js",
+    "build": "vite build && vite build --config vite.admin.config.js",
+    "build:admin": "vite build --config vite.admin.config.js",
     "start": "node server/index.js",
     "seed": "node server/db/seed.js"
   },
