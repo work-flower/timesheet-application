@@ -408,14 +408,15 @@ Below cards: "Recent Timesheet Entries" grid showing last 10 entries (Date, Clie
 
 Two report pages (Timesheet and Expense) sharing the same two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods computed from actual entry dates (monthly or weekly). Actions: Generate (preview), Download (browser save). Timesheet report also has Save Document (persists server-side, viewable from project's Documents tab). Selections persisted to localStorage (separate keys per report type).
 
-### Settings Page
+### Admin Console (Settings & Infrastructure)
 
-Five tabs:
-- **Profile:** Contractor personal + business details form with dirty tracking
-- **Invoicing:** Invoice number seed (read-only display), default payment term days, default VAT rate, invoice footer text, bank details (name, sort code, account number, account owner)
-- **AI Config:** API Key (password input, masked), Model (text input), Max Tokens (number input, default 64000, max 64000), Timeout in minutes (number input, default 30). Test Connection and Save Configuration buttons. Two system prompt sections: Transaction Import System Prompt and Expense Receipt System Prompt (both markdown editors, full width). Independent component with own save logic (not part of main Settings form tracker).
-- **Backup:** R2 credentials, backup path, schedule (off/daily/weekly). Save Configuration button, Test Connection, Backup Now. Backup history grid with Restore/Delete per row. Restore shows confirmation dialog and reload banner on success.
-- **Logging:** Log level, max file size, message filter (regex), payload logging toggle (debug-only, with volume warning). R2 log storage credentials (endpoint, access key, secret, bucket, path). Upload settings (enabled toggle, interval). Test Connection and Save. Local log files grid with Upload to R2 and Delete actions. R2 log files grid with Download action. Independent component with own save logic.
+Settings and infrastructure pages live in the admin app (`admin/src/pages/`), served at `/admin/`:
+
+- **config/** — ProfilePage (contractor details), InvoicingPage (invoice seed, payment terms, VAT, bank details)
+- **infra/** — BackupPage (R2 config, backup/restore), LoggingPage (log config, R2 upload), LogViewer (search, traceId filter)
+- **system/** — AiConfigPage (Claude API key, model, prompts), McpAuthPage (OAuth config)
+
+Each is a self-contained config form with its own save logic. No wiring docs needed — minimal cross-entity dependencies.
 
 ### Help Pages
 
