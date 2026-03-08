@@ -121,6 +121,38 @@ draft → confirmed → posted
 - Update: Dashboard aggregation (dashboardService)
 - Update: removeByClientId cascade logic
 
+## Invoice PDF Generation
+
+### Invoice Page Layout
+
+1. Header: business name + address + "INVOICE" label (navy)
+2. Billing block: "To" section (left) + invoice meta with grey background (right) — invoice date, number, due date
+3. Service period line
+4. Line items table in navy-bordered rectangle: Description, Qty, Unit, Unit Price, VAT %, Amount (net), VAT, Total — grouped by VAT rate, alternating rows
+5. Totals block (right-aligned, below table): Sub Total, Total VAT, Total Due
+6. Page footer: "Thank you" message, company number, three-column layout (Registered Address, Contact Information, Payment Details)
+
+### Combined PDF
+
+Invoice page + optional timesheet report pages + optional expense report pages merged into a single file on confirm.
+
+- Timesheet/expense reports use the invoice's service period for the period label
+- Generated and saved to disk: `DATA_DIR/invoices/{invoiceNumber}/{invoiceId}.pdf`
+- Served from disk for confirmed/posted invoices (no regeneration)
+- Deleted on unconfirm
+
+File chain:
+```text
+invoiceService.confirm → invoicePdfService.js (invoice pages)
+                       → reportService.js (timesheet pages, if includeTimesheetReport)
+                       → expenseReportService.js (expense pages, if includeExpenseReport)
+                       → pdfCombineService.js → disk
+```
+
+Entity-specific report layouts:
+- **Timesheet Report** — see `timesheets.md` → PDF Report section
+- **Expense Report** — see `expenses.md` → PDF Report section
+
 ## Lessons Learned
 
 (Empty — will be populated as issues are encountered)

@@ -46,9 +46,9 @@ Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `pr
 
 - `DATA_DIR` env var — database/documents path (default: `./data`)
 - `PORT` env var — Express port (default: `3001`)
-- `npm run dev` — runs Express + Vite dev server (port 5173) concurrently; Vite proxies `/api` to Express
-- `npm run build` — Vite production build to `dist/`
-- `npm start` — Express serves API + built frontend; catch-all serves `index.html` for client-side routing
+- `npm run dev` — runs Express + both Vite dev servers (main on 5173, admin on 5174) concurrently; Vite proxies `/api` to Express
+- `npm run build` — builds both apps (`dist/` + `dist-admin/`)
+- `npm start` — Express serves API + both built frontends (main at `/`, admin at `/admin/`)
 - `npm run seed` — clears all data and populates sample records
 - Health check at `GET /api/health`
 
@@ -134,6 +134,7 @@ One entry = one day on one project. Multiple entries per day allowed (different 
 | externalReference | Invoice number, order ID, receipt number, or other external reference from the source document |
 | attachments | Array of `{ filename, originalName, mimeType }` |
 | notes | Markdown, internal only (not visible to client) |
+| transactions | Array of linked transaction IDs (for payment matching) |
 | invoiceId, isLocked, isLockedReason | Record locking fields |
 
 Attachment files stored on disk at `DATA_DIR/expenses/{expenseId}/`. Image thumbnails generated server-side (200px wide, `thumb_` prefix). Deleting an expense cascade-deletes its attachment directory.
@@ -155,6 +156,7 @@ Attachment files stored on disk at `DATA_DIR/expenses/{expenseId}/`. Image thumb
 | paidDate | Date when paid (posted + paid only) |
 | subtotal, totalVat, total | Computed from lines, persisted on save |
 | pdfPath | Absolute path to saved combined PDF file (set on confirm, cleared on unconfirm) |
+| transactions | Array of linked transaction IDs (for payment matching) |
 | isLocked, isLockedReason | Record locking fields |
 
 **Invoice lines** (embedded in `lines[]`):
@@ -265,6 +267,7 @@ Deleted when job is abandoned.
 | source | Full staged transaction record (audit trail) |
 | status | `unmatched`, `matched`, or `ignored` |
 | ignoreReason | Reason for ignoring (nullable) |
+| isLocked, isLockedReason | Record locking fields |
 
 ---
 
@@ -295,11 +298,11 @@ Full logging infrastructure is documented in `logging.md` wiring doc. Key cross-
 
 ### MCP (Model Context Protocol)
 
-12. The application exposes an MCP endpoint at `POST /mcp` (outside `/api` prefix) for AI assistants via JSON-RPC 2.0.
-13. **Available tools:** `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`.
-14. **Confirmation flow:** All MCP tools follow a confirmation flow — the AI must list projects first, confirm the project with the user, present a summary, and only submit after user confirmation.
-15. **Authentication:** MCP auth configuration managed via `/api/mcp-auth` endpoints. OAuth 2.0 metadata served at `/.well-known/oauth-authorization-server`.
-16. **Upload Expense Image Skill:** Downloadable Claude.ai skill for receipt image upload after expense creation via MCP.
+1. The application exposes an MCP endpoint at `POST /mcp` (outside `/api` prefix) for AI assistants via JSON-RPC 2.0.
+2. **Available tools:** `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`.
+3. **Confirmation flow:** All MCP tools follow a confirmation flow — the AI must list projects first, confirm the project with the user, present a summary, and only submit after user confirmation.
+4. **Authentication:** MCP auth configuration managed via `/api/mcp-auth` endpoints. OAuth 2.0 metadata served at `/.well-known/oauth-authorization-server`.
+5. **Upload Expense Image Skill:** Downloadable Claude.ai skill for receipt image upload after expense creation via MCP.
 
 ---
 
@@ -327,40 +330,45 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 
 | Entity | Expandable |
 |--------|-----------|
-| clients | projects, timesheets, expenses |
+| clients | projects, timesheets, expenses, invoices |
 | projects | client, timesheets, expenses, documents |
 | timesheets | project, client |
 | expenses | project, client |
+| invoices | client |
 | documents | client, project |
 
 ---
 
 ## User Interface
 
-### General Design
+### General Design (applies to both main and admin apps)
 
 - Fluent UI v9 default theme — Power Platform look (white background, blue accent `#0078D4`, grey sidebar)
 - Clean, professional, enterprise feel
 - Dense information display — favour grids over cards for data
 - All notes fields use markdown editor
 
-### Layout
+### Layout (applies to both main and admin apps)
 
-1. **Top Bar:** App title "Timesheet Manager" on the left with hamburger menu toggle, Settings button on the right
-2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Dashboard, Clients, Projects, Timesheets, Expenses, Invoices, Reports (expandable parent with Timesheet and Expenses children), Data Management (expandable parent with Import Transactions and Application Logs children). Active item highlighted with blue accent border.
+1. **Top Bar:** App title on the left with hamburger menu toggle, Settings button on the right
+2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Menu items with expandable parent groups. Active item highlighted with blue accent border.
 3. **Main Content Area** (scrollable): List views, form views, or dashboard
 
 ### Navigation
 
+**Main app** (`/`):
+
 | Route | Page |
 |-------|------|
-| `/` | Dashboard |
+| `/` | Dashboard (Operations) |
+| `/dashboards/reconciliation` | Reconciliation Dashboard |
+| `/dashboards/financial` | Financial Dashboard |
 | `/clients` | Client list |
 | `/clients/new` | Client create form |
-| `/clients/:id` | Client form (tabs: General, Projects, Timesheets, Expenses) |
+| `/clients/:id` | Client form (tabs: General, Projects, Timesheets, Expenses, Invoices) |
 | `/projects` | Project list |
 | `/projects/new` | Project create form |
-| `/projects/:id` | Project form (tabs: General, Timesheets, Expenses, Documents) |
+| `/projects/:id` | Project form (tabs: General, Timesheets, Expenses, Documents, Invoices) |
 | `/timesheets` | Timesheet list |
 | `/timesheets/new` | Timesheet create form |
 | `/timesheets/:id` | Timesheet edit form |
@@ -372,44 +380,56 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/invoices/:id` | Invoice form (tabs: Invoice, PDF Preview) |
 | `/reports/timesheets` | Timesheet report generation page |
 | `/reports/expenses` | Expense report generation page |
+| `/reports/income-expense` | Income & Expense report |
+| `/reports/vat` | VAT report |
 | `/import-jobs` | Import job list |
 | `/import-jobs/new` | Import job create form (file upload) |
 | `/import-jobs/:id` | Import job form (staged transactions grid, lifecycle) |
+| `/staged-transactions` | Staged transaction review |
 | `/transactions` | Transaction list |
 | `/transactions/:id` | Transaction form (read-only details, editable status) |
-| `/logs` | Log Viewer |
 | `/help` | Help topics index |
 | `/help/:topicId` | Help topic detail (markdown content with images) |
-| `/settings` | Settings (tabs: Profile, Invoicing, AI Config, Backup, Logging) |
+
+**Admin console** (`/admin/`):
+
+| Route | Page |
+|-------|------|
+| `/config/profile` | ProfilePage (contractor details) |
+| `/config/invoicing` | InvoicingPage (invoice seed, payment terms, VAT, bank details) |
+| `/system/ai` | AiConfigPage (Claude API key, model, prompts) |
+| `/system/mcp-auth` | McpAuthPage (OAuth config) |
+| `/infra/backup` | BackupPage (R2 config, backup/restore) |
+| `/infra/logging` | LoggingPage (log config, R2 upload) |
+| `/reports/logs` | LogViewer (search, filters, detail drawer) |
 
 ### List Views & Form Views
 
 Generic list/form patterns are defined in Claude Code skills (`/list-views-guide`, `/forms-guide`). Entity-specific UI details (filters, columns, tabs, fields, computed values) are documented in each entity's wiring doc at `.claude/docs/`.
 
-- **Log Viewer** (no wiring doc): Date range, level, source, and keyword filters. TraceId filter (set by clicking a traceId value). Row click opens OverlayDrawer with full details and raw JSON.
+### Dashboards
 
-### Dashboard
+Three dashboards accessible from the main app:
 
-Six summary cards in a responsive grid:
-1. **Hours This Week** — sum of current week's timesheet hours
-2. **Hours This Month** — sum of current month's timesheet hours
-3. **Active Projects** — count of active projects
-4. **Earnings This Month** — sum of current month's timesheet amounts
-5. **Expenses This Month** — billable total as main value, total (billable + non-billable) as hint
-6. **Unpaid Invoices** — sum of unpaid/overdue posted invoice totals, with count
-
-Below cards: "Recent Timesheet Entries" grid showing last 10 entries (Date, Client, Project, Hours, Amount).
+1. **Operations** (`/`) — Six summary cards (hours this week/month, active projects, earnings, expenses, unpaid invoices) + recent timesheet entries grid
+2. **Reconciliation** (`/dashboards/reconciliation`) — Transaction matching and reconciliation overview
+3. **Financial** (`/dashboards/financial`) — Financial summary and analysis
 
 ### Reports Pages
 
-Two report pages (Timesheet and Expense) sharing the same two-column layout — narrow left sidebar (280px) with cascading dropdowns (Client → Project → Granularity → Period), wider right area for inline PDF preview. Periods computed from actual entry dates (monthly or weekly). Actions: Generate (preview), Download (browser save). Timesheet report also has Save Document (persists server-side, viewable from project's Documents tab). Selections persisted to localStorage (separate keys per report type).
+Four report pages sharing a two-column layout — narrow left sidebar (280px) with cascading filter dropdowns, wider right area for inline PDF preview. Selections persisted to localStorage (separate keys per report type).
+
+1. **Timesheet Report** (`/reports/timesheets`) — Client → Project → Granularity → Period. Actions: Generate, Download, Save Document
+2. **Expense Report** (`/reports/expenses`) — Same filters as timesheet. Actions: Generate, Download
+3. **Income & Expense Report** (`/reports/income-expense`) — Combined financial summary
+4. **VAT Report** (`/reports/vat`) — VAT analysis
 
 ### Admin Console (Settings & Infrastructure)
 
 Settings and infrastructure pages live in the admin app (`admin/src/pages/`), served at `/admin/`:
 
 - **config/** — ProfilePage (contractor details), InvoicingPage (invoice seed, payment terms, VAT, bank details)
-- **infra/** — BackupPage (R2 config, backup/restore), LoggingPage (log config, R2 upload), LogViewer (search, traceId filter)
+- **infra/** — BackupPage (R2 config, backup/restore), LoggingPage (log config, R2 upload), LogViewer (date/level/source/keyword filters, traceId filter, detail drawer with raw JSON)
 - **system/** — AiConfigPage (Claude API key, model, prompts), McpAuthPage (OAuth config)
 
 Each is a self-contained config form with its own save logic. No wiring docs needed — minimal cross-entity dependencies.
@@ -426,35 +446,11 @@ Auto-discovered from `src/help/*/index.md` files with YAML frontmatter (title, d
 
 ## PDF Reports
 
-All PDF reports use navy (#1B2A4A) accent colour, alternating row striping, and UK currency formatting (thousands separators).
+All PDF reports use navy (#1B2A4A) accent colour, alternating row striping, and UK currency formatting (thousands separators). Layout specs are documented in wiring docs:
 
-### Timesheet Report
-
-One page per project. Structure:
-1. Contractor header: business name + address lines + "TIMESHEET REPORT" label
-2. Info table: Client, Project, Period, IR35 Status, Rate
-3. Timesheet table: Date, Hours, Days, Notes, Rate, Amount — navy header row, alternating rows, light grey totals row
-4. Page footer: "Page X of Y"
-
-Supports filtering by date range or by specific timesheet IDs (for invoice inclusion). When both IDs and date range provided, IDs drive the query and dates drive the period label.
-
-### Expense Report
-
-Same header structure as timesheet report with "EXPENSE REPORT" label. Expense table: Date, Type, Description, Amount (gross). One page per project. Same ID/date range behaviour as timesheet report.
-
-### Invoice PDF
-
-Structure:
-1. Header: business name + address + "INVOICE" label (navy)
-2. Billing block: "To" section (left) + invoice meta with grey background (right) — invoice date, number, due date
-3. Service period line
-4. Line items table in navy-bordered rectangle: Description, Qty, Unit, Unit Price, VAT %, Amount (net), VAT, Total — grouped by VAT rate, alternating rows
-5. Totals block (right-aligned, below table): Sub Total, Total VAT, Total Due
-6. Page footer: "Thank you" message, company number, three-column layout (Registered Address, Contact Information, Payment Details)
-
-### Combined PDF
-
-Invoice PDF + optional timesheet report pages + optional expense report pages merged into a single file. When included in a combined PDF, timesheet/expense reports use the invoice's service period for the period label. Generated and saved to disk on invoice confirm. Served from disk for confirmed/posted invoices (no regeneration). Deleted on unconfirm.
+- **Invoice PDF + Combined PDF** → `invoices.md` → Invoice PDF Generation section
+- **Timesheet Report** → `timesheets.md` → PDF Report section
+- **Expense Report** → `expenses.md` → PDF Report section
 
 ---
 
@@ -471,7 +467,7 @@ Clears all data and creates:
 
 ## Docker
 
-Multi-stage Dockerfile: Stage 1 builds frontend, Stage 2 runs slim `node:20-alpine` with `dist/` + `server/` + production deps. Docker Compose configures port, volume, and restart.
+Multi-stage Dockerfile: Stage 1 builds both frontends (`dist/` + `dist-admin/`), Stage 2 runs slim `node:20-alpine` with both builds + `server/` + production deps. Docker Compose configures port, volume, and restart.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

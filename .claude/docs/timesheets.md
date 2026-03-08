@@ -85,6 +85,18 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 - Update: MCP tool response formatting
 - Update: TimesheetList/TimesheetDrawer display columns
 
+## PDF Report
+
+One page per project. Structure:
+1. Contractor header: business name + address lines + "TIMESHEET REPORT" label
+2. Info table: Client, Project, Period, IR35 Status, Rate
+3. Timesheet table: Date, Hours, Days, Notes, Rate, Amount — navy header row, alternating rows, light grey totals row
+4. Page footer: "Page X of Y"
+
+Supports filtering by date range or by specific timesheet IDs (for invoice inclusion). When both IDs and date range provided, IDs drive the query and dates drive the period label.
+
+Also included in the Combined PDF — see `invoices.md` → Invoice PDF Generation section.
+
 ## Lessons Learned
 
 (Empty — will be populated as issues are encountered)

@@ -109,6 +109,12 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 - Check: Cascade delete in clientService.remove and projectService.remove
 - Check: AttachmentGallery component props/API calls
 
+## PDF Report
+
+Same header structure as timesheet report with "EXPENSE REPORT" label. Expense table: Date, Type, Description, Amount (gross). One page per project. Same ID/date range behaviour as timesheet report.
+
+Also included in the Combined PDF — see `invoices.md` → Invoice PDF Generation section.
+
 ## Lessons Learned
 
 (Empty — will be populated as issues are encountered)
