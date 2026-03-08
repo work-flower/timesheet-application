@@ -13,17 +13,17 @@ ExpenseForm.jsx → expensesApi (api/index.js) → routes/expenses.js → expens
 | What | File | Notes |
 |------|------|-------|
 | Form | `app/src/pages/expenses/ExpenseForm.jsx` | useFormTracker for dirty state, VAT live calc via shared module |
-| List | `app/src/pages/expenses/ExpenseList.jsx` | Period toggles, client/project/type/billable filters, summary footer |
+| List | `app/src/pages/expenses/ExpenseList.jsx` | Period toggles, client/project/type/billable/linked filters, search box, 3 view modes (grid/list/card), summary footer (billable total/non-billable total/count) |
 | Receipt dialog | `app/src/pages/expenses/ReceiptUploadDialog.jsx` | Multi-file upload → AI parse → editable preview → create + attach |
-| API client | `app/src/api/index.js` (expensesApi) | 13 methods: CRUD, link/unlink transaction, parse receipts, attachments |
+| API client | `app/src/api/index.js` (expensesApi) | 10 methods: CRUD, link/unlink transaction, parse receipts, upload attachments, getTypes + 2 URL helpers (getAttachmentUrl, getThumbnailUrl) |
 | Attachment UI | `app/src/components/AttachmentGallery.jsx` | Thumbnail grid, lightbox, upload, delete with confirm |
 
 ## Backend
 
 | What | File | Notes |
 |------|------|-------|
-| Route | `server/routes/expenses.js` | 11 endpoints: CRUD, types, parse-receipts, link/unlink, attachments |
-| Service | `server/services/expenseService.js` | Business logic: VAT golden rule, currency inheritance, lock checks, enrichment |
+| Route | `server/routes/expenses.js` | 13 endpoints: CRUD, types, parse-receipts, link/unlink, attachments (upload, delete, serve file, serve thumbnail) |
+| Service | `server/services/expenseService.js` | VAT golden rule, currency inheritance, lock checks, enrichment, getDistinctTypes, linkTransaction/unlinkTransaction. `getAll`: `$expand` (project, client) |
 | Attachments | `server/services/expenseAttachmentService.js` | File storage + sharp thumbnails at `DATA_DIR/expenses/{id}/` |
 | Receipt parser | `server/services/expenseParserService.js` | Sends file to Claude API, extracts date/amount/vat/type/description/externalRef |
 | DB collection | `server/db/index.js` | `expenses` — wrapped NeDB via execution pipeline |
@@ -47,12 +47,20 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 | **Invoice recalculate** | `server/services/invoiceService.js` | Re-reads expense `netAmount`, `vatPercent`, `vatAmount`, `amount` | Rebuilds invoice line snapshot |
 | **Invoice consistency** | `server/services/invoiceService.js` | Checks if expense values drifted from invoice line snapshot | Blocks confirm if mismatch |
 | **Invoice form** | `app/src/pages/invoices/InvoiceForm.jsx` | Expense picker dialog — selects expenses as invoice line sources | Reads expense list |
-| **Client cascade** | `server/services/clientService.js` | Deletes all client's expenses + attachment dirs on client delete | Destroys data |
-| **Project cascade** | `server/services/projectService.js` | Deletes all project's expenses + attachment dirs on project delete | Destroys data |
+| **Client read** | `server/services/clientService.js` getById/getAll | Fetches client's expenses for display (`$expand=expenses`) | Read-only |
+| **Client cascade** | `server/services/clientService.js` remove | Deletes all client's expenses + attachment dirs on client delete | Destroys data |
+| **Project read** | `server/services/projectService.js` getById/getAll | Fetches project's expenses for display (`$expand=expenses`) | Read-only |
+| **Project cascade** | `server/services/projectService.js` remove | Deletes all project's expenses + attachment dirs on project delete | Destroys data |
 | **Expense report** | `server/services/expenseReportService.js` | Reads expenses by project/date range or by IDs for PDF generation | Read-only |
 | **Dashboard** | `server/services/dashboardService.js` | Queries expenses for monthly/YTD totals and by-client breakdown | Read-only |
 | **MCP tool** | `server/routes/mcp.js` | `create_expense` — calls `expenseService.create()` directly | Creates expenses |
 | **Transaction service** | `server/services/transactionService.js` | `getById` finds linked expenses, computes balance | Read-only |
+| **VAT report** | `server/services/vatReportService.js` | Reads expense vatAmount/amount by date range for VAT analysis | Read-only |
+| **Income & Expense report** | `server/services/incomeExpenseReportService.js` | Reads expense amounts by type/date range for financial analysis | Read-only |
+| **Dashboard (frontend)** | `app/src/pages/Dashboard.jsx` | Fetches monthly expenses for summary card | Read-only |
+| **TransactionForm (frontend)** | `app/src/pages/transactions/TransactionForm.jsx` | Links/unlinks expenses to transactions | Read + write |
+| **TransactionDrawer (frontend)** | `app/src/pages/transactions/TransactionDrawer.jsx` | Links/unlinks expenses to transactions | Read + write |
+| **ExpenseReportForm (frontend)** | `app/src/pages/reports/ExpenseReportForm.jsx` | Fetches expenses for PDF report generation | Read-only |
 
 ## Golden Rules
 
@@ -103,6 +111,10 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 - Update: MCP tool args (mcp.js)
 - Update: API client if new endpoint needed
 - Update: ExpenseList columns
+- Update: VAT report aggregation (vatReportService)
+- Update: Income & Expense report aggregation (incomeExpenseReportService)
+- Update: TransactionForm/TransactionDrawer linked expense display
+- Update: Dashboard.jsx summary calculations
 
 **If you change attachment handling:**
 - Check: Cascade delete in expenseService.remove
