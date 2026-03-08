@@ -93,3 +93,7 @@ Frontend mirrors this: `ProjectForm.jsx` saveForm converts `form.rate !== '' ? N
 - Update: expenseService enrichment (projectName)
 - Update: invoiceService clientProjects enrichment
 - Update: MCP tool response fields
+
+## Lessons Learned
+
+(Empty — will be populated as issues are encountered)

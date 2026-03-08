@@ -103,3 +103,7 @@ clientService.remove(id)
 - Update: projectService enrichment (clientName, rate, hours)
 - Update: invoicePdfService (billing info fields)
 - Update: Default project creation fields
+
+## Lessons Learned
+
+(Empty — will be populated as issues are encountered)

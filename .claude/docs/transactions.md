@@ -116,3 +116,7 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 - Check: Both sides of the link are updated (expense.transactions[] and transaction enrichment)
 - Check: Balance calculations match (remainingBalance formula)
 - Check: Unlink removes from correct array
+
+## Lessons Learned
+
+(Empty — will be populated as issues are encountered)

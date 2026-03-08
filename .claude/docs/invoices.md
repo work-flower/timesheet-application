@@ -120,3 +120,7 @@ draft → confirmed → posted
 - Update: InvoiceList columns
 - Update: Dashboard aggregation (dashboardService)
 - Update: removeByClientId cascade logic
+
+## Lessons Learned
+
+(Empty — will be populated as issues are encountered)

@@ -84,3 +84,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 - Update: Dashboard aggregation (dashboardService)
 - Update: MCP tool response formatting
 - Update: TimesheetList/TimesheetDrawer display columns
+
+## Lessons Learned
+
+(Empty — will be populated as issues are encountered)

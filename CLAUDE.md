@@ -24,7 +24,15 @@ Project standards are enforced via Claude Code skills (`.claude/skills/`). These
 2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
 3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
 
-Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`
+
+### Keeping Wiring Docs Up to Date (MANDATORY)
+
+**Wiring docs MUST be updated as part of any change that affects them.** Stale docs are worse than no docs. Update the relevant wiring doc when:
+
+1. **Any entity change** — adding/removing/renaming fields, endpoints, service methods, or form components
+2. **Any cross-entity dependency change** — a new consumer reads/writes another entity's data, or an existing one changes
+3. **Any lesson learned** — a bug fix, a discovered gotcha, a pattern that caused confusion. Add it to the "Lessons Learned" section of the relevant wiring doc
 
 ## Tech Stack
 

@@ -108,3 +108,7 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 - Check: Cascade delete in expenseService.remove
 - Check: Cascade delete in clientService.remove and projectService.remove
 - Check: AttachmentGallery component props/API calls
+
+## Lessons Learned
+
+(Empty — will be populated as issues are encountered)
