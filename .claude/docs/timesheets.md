@@ -11,7 +11,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Form | `app/src/pages/timesheets/TimesheetForm.jsx` | Project dropdown grouped by client, hours SpinButton, computed days/amount, link-to-invoice button |
-| List | `app/src/pages/timesheets/TimesheetList.jsx` | Period toggles (week/month/all/custom), client/project filters, summary footer (hours/days/amount) |
+| List | `app/src/pages/timesheets/TimesheetList.jsx` | Period toggles (week/month/all/custom), client/project filters, summary footer (hours/days/amount/entries count) |
 | Drawer | `app/src/pages/timesheets/TimesheetDrawer.jsx` | Quick-view side panel from list, shows details + invoice link |
 | API client | `app/src/api/index.js` (timesheetsApi) | 5 methods: getAll, getById, create, update, delete |
 
@@ -20,7 +20,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Route | `server/routes/timesheets.js` | 5 endpoints: standard CRUD |
-| Service | `server/services/timesheetService.js` | Rate/hours golden rule, days/amount computation, enrichment, lock checks |
+| Service | `server/services/timesheetService.js` | Rate/hours golden rule, days/amount computation, enrichment, lock checks. `getAll`: `$expand` (project, client), `groupBy` (week/month/year/day). `getById`: returns computed effectiveRate/effectiveWorkingHours for display |
 | DB collection | `server/db/index.js` | `timesheets` — wrapped NeDB via execution pipeline |
 
 ## Cross-Entity Consumers
@@ -32,12 +32,18 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | **Invoice addLine** | `invoiceService.js` | Reads timesheet amount, hours, days for line snapshot | Source of truth for invoice lines |
 | **Invoice recalculate** | `invoiceService.js` | Re-reads amount, hours, days from current timesheet | Rebuilds line values |
 | **Invoice consistency** | `invoiceService.js` | Checks if amount/rate drifted from invoice line snapshot | Blocks confirm if mismatch |
+| **Client read** | `clientService.js` getById/getAll | Fetches client's timesheets for display (`$expand=timesheets`) | Read-only |
 | **Client cascade** | `clientService.js` remove | Deletes all timesheets for client's projects | Destroys data |
 | **Project cascade** | `projectService.js` remove | Deletes all timesheets for project | Destroys data |
 | **Timesheet report** | `reportService.js` buildTimesheetPdf | Reads timesheets by project/date range or by IDs (for invoice) | PDF generation, read-only |
 | **Dashboard** | `dashboardService.js` | Queries timesheets for hours/earnings totals, uninvoiced count | Read-only |
 | **MCP create_timesheet** | `server/routes/mcp.js` | Calls `timesheetService.create()` with projectId, date, hours, notes | Creates timesheets |
 | **MCP list_recent** | `server/routes/mcp.js` | Calls `timesheetService.getAll()` with date range | Read-only |
+| **Dashboard (frontend)** | `app/src/pages/Dashboard.jsx` | Fetches weekly/monthly hours, recent entries grid | Read-only |
+| **ClientForm (frontend)** | `app/src/pages/clients/ClientForm.jsx` | Timesheets tab displays client's timesheets in DataGrid | Read-only |
+| **ProjectForm (frontend)** | `app/src/pages/projects/ProjectForm.jsx` | Timesheets tab displays project's timesheets in DataGrid | Read-only |
+| **InvoiceForm (frontend)** | `app/src/pages/invoices/InvoiceForm.jsx` | ItemPickerDialog selects timesheets as invoice line sources | Read-only |
+| **ReportForm (frontend)** | `app/src/pages/reports/ReportForm.jsx` | Timesheet report page for PDF generation | Read-only |
 
 ## Golden Rules
 
@@ -61,6 +67,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | Hours validation | `timesheetService.create/update` | 0.25-24, in 0.25 increments |
 | Lock protection | `timesheetService.update/remove` | `assertNotLocked()` before any mutation |
 | Dirty tracking exclusion | `TimesheetForm.jsx` useFormTracker | `excludeFields: ['days', 'amount']` — computed fields don't trigger dirty |
+| Override warnings | `timesheetService.create/update` | Returns `warnings[]` when client-sent effectiveRate/effectiveWorkingHours are overridden by project values |
 
 ## Blast Radius
 
@@ -84,6 +91,8 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 - Update: Dashboard aggregation (dashboardService)
 - Update: MCP tool response formatting
 - Update: TimesheetList/TimesheetDrawer display columns
+- Update: ClientForm/ProjectForm Timesheets tab columns
+- Update: Dashboard.jsx summary calculations
 
 ## PDF Report
 
