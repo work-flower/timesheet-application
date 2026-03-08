@@ -13,7 +13,7 @@ export default function useAppNavigate() {
 
   // Bypass the unsaved-changes guard. Use after a successful save
   // where isDirty hasn't flushed yet (e.g. handleSaveAndClose).
-  const navigateRaw = useCallback((to, options) => {
+  const navigateUnguarded = useCallback((to, options) => {
     routerNavigate(to, options);
   }, [routerNavigate]);
 
@@ -32,5 +32,5 @@ export default function useAppNavigate() {
     }
   }, [checkGuard, routerNavigate, location.key, isAnyDirty]);
 
-  return { navigate, navigateRaw, goBack };
+  return { navigate, navigateUnguarded, goBack };
 }

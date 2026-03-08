@@ -57,7 +57,7 @@ export default function TimesheetForm() {
   const { id } = useParams();
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
-  const { navigate, navigateRaw, goBack } = useAppNavigate();
+  const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -191,7 +191,7 @@ export default function TimesheetForm() {
     const result = await saveForm();
     if (result.ok) {
       if (isNew) {
-        navigate(`/timesheets/${result.id}`, { replace: true });
+        navigateUnguarded(`/timesheets/${result.id}`, { replace: true });
       } else {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
@@ -201,7 +201,7 @@ export default function TimesheetForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigateRaw('/timesheets');
+    if (result.ok) navigateUnguarded('/timesheets');
   };
 
   const handleDelete = async () => {

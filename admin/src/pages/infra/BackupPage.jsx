@@ -121,7 +121,7 @@ function mapConfig(data) {
 export default function BackupPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
-  const { navigateRaw, goBack } = useAppNavigate();
+  const { navigateUnguarded, goBack } = useAppNavigate();
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker(INITIAL_STATE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -198,7 +198,7 @@ export default function BackupPage() {
 
   const handleSaveAndClose = async () => {
     const { ok } = await saveForm();
-    if (ok) navigateRaw('/infra/backup');
+    if (ok) navigateUnguarded('/infra/backup');
   };
 
   useEffect(() => {

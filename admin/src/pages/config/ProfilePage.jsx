@@ -41,7 +41,7 @@ const useStyles = makeStyles({
 export default function ProfilePage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
-  const { navigateRaw, goBack } = useAppNavigate();
+  const { navigateUnguarded, goBack } = useAppNavigate();
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     name: '', email: '', phone: '', address: '',
     businessName: '', utrNumber: '', vatNumber: '', companyRegistration: '',
@@ -99,7 +99,7 @@ export default function ProfilePage() {
 
   const handleSaveAndClose = async () => {
     const { ok } = await saveForm();
-    if (ok) navigateRaw('/config/profile');
+    if (ok) navigateUnguarded('/config/profile');
   };
 
   useEffect(() => {

@@ -154,7 +154,7 @@ export default function ExpenseForm() {
   const { id } = useParams();
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
-  const { navigate, navigateRaw, goBack } = useAppNavigate();
+  const { navigate, navigateUnguarded, goBack } = useAppNavigate();
   const sourceTransactionId = useMemo(() => {
     if (!isNew) return null;
     return new URLSearchParams(window.location.search).get('transactionId');
@@ -359,7 +359,7 @@ export default function ExpenseForm() {
     const result = await saveForm();
     if (result.ok) {
       if (isNew) {
-        navigate(`/expenses/${result.id}`, { replace: true });
+        navigateUnguarded(`/expenses/${result.id}`, { replace: true });
       } else {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
@@ -369,7 +369,7 @@ export default function ExpenseForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigateRaw('/expenses');
+    if (result.ok) navigateUnguarded('/expenses');
   };
 
   const handleDelete = async () => {

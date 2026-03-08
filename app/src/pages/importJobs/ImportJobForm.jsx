@@ -129,7 +129,7 @@ export default function ImportJobForm() {
   const { id } = useParams();
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
-  const { navigate, navigateRaw, goBack } = useAppNavigate();
+  const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
     userPrompt: 'Parse the attached bank statement.',
@@ -260,7 +260,7 @@ export default function ImportJobForm() {
     const result = await saveForm();
     if (result.ok) {
       if (isNew) {
-        navigate(`/import-jobs/${result.id}`, { replace: true });
+        navigateUnguarded(`/import-jobs/${result.id}`, { replace: true });
       } else {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
@@ -270,7 +270,7 @@ export default function ImportJobForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigateRaw('/import-jobs');
+    if (result.ok) navigateUnguarded('/import-jobs');
   };
 
   const handleDelete = async () => {

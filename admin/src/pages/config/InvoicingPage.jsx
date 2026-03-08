@@ -56,7 +56,7 @@ const INITIAL_STATE = {
 export default function InvoicingPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
-  const { navigateRaw, goBack } = useAppNavigate();
+  const { navigateUnguarded, goBack } = useAppNavigate();
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker(INITIAL_STATE);
   const [clientsList, setClientsList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +123,7 @@ export default function InvoicingPage() {
 
   const handleSaveAndClose = async () => {
     const { ok } = await saveForm();
-    if (ok) navigateRaw('/config/invoicing');
+    if (ok) navigateUnguarded('/config/invoicing');
   };
 
   useEffect(() => {

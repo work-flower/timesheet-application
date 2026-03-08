@@ -49,7 +49,7 @@ const INITIAL_STATE = {
 export default function McpAuthPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
-  const { navigateRaw, goBack } = useAppNavigate();
+  const { navigateUnguarded, goBack } = useAppNavigate();
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker(INITIAL_STATE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,7 +110,7 @@ export default function McpAuthPage() {
 
   const handleSaveAndClose = async () => {
     const { ok } = await saveForm();
-    if (ok) navigateRaw('/system/mcp-auth');
+    if (ok) navigateUnguarded('/system/mcp-auth');
   };
 
   useEffect(() => {

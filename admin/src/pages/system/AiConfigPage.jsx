@@ -71,7 +71,7 @@ function mapConfig(data) {
 export default function AiConfigPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
-  const { navigateRaw, goBack } = useAppNavigate();
+  const { navigateUnguarded, goBack } = useAppNavigate();
   const { form, setForm, setBase, isDirty, changedFields } = useFormTracker(INITIAL_STATE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -132,7 +132,7 @@ export default function AiConfigPage() {
 
   const handleSaveAndClose = async () => {
     const { ok } = await saveForm();
-    if (ok) navigateRaw('/system/ai');
+    if (ok) navigateUnguarded('/system/ai');
   };
 
   useEffect(() => {
