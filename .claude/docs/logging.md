@@ -31,8 +31,8 @@ Auto-upload:
 | Config DB | `server/db/logConfig.js` | Separate NeDB file (`log-config.db`), not included in backups |
 | Service | `server/services/logService.js` | Config CRUD, search (OData), local file ops, R2 upload/download/delete |
 | Route | `server/routes/logs.js` | 11 endpoints: config, search, file list/read, upload/download/delete, R2 list, pageview |
-| ALS middleware | `server/index.js` (lines 40-49) | Sets requestId, traceId, source, method, path per request |
-| Request logging | `server/index.js` (lines 72-99) | Logs HTTP status line, optional payload logging |
+| ALS middleware | `server/index.js` `als.run()` block | Sets requestId, traceId, source, method, path per request |
+| Request logging | `server/index.js` `res.on('finish')` handler | Logs HTTP status line, optional payload logging |
 
 ## Frontend
 

@@ -99,4 +99,4 @@ Also included in the Combined PDF — see `invoices.md` → Invoice PDF Generati
 
 ## Lessons Learned
 
-(Empty — will be populated as issues are encountered)
+- **Fluent UI v9 SpinButton** — MUST use uncontrolled mode (`defaultValue`, not `value`). Controlled mode breaks typing. `data.value` is `null` during typing; always parse `data.displayValue` as fallback: `const val = data.value ?? parseFloat(data.displayValue); if (val != null && !isNaN(val)) ...`

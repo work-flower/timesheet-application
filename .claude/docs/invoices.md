@@ -155,4 +155,4 @@ Entity-specific report layouts:
 
 ## Lessons Learned
 
-(Empty — will be populated as issues are encountered)
+- **pdfmake font loading** — Uses `createRequire` pattern + Helvetica fonts (not file paths). Do not attempt to load fonts from disk.

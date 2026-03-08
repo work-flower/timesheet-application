@@ -6,6 +6,10 @@ A single-user desktop timesheet and invoicing application for UK technology cont
 
 No authentication — single user, local app.
 
+### Core Principles
+- **Simplicity and user experience centricity** — every feature should be straightforward to use and maintain, favour minimal solutions over elaborate ones
+- **Lightweight dependencies** — prefer built-in APIs or minimal custom code over adding libraries; always present alternatives to the user when a library seems warranted
+
 ## Standards (Claude Code Skills)
 
 Project standards are enforced via Claude Code skills (`.claude/skills/`). These should be loaded when **creating, modifying, or fixing** any part of the codebase they cover. Invoke with `/skill-name` or let Claude auto-load based on context:
@@ -74,8 +78,27 @@ When the user requests an audit, systematically verify the entity's documentatio
 - `npm run dev` — runs Express + both Vite dev servers (main on 5173, admin on 5174) concurrently; Vite proxies `/api` to Express
 - `npm run build` — builds both apps (`dist/` + `dist-admin/`)
 - `npm start` — Express serves API + both built frontends (main at `/`, admin at `/admin/`)
-- `npm run seed` — clears all data and populates sample records
+- `npm run dev:admin` — runs only the admin Vite dev server
+- `npm run seed` — **DANGER: clears ALL data.** Never run without explicitly asking the user first. Always wait for confirmation so the user can back up.
+- `npm run dev` does NOT auto-restart backend — must restart manually after server changes
+- `dotenv` loads `.env` at server startup (first import in `server/index.js`)
 - Health check at `GET /api/health`
+
+## Project Structure
+
+```text
+app/                — main app (React + Vite)
+  src/              — api/, components/, contexts/, hooks/, layouts/, pages/
+admin/              — admin console (separate Vite app)
+  src/              — api/, components/, contexts/, hooks/, layouts/, pages/
+server/             — shared Express API: db/, services/, routes/
+shared/             — shared code used by both server and frontends
+data/               — NeDB .db files (auto-created)
+vite.config.js      — main app config (root: 'app')
+vite.admin.config.js — admin app config (root: 'admin', base: '/admin/')
+dist/               — main app build output
+dist-admin/         — admin app build output
+```
 
 ---
 
