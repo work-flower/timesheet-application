@@ -34,6 +34,31 @@ Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `pr
 2. **Any cross-entity dependency change** — a new consumer reads/writes another entity's data, or an existing one changes
 3. **Any lesson learned** — a bug fix, a discovered gotcha, a pattern that caused confusion. Add it to the "Lessons Learned" section of the relevant wiring doc
 
+### Auditing an Entity
+
+When the user requests an audit, systematically verify the entity's documentation against its actual implementation. Audit one entity at a time.
+
+**Step 1 — Verify wiring doc vs code:**
+- **File chain:** Do all listed files exist? Are there unlisted files involved?
+- **Frontend/Backend tables:** File paths, method counts, notes accuracy
+- **Cross-entity consumers:** Any missing consumers? Any listed ones that no longer exist?
+- **Golden rules:** Does the code implement what the doc describes?
+- **Key business logic:** Correct locations, correct logic?
+- **Blast radius:** Still accurate?
+
+**Step 2 — Verify CLAUDE.md vs code** (for the audited entity):
+- Data model fields match what the service actually stores/returns
+- Navigation routes and form tabs match the router config
+- $expand relationships match the service implementation
+
+**Step 3 — Check both directions:** doc→code (is what's documented true?) AND code→doc (is there undocumented behaviour?)
+
+**Step 4 — Present findings:** List all discrepancies. Discuss each one with the user — agree on alignment direction (update doc, update code, or both). **Do not proceed to planning until every discrepancy is agreed upon.**
+
+**Step 5 — Plan:** Generate an implementation plan from the agreed findings. Review with the user — **no implementation until user confirms the plan.**
+
+**Step 6 — Implement:** Apply the agreed plan. Update wiring doc, CLAUDE.md, and/or code as agreed.
+
 ## Tech Stack
 
 - **Frontend:** React 18, React Router v6, Vite, Fluent UI v9 (`@fluentui/react-components`) — **MUST use Fluent UI React components for all UI. Do not replace with HTML tables, custom components, or other libraries unless explicitly asked.**
