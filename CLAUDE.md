@@ -16,6 +16,16 @@ Project standards are enforced via Claude Code skills (`.claude/skills/`). These
 - `/routing-guide` — Route registration, sidebar navigation, guards, breadcrumbs
 - `/components-guide` — Shared component contracts (FormCommandBar, CommandBar, FormSection, FormField, etc.)
 
+## Entity Wiring Docs
+
+**Before modifying, fixing, or debugging any entity, read its wiring doc from `.claude/docs/`.** These map the full file chain, cross-entity consumers, and blast radius for each entity. Use them to:
+
+1. **Find files fast** — the doc lists every file involved (frontend form, list, API client, backend route, service, DB)
+2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
+3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
+
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`
+
 ## Tech Stack
 
 - **Frontend:** React 18, React Router v6, Vite, Fluent UI v9 (`@fluentui/react-components`) — **MUST use Fluent UI React components for all UI. Do not replace with HTML tables, custom components, or other libraries unless explicitly asked.**
@@ -252,76 +262,40 @@ Deleted when job is abandoned.
 
 ## Business Rules
 
-### Clients & Projects
+### Entity-Specific Rules
 
-1. Creating a client auto-creates a "Default Project" (`isDefault: true`) inheriting rate, working hours, and using the IR35 status + VAT rate from the creation form.
-2. Default projects cannot be deleted (can be renamed or archived).
-3. Deleting a client cascade-deletes all its projects, timesheets, expenses (+ attachment files), and invoices (unlocking any locked items first).
-4. Deleting a project cascade-deletes all its timesheets and expenses (+ attachment files). Cannot delete default projects.
+Detailed business rules for each entity (golden rules, validation, computation, cascade behaviour) are documented in the entity wiring docs at `.claude/docs/`. See:
 
-### Timesheets
-
-5. Date must not be in the future. Hours must be 0.25–24 in 0.25 increments.
-6. `days` and `amount` computed and persisted on save. Source of truth once saved — no recomputation on read.
-7. **Rate/hours golden rule:** `effectiveRate` and `effectiveWorkingHours` are always derived from the project (and its client). On create and update, if the client provides values for either field that differ from the project's computed values, the client values are ignored and a `warnings` array is returned in the response listing each overridden field. Calculations always use project values: `days = hours / effectiveWorkingHours`, `amount = days × effectiveRate`. Neither field is stored on the timesheet record.
-
-### Expenses
-
-7. **VAT golden rule:** `vatAmount` and `vatPercent` are not mutually exclusive. On create and update, if one is non-zero and the other is 0, the zero value is derived from the non-zero one. If `vatPercent` is provided and `vatAmount` is 0: `vatAmount = amount × vatPercent / (100 + vatPercent)`. If `vatAmount` is provided and `vatPercent` is 0: `vatPercent = |vatAmount| / |netAmount| × 100`. If both are non-zero or both are zero, both are kept as-is. `netAmount` is always computed as `amount - vatAmount`. All VAT calculations use absolute values internally to support negative amounts correctly.
-8. **Credit notes / refunds:** Expenses support negative amounts. A credit note or refund is recorded as an expense with a negative `amount`. VAT fields follow the same sign as the amount (e.g. amount: -8.99, vatAmount: -1.50). The VAT golden rule and all form calculations handle negative values correctly.
-9. Currency inherited from client on creation. Read-only in form, updates when project changes.
-10. Date must not be in the future.
-11. **Receipt scanning:** Multiple receipt images or PDFs can be uploaded and parsed by AI in parallel from the expense list. The AI extracts date, amount, vatAmount, expenseType, description, and externalReference. Parsed fields are shown in an editable preview alongside the original document before creating expenses. Each created expense has the original receipt auto-attached. The AI system prompt for receipt parsing is configurable in Settings → AI Config.
-12. **External reference:** The `externalReference` field captures invoice numbers, order IDs, or receipt numbers from source documents. It is populated automatically by AI receipt scanning, carried over from transaction references when creating an expense from a transaction, and available as a parameter in the MCP `create_expense` tool.
-
-### Invoicing
-
-10. **Lifecycle:** Draft → Confirmed → Posted.
-11. **Invoice number:** Format `JBL{5-digit padded}`, seed in settings. Assigned once during first confirmation — permanent, never cleared, never reassigned. Seed incremented atomically, never decremented. Re-confirming a previously unconfirmed invoice reuses its existing number.
-12. **Lines:** Each timesheet/expense added generates a persistent line with snapshotted values. Write-in lines have `type: 'write-in'`. Totals computed from lines and persisted on save.
-13. **Consistency check:** Detects value drift (amount, rate, VAT changes) and item conflicts (deleted sources, items locked to other invoices). Blocks confirmation if errors exist.
-14. **Recalculate:** Realigns all line values to current source data.
-15. **Combined PDF on confirm:** On confirm, a combined PDF is generated (invoice page + optional timesheet report + optional expense report based on toggle fields) and saved to `DATA_DIR/invoices/{invoiceNumber}/{invoiceId}.pdf`. The `pdfPath` field is set on the invoice record. On unconfirm, the saved PDF file is deleted and `pdfPath` is cleared.
-16. **Payment tracking:** Only available on posted invoices. Fields: `paymentStatus` (unpaid/paid/overdue), `paidDate`.
-17. Deleting a client cascade-deletes its invoices (unlocking items first). Deleting an invoice never deletes timesheets or expenses.
+- **Clients & Projects** → `clients.md`, `projects.md` (default project auto-creation, cascade deletes, rate/hours inheritance)
+- **Timesheets** → `timesheets.md` (rate/hours golden rule, days/amount computation and persistence)
+- **Expenses** → `expenses.md` (VAT golden rule, credit notes, currency inheritance, receipt scanning)
+- **Invoices** → `invoices.md` (lifecycle, invoice number, line computation, consistency check, PDF generation, locking, payment tracking)
+- **Transactions & Import Jobs** → `transactions.md` (file upload, AI parsing, staged review, linking)
 
 ### Record Locking
 
-18. Any record can have `isLocked` (boolean) and `isLockedReason` (string). These are protected — cannot be set via regular updates, only by invoice lifecycle methods.
-19. All update and delete operations check for lock status first and reject with the lock reason if locked (HTTP 400).
-20. **Confirm** locks: the invoice itself, all referenced timesheets (+ sets `invoiceId`), all referenced expenses (+ sets `invoiceId`).
-21. **Post** updates the invoice lock reason to "Posted invoice". Timesheets/expenses remain locked from confirmation.
-22. **Unconfirm** unlocks: the invoice, all referenced timesheets (clears `invoiceId`), all referenced expenses (clears `invoiceId`).
-23. **Locked record UI:** Form hides Save/Delete buttons (shows only Back), displays warning banner with lock reason, disables all form inputs.
+1. Any record can have `isLocked` (boolean) and `isLockedReason` (string). These are protected — cannot be set via regular updates, only by invoice lifecycle methods.
+2. All update and delete operations check for lock status first and reject with the lock reason if locked (HTTP 400).
+3. **Locked record UI:** Form hides Save/Delete buttons (shows only Back), displays warning banner with lock reason, disables all form inputs.
+4. Invoice-specific locking behaviour (confirm/post/unconfirm) is documented in `invoices.md`.
 
 ### Logging
 
-24. **Log files:** JSON Lines format (`app-YYYY-MM-DD.log`), one entry per line. Files rotate when exceeding max file size (numbered suffix: `app-YYYY-MM-DD-1.log`). Stored in a dedicated log directory.
-25. **TraceId correlation:** Each page navigation generates a client-side UUID. All API requests from that navigation share the same traceId via `X-Trace-Id` header. Server stores it in AsyncLocalStorage and writes it to every log entry. Enables filtering all requests triggered by a single user action.
-26. **Message filter:** Regex pattern tested against the full serialized JSON log entry before writing to file. Filters by any field (source, path, level, message). Empty pattern logs everything.
-27. **Payload logging:** Opt-in, debug-level only. Logs POST/PUT/PATCH request bodies. Sensitive fields automatically masked using a key-name pattern (`secret`, `password`, `apikey`). Payloads truncated at 2000 characters. Acceptable for single-user app where the user has full autonomy; not suitable for multi-user deployments.
-28. **R2 log lifecycle:** Completed (non-active) log files can be uploaded to R2. Upload verifies integrity (filename + size + MD5 hash) after transfer, then deletes the local copy. The active log file (today's date) cannot be uploaded or deleted. Files can be downloaded from R2 back to local for searching.
-29. **Safe local delete:** Local log files can only be deleted if an identical copy exists in R2 (verified by filename + size + MD5 hash match). If the R2 copy differs or doesn't exist, deletion is blocked.
-30. **Automatic upload:** When enabled, a periodic cycle uploads all completed log files to R2. Files already in R2 with matching content are removed locally. Mismatches are logged as warnings.
-31. **Error logging levels:** All route-level catch blocks log before responding: `console.warn()` for managed exceptions (4xx — validation, business rules, lock checks) and `console.error()` for unexpected failures (5xx). MCP tool errors are logged as `console.error()` since they return HTTP 200 with `isError: true` and would otherwise be invisible. The request logging middleware separately logs the HTTP status line (`METHOD /path STATUS duration`).
-
-### Transaction Imports
-
-32. **File upload:** Creating an import job requires a file upload (CSV, PDF, OFX, XML, TXT, XLS, XLSX). The file is stored on disk at `DATA_DIR/uploads/{jobId}/`.
-33. **AI parsing:** After upload, the file is sent to Claude API with the system prompt (from AI config) and the job's user prompt. Claude returns a JSON array of transactions. Parsing runs asynchronously — the job is created immediately with `processing` status.
-34. **Staged transactions:** Each parsed row becomes a staged transaction with a composite hash (MD5 of `filename-date-description-amount`). Staged transactions are semi-structured — all fields returned by the AI are stored.
-35. **Lifecycle:** `processing` → `ready_for_review` → `abandoned`. On failure: `processing` → `failed`. Failed jobs can be retried by re-uploading a file.
-36. **Abandon** deletes all staged transactions.
-37. **Delete** is only allowed for terminal-status jobs (`abandoned`, `failed`). Cascade-deletes staged transactions and the upload directory.
+5. **Log files:** JSON Lines format (`app-YYYY-MM-DD.log`), one entry per line. Files rotate when exceeding max file size (numbered suffix: `app-YYYY-MM-DD-1.log`). Stored in a dedicated log directory.
+6. **TraceId correlation:** Each page navigation generates a client-side UUID. All API requests from that navigation share the same traceId via `X-Trace-Id` header. Server stores it in AsyncLocalStorage and writes it to every log entry. Enables filtering all requests triggered by a single user action.
+7. **Message filter:** Regex pattern tested against the full serialized JSON log entry before writing to file. Filters by any field (source, path, level, message). Empty pattern logs everything.
+8. **Payload logging:** Opt-in, debug-level only. Logs POST/PUT/PATCH request bodies. Sensitive fields automatically masked using a key-name pattern (`secret`, `password`, `apikey`). Payloads truncated at 2000 characters.
+9. **R2 log lifecycle:** Completed (non-active) log files can be uploaded to R2. Upload verifies integrity (filename + size + MD5 hash) after transfer, then deletes the local copy. The active log file (today's date) cannot be uploaded or deleted. Files can be downloaded from R2 back to local for searching.
+10. **Safe local delete:** Local log files can only be deleted if an identical copy exists in R2 (verified by filename + size + MD5 hash match).
+11. **Error logging levels:** `console.warn()` for managed exceptions (4xx), `console.error()` for unexpected failures (5xx). MCP tool errors logged as `console.error()`.
 
 ### MCP (Model Context Protocol)
 
-38. The application exposes an MCP endpoint at `POST /mcp` (outside `/api` prefix) for AI assistants (e.g. Claude Code) to interact with the system via JSON-RPC 2.0. Supports `initialize`, `notifications/initialized`, `tools/list`, and `tools/call` methods.
-39. **Available tools:** `list_projects` (list active projects with working hours — rates excluded for confidentiality), `create_timesheet` (log time entry — response excludes financial amounts), `create_expense` (create expense with automatic VAT and currency computation), `list_recent_timesheets` (recent entries — hours only, financial amounts excluded), `list_recent_expenses` (recent entries with billable/total split).
-40. **Expense creation via MCP:** The `create_expense` tool accepts `projectId`, `date`, `amount`, `expenseType`, `description`, `vatAmount`, `billable`, `externalReference`, and `notes`. The API computes `vatPercent`, `netAmount`, and inherits currency automatically. When a receipt image is shared, the AI is instructed to extract all fields including external references before creating the expense.
-41. **Confirmation flow:** All MCP tools follow a confirmation flow — the AI must list projects first, confirm the project with the user, present a summary, and only submit after user confirmation.
-42. **Authentication:** MCP auth configuration is managed via `/api/mcp-auth` endpoints. OAuth 2.0 metadata served at `/.well-known/oauth-authorization-server`.
-43. **Upload Expense Image Skill:** A downloadable Claude.ai skill (`upload-expense-image`) that allows Claude to upload receipt images to expense attachments after creating an expense via MCP. Available from the Help section. The skill saves shared images to a temporary file and POSTs them to the attachment endpoint, avoiding context overflow from base64-encoded images.
+12. The application exposes an MCP endpoint at `POST /mcp` (outside `/api` prefix) for AI assistants via JSON-RPC 2.0.
+13. **Available tools:** `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`.
+14. **Confirmation flow:** All MCP tools follow a confirmation flow — the AI must list projects first, confirm the project with the user, present a summary, and only submit after user confirmation.
+15. **Authentication:** MCP auth configuration managed via `/api/mcp-auth` endpoints. OAuth 2.0 metadata served at `/.well-known/oauth-authorization-server`.
+16. **Upload Expense Image Skill:** Downloadable Claude.ai skill for receipt image upload after expense creation via MCP.
 
 ---
 
