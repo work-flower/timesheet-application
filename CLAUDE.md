@@ -301,22 +301,16 @@ Detailed business rules for each entity (golden rules, validation, computation, 
 
 ## API
 
-All endpoints prefixed with `/api`. All list endpoints support OData-style query parameters (`$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`) alongside entity-specific query params. Standard CRUD per entity plus:
+All endpoints prefixed with `/api`. All list endpoints support OData-style query parameters (`$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`) alongside entity-specific query params. Standard CRUD per entity.
 
-### Entity-specific behaviors
+Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods) for clients, projects, timesheets, expenses, invoices, and transactions are documented in their wiring docs at `.claude/docs/`.
 
-- **Clients:** List, detail (includes projects + timesheets + expenses), create (auto-creates default project), update, delete (cascade)
-- **Projects:** List (enriched with clientName/effectiveRate/effectiveWorkingHours), detail (includes timesheets + expenses), create, update (empty string → null for rate/workingHours/vatPercent), delete (prevents default, cascade)
-- **Timesheets:** List (enriched with projectName/clientName/clientId; supports `startDate`, `endDate`, `projectId`, `clientId`, `groupBy=week|month|year`), detail (includes effectiveRate/effectiveWorkingHours), create/update (validates + computes days/amount), delete
-- **Expenses:** List (enriched; supports `startDate`, `endDate`, `projectId`, `clientId`, `expenseType`), distinct types endpoint, detail, create (inherits currency, applies VAT golden rule), update (applies VAT golden rule), delete (cascade attachments). Receipt parsing endpoint: accepts multiple images/PDFs, returns AI-extracted fields per file. Attachment sub-endpoints: upload (multipart, max 10 files), delete, serve original, serve thumbnail.
-- **Invoices:** List (supports `clientId`, `status`, `startDate`, `endDate`), detail (enriched with client info + clientProjects with effectiveRate/vatPercent), create, update (draft/unlocked only; protects status/invoiceNumber/paymentStatus/pdfPath), delete (draft only). Lifecycle: confirm, post, unconfirm. Operations: recalculate, consistency-check. Payment update (posted only). PDF endpoints: generate on-the-fly, serve saved file (confirmed/posted only).
+### Other API endpoints (no wiring docs)
+
 - **Reports:** Generate timesheet PDF (by client + date range, optional project filter). Generate expense PDF (same params). Combined PDF endpoint accepts array of report specs (invoice + timesheet + expense) and merges into single PDF.
 - **Documents:** List, detail, serve PDF file, generate + save PDF, delete (removes file + record)
 - **Settings:** Get/update contractor profile (single document, upserted)
 - **AI Config:** Get/update config (API key masked on read), test connection (sends trivial request to Claude API). Separate from settings — own database, own endpoints.
-- **Import Jobs:** List (supports `status` filter), detail, create (multipart file upload, triggers background AI parsing), update (supports multipart file re-upload on failed jobs), delete (terminal only, cascade). Lifecycle: abandon.
-- **Staged Transactions:** List (supports `importJobId` filter), detail, create, update, delete. Bulk create used internally by AI parser.
-- **Transactions:** List (supports `importJobId`, `status`, `accountName` filters), detail, create, update, delete.
 - **Logs:** Config CRUD (secret masked on read), test R2 connection, search (supports entity params `startDate`, `endDate`, `level`, `source`, `keyword`, `traceId` + OData `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`), list local files, read log file (with level/source/keyword filtering), upload to R2 (integrity-verified, deletes local), safe delete local file (requires R2 backup verification), download from R2, list R2 logs, pageview tracking (with traceId).
 - **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup
 - **Help:** Skill zip download endpoint (`GET /api/help/skills/:skillFolder/download`). Searches `src/help/{topic}/skill/{skillFolder}/` and serves as a zip archive. Help topic content is auto-discovered from `src/help/*/index.md` frontmatter (title, description, tags, optional banner image).
