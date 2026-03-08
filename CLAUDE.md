@@ -378,22 +378,11 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/help/:topicId` | Help topic detail (markdown content with images) |
 | `/settings` | Settings (tabs: Profile, Invoicing, AI Config, Backup, Logging) |
 
-### List Views
+### List Views & Form Views
 
-All list views share a common pattern: command bar (New, Delete, Search) → sortable DataGrid → row click opens record.
+Generic list/form patterns are defined in Claude Code skills (`/list-views-guide`, `/forms-guide`). Entity-specific UI details (filters, columns, tabs, fields, computed values) are documented in each entity's wiring doc at `.claude/docs/`.
 
-- **Timesheet list:** Default period: current week. Period toggle buttons (This Week / This Month / All Time / Custom with date pickers). Client and Project dropdown filters. Summary row showing Days, Amount totals. All filter selections persisted to localStorage.
-- **Expense list:** Default period: current month. Same period toggle pattern. Client, Project, and Expense Type dropdown filters. Columns: Date, External Ref, Client, Project, Type, Description, Amount, VAT, Net Amount, Billable. "Scan Receipt" button in command bar opens receipt upload dialog. Summary footer: Billable Total, Non-Billable Total, Entry count. All filters persisted to localStorage.
-- **Invoice list:** Filters: Status (draft/confirmed/posted), Client, Payment (unpaid/paid/overdue). Columns: Invoice #, Date, Client, Period, Status badge, Amount, Payment badge. Summary footer: total invoices, total amount, unpaid amount. Filters persisted to localStorage.
-- **Import job list:** Status dropdown filter. Columns: Filename (truncated with ellipsis), Status (colour-coded badge), Created date. Summary footer: job count. Status filter persisted to localStorage.
-- **Log Viewer:** Date range, level, source, and keyword filters. TraceId filter (set by clicking a traceId value). Columns: Timestamp, Level (colour-coded badge), Source, Method, Path, TraceId (truncated, clickable), Message. Row click opens a detail drawer (OverlayDrawer) showing all fields, full message, and raw JSON with copy button. Clicking traceId in detail panel filters to that trace.
-
-### Form Views
-
-All forms share a common pattern: sticky command bar at top (Back, Save, Save & Close, optionally Delete) → breadcrumb → title → tabbed sections → 2-column field layout.
-
-- **Unsaved changes guard:** All forms track dirty state with changed-field indicators (blue left-border, Power Platform style). Navigating away from a dirty form triggers Save/Discard/Cancel dialog. Browser refresh/close shows native "Leave page?" dialog.
-- **Save pattern:** Save on create → navigate to the new record. Save on edit → show success message. Save & Close → navigate to list.
+- **Log Viewer** (no wiring doc): Date range, level, source, and keyword filters. TraceId filter (set by clicking a traceId value). Row click opens OverlayDrawer with full details and raw JSON.
 
 ### Dashboard
 
@@ -406,51 +395,6 @@ Six summary cards in a responsive grid:
 6. **Unpaid Invoices** — sum of unpaid/overdue posted invoice totals, with count
 
 Below cards: "Recent Timesheet Entries" grid showing last 10 entries (Date, Client, Project, Hours, Amount).
-
-### Entity-Specific Forms
-
-**Client form:**
-- General tab: company name, contact info, rate, currency, working hours, invoicing entity name/address, IR35 status (required for default project creation), notes
-- Related tabs: Projects, Timesheets, Expenses (grids showing related records)
-
-**Project form:**
-- Rate and Working Hours fields show placeholder "Inherited from client: £X/day" when null
-- Creating a new project auto-fills rate and working hours from selected client
-- Documents tab shows saved report PDFs, click to open in new browser tab
-
-**Timesheet form:**
-- Project dropdown grouped by client with client name hint
-- Hours SpinButton (0.25–24, step 0.25) with project daily hours hint
-- Days and Amount are read-only, computed only when user changes Hours or Project (not on form load — persisted values shown as-is on edit)
-
-**Expense form:**
-- 2-column: Amount (gross, supports negative for credit notes) | Date, VAT % | Project (grouped by client), VAT Amount | Expense Type (combobox with autocomplete from previous types), Net Amount (read-only) | Billable, Currency (read-only, from client), Description (full width, client-facing), External Reference (invoice number, order ID, etc.), Notes (markdown, internal)
-- Amount and VAT Amount fields accept negative values for credit notes/refunds. VAT golden rule applied live in the form: changing one VAT field recalculates the other
-- Attachment gallery (edit only — "Save first" message on new): upload multiple, thumbnail grid with lightbox for images, file type icons for non-images, delete with confirmation
-
-**Invoice form:**
-- Invoice tab: Client (locked after creation), Invoice Number (read-only), dates, service period, additional notes
-- Unified "Line Sources" section with buttons: Add Timesheets, Add Expenses, Add Line (write-in)
-  - Timesheet picker dialog with "Include entries outside service period" filter toggle
-  - Expense picker dialog with Billable column and "Include non-billable expenses" filter toggle; non-billable expenses generate a warning when added
-  - Write-in lines editable inline (description, quantity, unit, unit price, VAT %)
-  - Lines grid shows all types sorted by type, with error/warning indicators per line
-  - Live totals (Sub Total, Total VAT, Total Due) computed from lines
-- Consistency error banner (red) showing conflicts, with Recalculate button to fix
-- Warning banner for dates outside service period (draft only, informational)
-- Command bar: Save, Save & Close, Consistency Check, Recalculate, Confirm/Post/Unconfirm (lifecycle), Delete (draft only)
-- **PDF Preview tab:** Toggle switches for "Include Timesheet Report" and "Include Expense Report" (auto-save on toggle; disabled when locked). Uses saved PDF file for confirmed/posted invoices (no regeneration). Falls back to on-the-fly combined PDF generation for drafts.
-- **Payment section** (posted only): Payment Status dropdown (unpaid/paid/overdue), Paid Date field
-
-**Import job form:**
-- Custom command bar (not FormCommandBar) with conditional buttons: Save/Save & Close (new only), Abandon (processing or ready_for_review), Delete (terminal only)
-- Create mode: file upload input (required), user prompt (markdown editor). Form disabled (`fieldset disabled={isLocked || !isNew}`) after creation.
-- Edit mode: read-only filename, created/completed timestamps, read-only user prompt
-- Failed jobs: file re-upload input (outside fieldset) to retry parsing
-- Processing state: spinner with "Processing file..." message, polls every 3 seconds until status changes
-- Staged transactions grid: dynamic columns derived from AI response fields (read-only)
-- Terminal states: Results section showing AI stop reason
-- Status badge (colour-coded: Processing=brand, Ready for Review=warning, Abandoned=subtle, Failed=danger)
 
 ### Reports Pages
 
