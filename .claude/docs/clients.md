@@ -11,7 +11,7 @@ ClientForm.jsx → clientsApi (api/index.js) → routes/clients.js → clientSer
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Form | `app/src/pages/clients/ClientForm.jsx` | Tabs: General, Projects, Timesheets, Expenses, Invoices. IR35 + VAT required on create (for default project) |
+| Form | `app/src/pages/clients/ClientForm.jsx` | Tabs: General, Projects, Timesheets, Expenses, Invoices. IR35 + VAT required on create (for default project). Uses `useNotifyParent` for embedded mode |
 | List | `app/src/pages/clients/ClientList.jsx` | Search by name/contact, columns: company, contact, email, rate, currency |
 | API client | `app/src/api/index.js` (clientsApi) | 5 methods: getAll, getById, create, update, delete |
 

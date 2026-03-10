@@ -16,6 +16,7 @@ import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 
 const useStyles = makeStyles({
   page: {
@@ -42,10 +43,11 @@ export default function ProfilePage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
   const { navigateUnguarded, goBack } = useAppNavigate();
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
+  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
     name: '', email: '', phone: '', address: '',
     businessName: '', utrNumber: '', vatNumber: '', companyRegistration: '',
   });
+  const notifyParent = useNotifyParent();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -92,6 +94,7 @@ export default function ProfilePage() {
   const handleSave = async () => {
     const { ok } = await saveForm();
     if (ok) {
+      notifyParent(handleSave.name, base, form);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     }
@@ -99,7 +102,10 @@ export default function ProfilePage() {
 
   const handleSaveAndClose = async () => {
     const { ok } = await saveForm();
-    if (ok) navigateUnguarded('/config/profile');
+    if (ok) {
+      notifyParent(handleSaveAndClose.name, base, form);
+      navigateUnguarded('/config/profile');
+    }
   };
 
   useEffect(() => {

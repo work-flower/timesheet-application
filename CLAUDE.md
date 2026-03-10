@@ -490,6 +490,17 @@ Auto-discovered from `src/help/*/index.md` files with YAML frontmatter (title, d
 - **M2M API Authentication** — Configure OAuth for machine-to-machine API access via Cloudflare Access and Azure AD
 - **Upload Expense Image Skill** — Downloadable Claude.ai skill for automatic receipt image upload after expense creation via MCP
 
+### Embedded Mode
+
+Forms can be loaded inside iframes by appending `?embedded=true` to the URL. When embedded:
+
+- **App shell stripped:** `AppLayout` and `AdminLayout` skip sidebar, top bar, settings fetch, and pageview tracking — only `<Outlet />` renders.
+- **Child→Parent notification:** All forms use `useNotifyParent()` hook. After successful save/delete, they call `notifyParent(handlerFn.name, base, form)` which posts a message to the parent window via `postMessage`.
+- **Message format:** `{ command: string, entity: string, initialData: object, formData: object }`. Entity is derived from the first path segment. Command is the handler function name (may be mangled in production builds).
+- **No-op outside iframe:** `useNotifyParent` checks `window.parent === window` and returns early when not embedded.
+- **Parent→Child communication:** Via query string params (existing pattern).
+- **`useFormTracker` exposes `base`:** `base: baseRef.current` is returned alongside `form` for the notification payload.
+
 ---
 
 ## PDF Reports

@@ -34,6 +34,7 @@ import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -187,12 +188,13 @@ export default function ClientForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
+  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
     companyName: '', primaryContactName: '', primaryContactEmail: '',
     primaryContactPhone: '', defaultRate: 0, currency: 'GBP', workingHoursPerDay: 8,
     invoicingEntityName: '', invoicingEntityAddress: '',
     notes: '', ir35Status: 'OUTSIDE_IR35',
   });
+  const notifyParent = useNotifyParent();
   const [clientData, setClientData] = useState(null);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -267,6 +269,7 @@ export default function ClientForm() {
   const handleSave = async () => {
     const result = await saveForm();
     if (result.ok) {
+      notifyParent(handleSave.name, base, form);
       if (isNew) {
         navigateUnguarded(`/clients/${result.id}`, { replace: true });
       } else {
@@ -278,7 +281,10 @@ export default function ClientForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigateUnguarded('/clients');
+    if (result.ok) {
+      notifyParent(handleSaveAndClose.name, base, form);
+      navigateUnguarded('/clients');
+    }
   };
 
   useEffect(() => {

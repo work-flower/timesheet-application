@@ -27,6 +27,7 @@ import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -61,7 +62,7 @@ export default function TimesheetForm() {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
+  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
     projectId: '',
     date: today,
     hours: 8,
@@ -69,6 +70,7 @@ export default function TimesheetForm() {
     amount: null,
     notes: '',
   }, { excludeFields: EXCLUDE_FIELDS });
+  const notifyParent = useNotifyParent();
 
   const [loadedData, setLoadedData] = useState(null);
   const [allProjects, setAllProjects] = useState([]);
@@ -190,6 +192,7 @@ export default function TimesheetForm() {
   const handleSave = async () => {
     const result = await saveForm();
     if (result.ok) {
+      notifyParent(handleSave.name, base, form);
       if (isNew) {
         navigateUnguarded(`/timesheets/${result.id}`, { replace: true });
       } else {
@@ -201,12 +204,16 @@ export default function TimesheetForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigateUnguarded('/timesheets');
+    if (result.ok) {
+      notifyParent(handleSaveAndClose.name, base, form);
+      navigateUnguarded('/timesheets');
+    }
   };
 
   const handleDelete = async () => {
     try {
       await timesheetsApi.delete(id);
+      notifyParent(handleDelete.name, base, form);
       navigate('/timesheets');
     } catch (err) {
       setError(err.message);

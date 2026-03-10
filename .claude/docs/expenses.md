@@ -12,7 +12,7 @@ ExpenseForm.jsx → expensesApi (api/index.js) → routes/expenses.js → expens
 
 | What | File | Notes |
 |------|------|-------|
-| Form | `app/src/pages/expenses/ExpenseForm.jsx` | useFormTracker for dirty state, VAT live calc via shared module |
+| Form | `app/src/pages/expenses/ExpenseForm.jsx` | useFormTracker for dirty state, VAT live calc via shared module. Uses `useNotifyParent` for embedded mode |
 | List | `app/src/pages/expenses/ExpenseList.jsx` | Period toggles, client/project/type/billable/linked filters, search box, 3 view modes (grid/list/card), summary footer (billable total/non-billable total/count) |
 | Receipt dialog | `app/src/pages/expenses/ReceiptUploadDialog.jsx` | Multi-file upload → AI parse → editable preview → create + attach |
 | API client | `app/src/api/index.js` (expensesApi) | 10 methods: CRUD, link/unlink transaction, parse receipts, upload attachments, getTypes + 2 URL helpers (getAttachmentUrl, getThumbnailUrl) |

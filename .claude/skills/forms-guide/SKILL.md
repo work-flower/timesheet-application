@@ -28,6 +28,7 @@ import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 ```
 
 ## Standard Styles
@@ -58,9 +59,10 @@ export default function EntityForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
+  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
     // all form fields with defaults
   }, { excludeFields: ['computedField1'] });
+  const notifyParent = useNotifyParent();
 
   const [loadedData, setLoadedData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -176,6 +178,7 @@ const saveForm = useCallback(async () => {
 const handleSave = async () => {
   const result = await saveForm();
   if (result.ok) {
+    notifyParent(handleSave.name, base, form);
     if (isNew) {
       navigate(`/entities/${result.id}`, { replace: true });
     } else {
@@ -187,7 +190,10 @@ const handleSave = async () => {
 
 const handleSaveAndClose = async () => {
   const result = await saveForm();
-  if (result.ok) navigate('/entities');
+  if (result.ok) {
+    notifyParent(handleSaveAndClose.name, base, form);
+    navigate('/entities');
+  }
 };
 ```
 
@@ -197,12 +203,32 @@ const handleSaveAndClose = async () => {
 const handleDelete = async () => {
   try {
     await entityApi.delete(id);
+    notifyParent(handleDelete.name, base, form);
     navigate('/entities');
   } catch (err) {
     setError(err.message);
   }
 };
 ```
+
+## Parent Notification (Embedded Mode)
+
+Every form must call `notifyParent` after successful handler actions. This enables embedded mode — when a form is loaded in an iframe with `?embedded=true`, it posts a message to the parent window so the host page can react (e.g. close a dialog, refresh data).
+
+```jsx
+const notifyParent = useNotifyParent();
+```
+
+Call it in each handler **after the action succeeds**, passing the handler's `.name`, `base` (from useFormTracker), and `form`:
+
+```jsx
+notifyParent(handleSave.name, base, form);
+```
+
+- **No-op when not in iframe:** The hook checks `window.parent === window` and returns early.
+- **Entity derived from route:** First path segment of `location.pathname` (e.g. `/expenses/new` → `"expenses"`).
+- **Command = `handlerFn.name`:** Uses the literal JS function name. In production builds, minification will mangle this — accepted trade-off for now.
+- **Only generic handlers:** Call from `handleSave`, `handleSaveAndClose`, `handleDelete`. Do NOT call from lifecycle actions (confirm, post, unconfirm, abandon).
 
 ## Navigation Guard
 

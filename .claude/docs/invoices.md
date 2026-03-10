@@ -14,7 +14,7 @@ InvoiceForm.jsx → invoicesApi (api/index.js) → routes/invoices.js → invoic
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Form | `app/src/pages/invoices/InvoiceForm.jsx` | 2 tabs (Invoice, PDF Preview), lifecycle buttons, line sources, payment section |
+| Form | `app/src/pages/invoices/InvoiceForm.jsx` | 2 tabs (Invoice, PDF Preview), lifecycle buttons, line sources, payment section. Uses `useNotifyParent` for embedded mode (generic handlers only, not lifecycle) |
 | List | `app/src/pages/invoices/InvoiceList.jsx` | Status/client/payment filters, 3 view modes (grid/list/card), summary footer (total, unpaid, paid, invoices count) |
 | API client | `app/src/api/index.js` (invoicesApi) | 14 methods: CRUD, confirm/post/unconfirm, addLine, recalculate, consistencyCheck, payment, link/unlink tx + 2 URL helpers (getPdfUrl, getFileUrl) |
 | Item picker | `app/src/components/ItemPickerDialog.jsx` | Multi-select dialog for timesheets and expenses, shows lock indicators |

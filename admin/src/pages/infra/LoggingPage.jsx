@@ -34,6 +34,7 @@ import FormCommandBar from '../../components/FormCommandBar.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 
 const useStyles = makeStyles({
   page: {
@@ -130,7 +131,8 @@ export default function LoggingPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
   const { navigateUnguarded, goBack } = useAppNavigate();
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker(INITIAL_STATE);
+  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker(INITIAL_STATE);
+  const notifyParent = useNotifyParent();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -203,12 +205,18 @@ export default function LoggingPage() {
 
   const handleSave = async () => {
     const { ok } = await saveForm();
-    if (ok) showMessage('success', 'Configuration saved.');
+    if (ok) {
+      notifyParent(handleSave.name, base, form);
+      showMessage('success', 'Configuration saved.');
+    }
   };
 
   const handleSaveAndClose = async () => {
     const { ok } = await saveForm();
-    if (ok) navigateUnguarded('/infra/logging');
+    if (ok) {
+      notifyParent(handleSaveAndClose.name, base, form);
+      navigateUnguarded('/infra/logging');
+    }
   };
 
   useEffect(() => {

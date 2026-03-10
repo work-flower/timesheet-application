@@ -32,5 +32,5 @@ export function useFormTracker(initialState, { excludeFields = [] } = {}) {
 
   const isDirty = changedFields.size > 0;
 
-  return { form, setForm, setBase, resetForm, isDirty, changedFields };
+  return { form, setForm, setBase, resetForm, isDirty, changedFields, base: baseRef.current };
 }

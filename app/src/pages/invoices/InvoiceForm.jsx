@@ -67,6 +67,7 @@ import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -391,7 +392,7 @@ export default function InvoiceForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
+  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
     clientId: '',
     invoiceNumber: '',
     invoiceDate: new Date().toISOString().split('T')[0],
@@ -403,6 +404,7 @@ export default function InvoiceForm() {
     includeTimesheetReport: false,
     includeExpenseReport: false,
   }, { excludeFields: ['invoiceNumber'] });
+  const notifyParent = useNotifyParent();
 
   const [invoiceData, setInvoiceData] = useState(null);
   const [allClients, setAllClients] = useState([]);
@@ -569,6 +571,7 @@ export default function InvoiceForm() {
   const handleSave = async () => {
     const result = await saveForm();
     if (result.ok) {
+      notifyParent(handleSave.name, base, form);
       if (isNew) {
         navigateUnguarded(`/invoices/${result.id}`, { replace: true });
       } else {
@@ -580,12 +583,16 @@ export default function InvoiceForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigateUnguarded('/invoices');
+    if (result.ok) {
+      notifyParent(handleSaveAndClose.name, base, form);
+      navigateUnguarded('/invoices');
+    }
   };
 
   const handleDelete = async () => {
     try {
       await invoicesApi.delete(id);
+      notifyParent(handleDelete.name, base, form);
       navigate('/invoices');
     } catch (err) {
       setError(err.message);

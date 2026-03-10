@@ -39,6 +39,7 @@ import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 
 const useStyles = makeStyles({
   page: {},
@@ -131,9 +132,10 @@ export default function ImportJobForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
+  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
     userPrompt: 'Parse the attached bank statement.',
   });
+  const notifyParent = useNotifyParent();
 
   const [jobData, setJobData] = useState(null);
   const [stagedTransactions, setStagedTransactions] = useState([]);
@@ -259,6 +261,7 @@ export default function ImportJobForm() {
   const handleSave = async () => {
     const result = await saveForm();
     if (result.ok) {
+      notifyParent(handleSave.name, base, form);
       if (isNew) {
         navigateUnguarded(`/import-jobs/${result.id}`, { replace: true });
       } else {
@@ -270,12 +273,16 @@ export default function ImportJobForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigateUnguarded('/import-jobs');
+    if (result.ok) {
+      notifyParent(handleSaveAndClose.name, base, form);
+      navigateUnguarded('/import-jobs');
+    }
   };
 
   const handleDelete = async () => {
     try {
       await importJobsApi.delete(id);
+      notifyParent(handleDelete.name, base, form);
       navigate('/import-jobs');
     } catch (err) {
       setError(err.message);

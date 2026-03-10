@@ -240,7 +240,10 @@ export default function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [appTitle, setAppTitle] = useState('');
 
+  const isEmbedded = new URLSearchParams(location.search).get('embedded') === 'true';
+
   useEffect(() => {
+    if (isEmbedded) return;
     settingsApi.get().then((data) => {
       if (data?.businessClientId) {
         return clientsApi.getById(data.businessClientId).then((client) => {
@@ -249,17 +252,18 @@ export default function AdminLayout() {
       }
       setAppTitle('Admin Console for Timesheet Manager');
     }).catch(() => setAppTitle('Admin Console for Timesheet Manager'));
-  }, []);
+  }, [isEmbedded]);
 
   // Generate a new traceId on every navigation and log it as a pageview
   useEffect(() => {
+    if (isEmbedded) return;
     newTraceId();
     fetch('/api/logs/pageview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Trace-Id': getTraceId() },
       body: JSON.stringify({ path: location.pathname, method: 'GET', traceId: getTraceId() }),
     }).catch(() => {});
-  }, [location.pathname]);
+  }, [location.pathname, isEmbedded]);
 
   const isChildRouteActive = (prefix) => {
     if (Array.isArray(prefix)) return prefix.some((p) => location.pathname.startsWith(p));
@@ -278,6 +282,8 @@ export default function AdminLayout() {
   const [reportsExpanded, setReportsExpanded] = useState(
     () => isChildRouteActive('/reports'),
   );
+
+  if (isEmbedded) return <Outlet />;
 
   const expandState = {
     'Business Config': [configExpanded, setConfigExpanded],

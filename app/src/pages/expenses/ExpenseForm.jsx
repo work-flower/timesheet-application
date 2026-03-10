@@ -51,6 +51,7 @@ import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import { deriveVatFromPercent, deriveVatFromAmount } from '../../../../shared/expenseVatCalc.js';
 
 const useStyles = makeStyles({
@@ -162,7 +163,7 @@ export default function ExpenseForm() {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const { form, setForm, setBase, isDirty, changedFields } = useFormTracker({
+  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
     projectId: '',
     date: today,
     expenseType: '',
@@ -176,6 +177,7 @@ export default function ExpenseForm() {
     externalReference: '',
     notes: '',
   });
+  const notifyParent = useNotifyParent();
 
   // Reset keys to force SpinButton remount when a dependent field is programmatically updated
   const [spinKeys, setSpinKeys] = useState({ amount: 0, vatAmount: 0, vatPercent: 0 });
@@ -358,6 +360,7 @@ export default function ExpenseForm() {
   const handleSave = async () => {
     const result = await saveForm();
     if (result.ok) {
+      notifyParent(handleSave.name, base, form);
       if (isNew) {
         navigateUnguarded(`/expenses/${result.id}`, { replace: true });
       } else {
@@ -369,12 +372,16 @@ export default function ExpenseForm() {
 
   const handleSaveAndClose = async () => {
     const result = await saveForm();
-    if (result.ok) navigateUnguarded('/expenses');
+    if (result.ok) {
+      notifyParent(handleSaveAndClose.name, base, form);
+      navigateUnguarded('/expenses');
+    }
   };
 
   const handleDelete = async () => {
     try {
       await expensesApi.delete(id);
+      notifyParent(handleDelete.name, base, form);
       navigate('/expenses');
     } catch (err) {
       setError(err.message);

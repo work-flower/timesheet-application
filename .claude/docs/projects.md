@@ -10,7 +10,7 @@ ProjectForm.jsx → projectsApi (api/index.js) → routes/projects.js → projec
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Form | `app/src/pages/projects/ProjectForm.jsx` | Tabs: General, Timesheets, Expenses, Documents, Invoices. Rate/hours show "Inherited from client: £X" placeholder when null |
+| Form | `app/src/pages/projects/ProjectForm.jsx` | Tabs: General, Timesheets, Expenses, Documents, Invoices. Rate/hours show "Inherited from client: £X" placeholder when null. Uses `useNotifyParent` for embedded mode |
 | List | `app/src/pages/projects/ProjectList.jsx` | showArchived toggle, columns: name, client, IR35, effectiveRate, status |
 | API client | `app/src/api/index.js` (projectsApi) | 5 methods: getAll, getById, create, update, delete |
 

@@ -252,7 +252,10 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [appTitle, setAppTitle] = useState('');
 
+  const isEmbedded = new URLSearchParams(location.search).get('embedded') === 'true';
+
   useEffect(() => {
+    if (isEmbedded) return;
     settingsApi.get().then((data) => {
       if (data?.businessClientId) {
         return clientsApi.getById(data.businessClientId).then((client) => {
@@ -261,17 +264,18 @@ export default function AppLayout() {
       }
       setAppTitle('Timesheet Manager');
     }).catch(() => setAppTitle('Timesheet Manager'));
-  }, []);
+  }, [isEmbedded]);
 
   // Generate a new traceId on every navigation and log it as a pageview
   useEffect(() => {
+    if (isEmbedded) return;
     newTraceId();
     fetch('/api/logs/pageview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Trace-Id': getTraceId() },
       body: JSON.stringify({ path: location.pathname, method: 'GET', traceId: getTraceId() }),
     }).catch(() => {});
-  }, [location.pathname]);
+  }, [location.pathname, isEmbedded]);
 
   const isChildRouteActive = (prefix) => {
     if (Array.isArray(prefix)) return prefix.some((p) => {
@@ -294,6 +298,8 @@ export default function AppLayout() {
   const [dataExpanded, setDataExpanded] = useState(
     () => isChildRouteActive(['/import-jobs', '/staged-transactions']),
   );
+
+  if (isEmbedded) return <Outlet />;
 
   const expandState = {
     Dashboards: [dashboardsExpanded, setDashboardsExpanded],

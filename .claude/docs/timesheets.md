@@ -10,7 +10,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Form | `app/src/pages/timesheets/TimesheetForm.jsx` | Project dropdown grouped by client, hours SpinButton, computed days/amount, link-to-invoice button |
+| Form | `app/src/pages/timesheets/TimesheetForm.jsx` | Project dropdown grouped by client, hours SpinButton, computed days/amount, link-to-invoice button. Uses `useNotifyParent` for embedded mode |
 | List | `app/src/pages/timesheets/TimesheetList.jsx` | Period toggles (week/month/all/custom), client/project filters, summary footer (hours/days/amount/entries count) |
 | Drawer | `app/src/pages/timesheets/TimesheetDrawer.jsx` | Quick-view side panel from list, shows details + invoice link |
 | API client | `app/src/api/index.js` (timesheetsApi) | 5 methods: getAll, getById, create, update, delete |
