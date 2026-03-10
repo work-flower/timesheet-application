@@ -156,9 +156,11 @@ export default function ExpenseForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
-  const sourceTransactionId = useMemo(() => {
-    if (!isNew) return null;
-    return new URLSearchParams(window.location.search).get('transactionId');
+  const sourceTransactionIds = useMemo(() => {
+    if (!isNew) return [];
+    const raw = new URLSearchParams(window.location.search).get('transactionId');
+    if (!raw) return [];
+    return raw.split(',').filter(Boolean);
   }, [isNew]);
 
   const today = new Date().toISOString().split('T')[0];
@@ -325,9 +327,11 @@ export default function ExpenseForm() {
     try {
       if (isNew) {
         const created = await expensesApi.create(form);
-        if (sourceTransactionId) {
-          await expensesApi.linkTransaction(created._id, sourceTransactionId);
-          await transactionsApi.updateMapping(sourceTransactionId, { status: 'matched' });
+        if (sourceTransactionIds.length > 0) {
+          for (const txId of sourceTransactionIds) {
+            await expensesApi.linkTransaction(created._id, txId);
+            await transactionsApi.updateMapping(txId, { status: 'matched' });
+          }
         }
         return { ok: true, id: created._id };
       } else {
@@ -355,7 +359,7 @@ export default function ExpenseForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, setBase, today, sourceTransactionId]);
+  }, [form, isNew, id, setBase, today, sourceTransactionIds]);
 
   const handleSave = async () => {
     const result = await saveForm();

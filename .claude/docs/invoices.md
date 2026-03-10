@@ -52,6 +52,7 @@ InvoiceForm.jsx → invoicesApi (api/index.js) → routes/invoices.js → invoic
 | **TransactionForm (frontend)** | `app/src/pages/transactions/TransactionForm.jsx` | Links/unlinks invoices to transactions | Read + write |
 | **TransactionDrawer (frontend)** | `app/src/pages/transactions/TransactionDrawer.jsx` | Links/unlinks invoices to transactions | Read + write |
 | **TimesheetDrawer (frontend)** | `app/src/pages/timesheets/TimesheetDrawer.jsx` | Displays invoice number if timesheet is invoiced | Read-only |
+| **Reconciliation page (frontend)** | `app/src/pages/banking/TransactionReconciliation.jsx` | Reads all invoices, calls `linkTransaction`/`unlinkTransaction` for batch reconciliation | Read + write |
 
 ## Lifecycle State Machine
 

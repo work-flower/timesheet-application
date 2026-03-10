@@ -28,6 +28,7 @@ import HelpIndex from './pages/help/HelpIndex.jsx';
 import HelpTopic from './pages/help/HelpTopic.jsx';
 import ReconciliationDashboard from './pages/dashboards/ReconciliationDashboard.jsx';
 import FinancialDashboard from './pages/dashboards/FinancialDashboard.jsx';
+import TransactionReconciliation from './pages/banking/TransactionReconciliation.jsx';
 
 export default function App() {
   return (
@@ -61,6 +62,7 @@ export default function App() {
               <Route path="/staged-transactions" element={<StagedTransactionReview />} />
               <Route path="/transactions" element={<TransactionList />} />
               <Route path="/transactions/:id" element={<TransactionForm />} />
+              <Route path="/banking/transaction-reconciliation" element={<TransactionReconciliation />} />
               <Route path="/reports" element={<Navigate to="/reports/timesheets" replace />} />
               <Route path="/reports/timesheets" element={<ReportForm />} />
               <Route path="/reports/expenses" element={<ExpenseReportForm />} />

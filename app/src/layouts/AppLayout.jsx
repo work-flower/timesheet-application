@@ -30,6 +30,7 @@ import {
   DataBarVerticalRegular,
   CalculatorRegular,
   DocumentTextRegular,
+  LinkMultipleRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -218,9 +219,10 @@ const navItems = [
   {
     label: 'Banking',
     icon: <WalletRegular />,
-    prefix: '/transactions',
+    prefix: ['/transactions', '/banking'],
     children: [
       { to: '/transactions', label: 'Transactions', icon: <ArrowSwapRegular /> },
+      { to: '/banking/transaction-reconciliation', label: 'Reconciliation', icon: <LinkMultipleRegular /> },
     ],
   },
   {
@@ -293,7 +295,7 @@ export default function AppLayout() {
     () => isChildRouteActive('/reports'),
   );
   const [bankingExpanded, setBankingExpanded] = useState(
-    () => isChildRouteActive('/transactions'),
+    () => isChildRouteActive(['/transactions', '/banking']),
   );
   const [dataExpanded, setDataExpanded] = useState(
     () => isChildRouteActive(['/import-jobs', '/staged-transactions']),

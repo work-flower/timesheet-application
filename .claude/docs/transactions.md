@@ -67,6 +67,7 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 | **AI config** | `server/db/aiConfig.js` | Provides apiKey, model, systemPrompt, maxTokens, timeout for AI parsing | Config dependency |
 | **Expense form** | `ExpenseForm.jsx` | Link/unlink transaction buttons, balance display | UI integration |
 | **Invoice form** | `InvoiceForm.jsx` | Link/unlink transaction buttons, balance display | UI integration |
+| **Reconciliation page** | `app/src/pages/banking/TransactionReconciliation.jsx` | Reads all transactions, calls `updateMapping()` for status changes during batch reconciliation | Read + write |
 
 ## Golden Rules
 

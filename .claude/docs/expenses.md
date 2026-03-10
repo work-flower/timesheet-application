@@ -61,6 +61,7 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 | **TransactionForm (frontend)** | `app/src/pages/transactions/TransactionForm.jsx` | Links/unlinks expenses to transactions | Read + write |
 | **TransactionDrawer (frontend)** | `app/src/pages/transactions/TransactionDrawer.jsx` | Links/unlinks expenses to transactions | Read + write |
 | **ExpenseReportForm (frontend)** | `app/src/pages/reports/ExpenseReportForm.jsx` | Fetches expenses for PDF report generation | Read-only |
+| **Reconciliation page (frontend)** | `app/src/pages/banking/TransactionReconciliation.jsx` | Reads all expenses, calls `linkTransaction`/`unlinkTransaction` for batch reconciliation | Read + write |
 
 ## Golden Rules
 

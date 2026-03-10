@@ -1,4 +1,4 @@
-import { makeStyles, tokens, Text } from '@fluentui/react-components';
+import { makeStyles, tokens, Text, Checkbox } from '@fluentui/react-components';
 
 const useStyles = makeStyles({
   container: {
@@ -66,20 +66,31 @@ export function CardMetaItem({ label, value }) {
   );
 }
 
-export default function CardView({ items, getRowId, onItemClick, renderHeader, renderMeta, renderFooter, renderActions }) {
+export default function CardView({ items, getRowId, onItemClick, renderHeader, renderMeta, renderFooter, renderActions, selectable, selectedIds, onSelectionChange, getCardStyle }) {
   const styles = useStyles();
 
   return (
     <div className={styles.container}>
       {items.map((item) => {
         const footer = renderFooter?.(item);
+        const cardStyle = getCardStyle?.(item);
         return (
           <div
             key={getRowId(item)}
             className={styles.card}
+            style={cardStyle}
             onClick={() => onItemClick?.(item)}
           >
             <div className={styles.header}>
+              {selectable && (
+                <Checkbox
+                  checked={selectedIds?.has(getRowId(item))}
+                  onChange={(e, data) => {
+                    e.stopPropagation();
+                    onSelectionChange?.(getRowId(item), data.checked);
+                  }}
+                />
+              )}
               {renderHeader(item)}
               {renderActions && (
                 <div className={styles.headerActions}>

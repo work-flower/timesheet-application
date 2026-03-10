@@ -436,6 +436,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/staged-transactions` | Staged transaction review |
 | `/transactions` | Transaction list |
 | `/transactions/:id` | Transaction form (read-only details, editable status) |
+| `/banking/transaction-reconciliation` | Transaction Reconciliation (three-panel batch linking) |
 | `/help` | Help topics index |
 | `/help/:topicId` | Help topic detail (markdown content with images) |
 
