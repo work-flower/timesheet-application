@@ -9,7 +9,7 @@ import {
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 
-export default function EntityPopupDialog({ open, onClose, onEntitySaved, entityUrl }) {
+export default function EntityPopupDialog({ open, onClose, onMessage, entityUrl }) {
   const iframeRef = useRef(null);
 
   useEffect(() => {
@@ -17,13 +17,12 @@ export default function EntityPopupDialog({ open, onClose, onEntitySaved, entity
     const handler = (e) => {
       if (e.origin !== window.location.origin) return;
       if (e.data && e.data.command) {
-        onEntitySaved?.();
-        onClose();
+        onMessage?.(e.data);
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [open, onEntitySaved, onClose]);
+  }, [open, onMessage]);
 
   return (
     <Dialog open={open} onOpenChange={(e, d) => { if (!d.open) onClose(); }}>

@@ -16,7 +16,7 @@ import {
   MessageBarBody,
 } from '@fluentui/react-components';
 import { OpenRegular, AddRegular, LinkMultipleRegular } from '@fluentui/react-icons';
-import { transactionsApi, expensesApi, invoicesApi } from '../../api/index.js';
+import { transactionsApi, expensesApi, invoicesApi, settingsApi, projectsApi } from '../../api/index.js';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import { computeLikelihood } from './likelihoodScore.js';
 import EntityPopupDialog from './EntityPopupDialog.jsx';
@@ -119,6 +119,8 @@ const initialState = {
   loading: false,
   confirming: false,
   popupUrl: null,
+  popupType: null, // 'create-expense' | 'view'
+  businessProjectId: null,
   confirmDialogOpen: false,
   error: null,
   success: null,
@@ -129,7 +131,7 @@ function reducer(state, action) {
     case 'SET_LOADING':
       return { ...state, loading: action.value };
     case 'SET_DATA':
-      return { ...state, transactions: action.transactions, expenses: action.expenses, invoices: action.invoices, loading: false };
+      return { ...state, transactions: action.transactions, expenses: action.expenses, invoices: action.invoices, businessProjectId: action.businessProjectId ?? state.businessProjectId, loading: false };
     case 'TOGGLE_TX': {
       const next = new Set(state.selectedTxIds);
       if (action.checked) next.add(action.id);
@@ -172,7 +174,7 @@ function reducer(state, action) {
     case 'SET_INVOICE_SEARCH':
       return { ...state, invoiceSearch: action.value };
     case 'SET_POPUP_URL':
-      return { ...state, popupUrl: action.url };
+      return { ...state, popupUrl: action.url, popupType: action.popupType || 'view' };
     case 'SET_CONFIRM_DIALOG':
       return { ...state, confirmDialogOpen: action.value };
     case 'SET_CONFIRMING':
@@ -215,22 +217,34 @@ export default function TransactionReconciliation() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   // --- Data loading ---
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (initial) => {
     dispatch({ type: 'SET_LOADING', value: true });
     try {
-      const [txs, exps, invs] = await Promise.all([
+      const fetches = [
         transactionsApi.getAll(),
         expensesApi.getAll(),
         invoicesApi.getAll(),
-      ]);
-      dispatch({ type: 'SET_DATA', transactions: txs, expenses: exps, invoices: invs });
+      ];
+      // Only fetch settings + projects on initial load
+      if (initial) {
+        fetches.push(settingsApi.get(), projectsApi.getAll());
+      }
+      const [txs, exps, invs, settings, projects] = await Promise.all(fetches);
+
+      let businessProjectId = null;
+      if (settings?.businessClientId && projects) {
+        const proj = projects.find((p) => p.clientId === settings.businessClientId && p.status === 'active');
+        if (proj) businessProjectId = proj._id;
+      }
+
+      dispatch({ type: 'SET_DATA', transactions: txs, expenses: exps, invoices: invs, businessProjectId });
     } catch (err) {
       dispatch({ type: 'SET_ERROR', value: err.message });
       dispatch({ type: 'SET_LOADING', value: false });
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadData(true); }, [loadData]);
 
   // --- Selected transaction objects ---
   const selectedTransactions = useMemo(
@@ -464,25 +478,37 @@ export default function TransactionReconciliation() {
     }
   }, [stagedChanges, loadData]);
 
-  // --- Entity popup ---
-  const handleEntitySaved = useCallback(async () => {
-    dispatch({ type: 'SET_POPUP_URL', url: null });
+  // --- Entity popup message handler ---
+  const handlePopupMessage = useCallback(async (data) => {
     await loadData();
-  }, [loadData]);
+
+    if (state.popupType === 'create-expense') {
+      // Only close on saveAndClose or delete — keep open on save
+      if (data.command !== 'save') {
+        dispatch({ type: 'SET_POPUP_URL', url: null });
+        dispatch({ type: 'RESET_SELECTIONS' });
+      }
+    } else {
+      // View popups: close on any action
+      dispatch({ type: 'SET_POPUP_URL', url: null });
+    }
+  }, [loadData, state.popupType]);
 
   // --- Create expense ---
   const handleCreateExpense = useCallback(() => {
     if (selectedTransactions.length === 0) return;
     const first = selectedTransactions[0];
+    const totalAmount = selectedTransactions.reduce((sum, t) => sum + Math.abs(t.amount || 0), 0);
     const params = new URLSearchParams();
     params.set('embedded', 'true');
     if (first.date) params.set('date', first.date);
-    if (first.amount != null) params.set('amount', String(Math.abs(first.amount)));
+    params.set('amount', String(Math.round(totalAmount * 100) / 100));
     if (first.description) params.set('description', first.description);
     if (first.reference) params.set('externalReference', first.reference);
+    if (state.businessProjectId) params.set('projectId', state.businessProjectId);
     params.set('transactionId', selectedTransactions.map((t) => t._id).join(','));
-    dispatch({ type: 'SET_POPUP_URL', url: `/expenses/new?${params.toString()}` });
-  }, [selectedTransactions]);
+    dispatch({ type: 'SET_POPUP_URL', url: `/expenses/new?${params.toString()}`, popupType: 'create-expense' });
+  }, [selectedTransactions, state.businessProjectId]);
 
   // --- Card style (visual states) ---
   const getExpenseCardStyle = useCallback((item) => {
@@ -800,7 +826,7 @@ export default function TransactionReconciliation() {
       <EntityPopupDialog
         open={!!state.popupUrl}
         onClose={() => dispatch({ type: 'SET_POPUP_URL', url: null })}
-        onEntitySaved={handleEntitySaved}
+        onMessage={handlePopupMessage}
         entityUrl={state.popupUrl}
       />
 

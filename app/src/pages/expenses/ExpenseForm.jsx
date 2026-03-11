@@ -259,12 +259,13 @@ export default function ExpenseForm() {
 
           // Apply query string pre-fill as user changes (e.g. from "Create Expense" on transaction)
           const qs = new URLSearchParams(window.location.search);
-          if (qs.has('amount') || qs.has('date') || qs.has('description') || qs.has('externalReference')) {
-            const prefill = {};
-            if (qs.has('amount')) prefill.amount = parseFloat(qs.get('amount')) || 0;
-            if (qs.has('date')) prefill.date = qs.get('date');
-            if (qs.has('description')) prefill.description = qs.get('description');
-            if (qs.has('externalReference')) prefill.externalReference = qs.get('externalReference');
+          const prefill = {};
+          if (qs.has('amount')) prefill.amount = parseFloat(qs.get('amount')) || 0;
+          if (qs.has('date')) prefill.date = qs.get('date');
+          if (qs.has('description')) prefill.description = qs.get('description');
+          if (qs.has('externalReference')) prefill.externalReference = qs.get('externalReference');
+          if (qs.has('projectId')) prefill.projectId = qs.get('projectId');
+          if (Object.keys(prefill).length > 0) {
             setForm((prev) => {
               const next = { ...prev, ...prefill };
               next.netAmount = Math.round((next.amount - next.vatAmount) * 100) / 100;
@@ -364,7 +365,7 @@ export default function ExpenseForm() {
   const handleSave = async () => {
     const result = await saveForm();
     if (result.ok) {
-      notifyParent(handleSave.name, base, form);
+      notifyParent('save', base, form);
       if (isNew) {
         navigateUnguarded(`/expenses/${result.id}`, { replace: true });
       } else {
@@ -377,7 +378,7 @@ export default function ExpenseForm() {
   const handleSaveAndClose = async () => {
     const result = await saveForm();
     if (result.ok) {
-      notifyParent(handleSaveAndClose.name, base, form);
+      notifyParent('saveAndClose', base, form);
       navigateUnguarded('/expenses');
     }
   };
@@ -385,7 +386,7 @@ export default function ExpenseForm() {
   const handleDelete = async () => {
     try {
       await expensesApi.delete(id);
-      notifyParent(handleDelete.name, base, form);
+      notifyParent('delete', base, form);
       navigate('/expenses');
     } catch (err) {
       setError(err.message);
