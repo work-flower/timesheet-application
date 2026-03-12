@@ -7,7 +7,6 @@ import {
   Input,
   Field,
   Spinner,
-  SpinButton,
   Select,
   Button,
   MessageBar,
@@ -28,6 +27,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
+import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -51,8 +51,6 @@ const useStyles = makeStyles({
   },
 });
 
-const EXCLUDE_FIELDS = ['days', 'amount'];
-
 export default function TimesheetForm() {
   const styles = useStyles();
   const { id } = useParams();
@@ -69,7 +67,7 @@ export default function TimesheetForm() {
     days: null,
     amount: null,
     notes: '',
-  }, { excludeFields: EXCLUDE_FIELDS });
+  });
   const notifyParent = useNotifyParent();
 
   const [loadedData, setLoadedData] = useState(null);
@@ -148,12 +146,18 @@ export default function TimesheetForm() {
   }, [allProjects]);
 
   const handleChange = (field) => (e, data) => {
-    const value = data?.value ?? e.target.value;
+    const raw = data?.value ?? e.target.value;
     setForm((prev) => {
-      const next = { ...prev, [field]: value };
-      // Recompute days/amount when project changes
-      if (field === 'projectId') {
-        Object.assign(next, computeDaysAmount(prev.hours, value, allProjects));
+      const next = { ...prev };
+      if (field === 'hours') {
+        const val = parseFloat(raw) || 0;
+        next.hours = val;
+        Object.assign(next, computeDaysAmount(val, prev.projectId, allProjects));
+      } else {
+        next[field] = raw;
+        if (field === 'projectId') {
+          Object.assign(next, computeDaysAmount(prev.hours, raw, allProjects));
+        }
       }
       return next;
     });
@@ -231,6 +235,7 @@ export default function TimesheetForm() {
 
   return (
     <div className={styles.page}>
+      <QueryStringPrefill handleChange={handleChange} />
       <FormCommandBar
         onBack={() => goBack('/timesheets')}
         onSave={handleSave}
@@ -274,12 +279,12 @@ export default function TimesheetForm() {
           <FormSection title="Entry Details">
             <FormField changed={changedFields.has('date')}>
               <Field label="Date" required>
-                <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
+                <Input type="date" name="date" value={form.date} max={today} onChange={handleChange('date')} />
               </Field>
             </FormField>
             <FormField changed={changedFields.has('projectId')}>
               <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
-                <Select value={form.projectId} onChange={handleChange('projectId')}>
+                <Select name="projectId" value={form.projectId} onChange={handleChange('projectId')}>
                   <option value="">Select project...</option>
                   {Object.entries(projectsByClient).map(([clientName, projs]) => (
                     <optgroup key={clientName} label={clientName}>
@@ -295,38 +300,25 @@ export default function TimesheetForm() {
             </FormField>
             <FormField changed={changedFields.has('hours')}>
               <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
-                <SpinButton
-                  defaultValue={form.hours}
-                  onChange={(e, data) => {
-                    const val = data.value ?? parseFloat(data.displayValue);
-                    if (val != null && !isNaN(val)) {
-                      setForm((prev) => ({
-                        ...prev,
-                        hours: val,
-                        ...computeDaysAmount(val, prev.projectId, allProjects),
-                      }));
-                    }
-                  }}
-                  min={0.25}
-                  max={24}
-                  step={0.25}
-                />
+                <Input type="number" name="hours" value={String(form.hours)} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
               </Field>
             </FormField>
-            <FormField>
+            <FormField changed={changedFields.has('days')}>
               <Field label="Days">
                 <Input
+                  name="days"
                   readOnly
-                  value={form.days != null ? form.days.toFixed(2) : '—'}
+                  value={form.days != null ? Number(form.days).toFixed(2) : '—'}
                 />
               </Field>
             </FormField>
-            <FormField>
+            <FormField changed={changedFields.has('amount')}>
               <Field label="Amount">
                 <Input
+                  name="amount"
                   readOnly
                   value={form.amount != null
-                    ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(form.amount)
+                    ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(Number(form.amount))
                     : '—'}
                 />
               </Field>

@@ -322,6 +322,29 @@ import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 
 ---
 
+## QueryStringPrefill
+
+**Location:** `src/components/QueryStringPrefill.jsx`
+
+Renderless component (returns `null`) that pre-fills form fields from URL query string parameters by calling the form's `handleChange` for each param. Values flow through the same code path as user interaction.
+
+### Props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `handleChange` | `(field) => (e, data) => void` | Required. The form's curried change handler. |
+| `onPrefill` | `(prefilledFields: Set<string>) => void` | Optional. Callback after pre-fill completes. |
+
+### Usage
+
+Mount inside the form's main return, after the loading guard. See `/forms-guide` for full documentation including golden rules and developer responsibilities.
+
+```jsx
+<QueryStringPrefill handleChange={handleChange} />
+```
+
+---
+
 ## Hooks
 
 ### useFormTracker

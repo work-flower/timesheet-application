@@ -99,24 +99,51 @@ useEffect(() => {
 }, [id, isNew, setBase]);
 ```
 
-## GOLDEN RULE: Query String Pre-fill
+## GOLDEN RULE: Query String Pre-fill via `QueryStringPrefill`
 
-**Every form MUST support query string parameters.** This is a core platform feature — any form (new or edit, any entity) can be opened with query params that map to entity properties. Pre-filled fields show the blue changed indicator automatically.
+**Every form MUST support query string parameters.** This is a core platform feature — any form (new or edit, any entity) can be opened with query params that map to entity field names. Pre-filled fields show the blue changed indicator automatically.
 
-**This is built into `useFormTracker`.** The hook's `setBase()` method automatically applies query params from `window.location.search` on its first call. No manual handling is needed.
+**Location:** `src/components/QueryStringPrefill.jsx`
 
-### How it works (inside `useFormTracker`)
+`QueryStringPrefill` is a renderless component (returns `null`) that calls the form's `handleChange` for each URL query parameter. Values flow through the same code path as user interaction — all side effects fire naturally (VAT recalc, currency update, days/amount recomputation).
 
-1. On hook init, `parseQueryParams()` reads all URL query params with auto type coercion (booleans, numbers, strings)
-2. On the first `setBase()` call, the base is set (establishing the "clean" state), then query params are applied via `setForm()` on top
-3. Result: overridden fields appear as changed (blue indicator), form is dirty, navigation guard activates
+### How to mount
 
-### What this means for form authors
+Mount it inside the form's main return (after the loading guard), before `FormCommandBar`. Pass the form's `handleChange` function:
 
-- **Do nothing extra.** Just call `setBase()` as normal with defaults (new) or loaded data (edit). The hook handles query params automatically.
-- **All query params are passed through.** Parameter names map to form property names. No filtering — the developer navigating to the form is responsible for passing valid keys.
-- **Type coercion is automatic:** `"true"`/`"false"` → boolean, numeric strings → `parseFloat()`, everything else → string.
-- **Works in both new and edit modes.** On edit, query params override loaded record values.
+```jsx
+if (loading) return <Spinner />;
+
+return (
+  <div className={styles.page}>
+    <QueryStringPrefill handleChange={handleChange} />
+    <FormCommandBar ... />
+    ...
+  </div>
+);
+```
+
+### Golden rules
+
+1. **`handleChange` must handle all form fields.** The curried `handleChange(field)(e, data)` pattern must work for every field that might be QS-prefilled. Fields with special logic (VAT, currency, days/amount) need explicit branches; generic fields fall through the `else` branch.
+2. **Form state keys in `useFormTracker` MUST match database field names.** URL query string keys map to the `field` argument of `handleChange`.
+3. **VAT calculations MUST use `shared/expenseVatCalc.js`.** Never duplicate VAT logic in form code — call `deriveVatFromPercent`/`deriveVatFromAmount` from `handleChange`.
+
+### How it works
+
+1. On mount, reads `window.location.search` into `URLSearchParams`
+2. Iterates params **in URL order** — applies each value sequentially
+3. For each param, calls `handleChange(key)(null, { value: coercedValue })`
+4. Basic type coercion: `'true'`/`'false'` → boolean, everything else → string as-is
+5. `handleChange` runs with the same logic as user interaction → side effects fire → dirty styling appears
+6. Non-field params (e.g. `embedded`, `transactionId`) pass through `handleChange`'s else branch harmlessly — they're added to form state but ignored by the API
+
+### Developer responsibility
+
+The component is intentionally simple — it does not validate, reorder, or reason about values. The developer building the URL is responsible for:
+- Correct field names matching `handleChange` field keys
+- Correct value formats (numbers as valid numeric strings, dates as YYYY-MM-DD)
+- Correct key order when field dependencies matter (e.g. set `amount` before `vatPercent`)
 
 ### Example: navigating with pre-fill
 
@@ -129,6 +156,8 @@ params.set('description', data.description || '');
 params.set('transactionId', id);
 navigate(`/expenses/new?${params.toString()}`);
 ```
+
+Example URL: `/expenses/new?amount=45.60&date=2026-03-10&description=Train%20ticket`
 
 ### Side-effect params (e.g. `transactionId`)
 
@@ -143,9 +172,9 @@ const sourceTransactionId = useMemo(() => {
 
 ### NEVER
 
-- **NEVER** manually parse query params and merge them into `setBase()` — this makes them invisible to dirty tracking
-- **NEVER** use `useSearchParams` for form field pre-fill — the hook handles it
-- **NEVER** filter or ignore unknown query params — pass everything through
+- **NEVER** manually parse query params and merge them into `setForm()`/`setBase()` — use the component
+- **NEVER** use `useSearchParams` for form field pre-fill — the component handles it via DOM
+- **NEVER** omit `name` attributes from form fields — even read-only/computed fields need them
 
 ## Save Pattern
 

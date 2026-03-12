@@ -7,7 +7,6 @@ import {
   Input,
   Field,
   Spinner,
-  SpinButton,
   Select,
   Checkbox,
   Combobox,
@@ -53,6 +52,7 @@ import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import { deriveVatFromPercent, deriveVatFromAmount } from '../../../../shared/expenseVatCalc.js';
+import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -181,9 +181,6 @@ export default function ExpenseForm() {
   });
   const notifyParent = useNotifyParent();
 
-  // Reset keys to force SpinButton remount when a dependent field is programmatically updated
-  const [spinKeys, setSpinKeys] = useState({ amount: 0, vatAmount: 0, vatPercent: 0 });
-
   const [loadedData, setLoadedData] = useState(null);
   const [allProjects, setAllProjects] = useState([]);
   const [allClients, setAllClients] = useState([]);
@@ -257,22 +254,6 @@ export default function ExpenseForm() {
             notes: '',
           });
 
-          // Apply query string pre-fill as user changes (e.g. from "Create Expense" on transaction)
-          const qs = new URLSearchParams(window.location.search);
-          const prefill = {};
-          if (qs.has('amount')) prefill.amount = parseFloat(qs.get('amount')) || 0;
-          if (qs.has('date')) prefill.date = qs.get('date');
-          if (qs.has('description')) prefill.description = qs.get('description');
-          if (qs.has('externalReference')) prefill.externalReference = qs.get('externalReference');
-          if (qs.has('projectId')) prefill.projectId = qs.get('projectId');
-          if (Object.keys(prefill).length > 0) {
-            setForm((prev) => {
-              const next = { ...prev, ...prefill };
-              next.netAmount = Math.round((next.amount - next.vatAmount) * 100) / 100;
-              return next;
-            });
-            setSpinKeys((k) => ({ amount: k.amount + 1, vatAmount: k.vatAmount + 1, vatPercent: k.vatPercent + 1 }));
-          }
         }
       } catch (err) {
         setError(err.message);
@@ -308,14 +289,28 @@ export default function ExpenseForm() {
   );
 
   const handleChange = (field) => (e, data) => {
-    const value = data?.value ?? e.target.value;
+    const raw = data?.value ?? e.target.value;
     setForm((prev) => {
-      const next = { ...prev, [field]: value };
-      // Update currency when project changes
-      if (field === 'projectId') {
-        const proj = allProjects.find((p) => p._id === value);
-        const client = proj ? clientMap[proj.clientId] : null;
-        next.currency = client?.currency || 'GBP';
+      const next = { ...prev };
+      if (field === 'amount') {
+        const val = parseFloat(raw) || 0;
+        next.amount = val;
+        if (prev.vatPercent !== 0) Object.assign(next, deriveVatFromPercent(val, prev.vatPercent));
+        else if (prev.vatAmount !== 0) Object.assign(next, deriveVatFromAmount(val, prev.vatAmount));
+        else next.netAmount = Math.round((val - prev.vatAmount) * 100) / 100;
+      } else if (field === 'vatPercent') {
+        const val = parseFloat(raw) || 0;
+        Object.assign(next, deriveVatFromPercent(prev.amount, val));
+      } else if (field === 'vatAmount') {
+        const val = parseFloat(raw) || 0;
+        Object.assign(next, deriveVatFromAmount(prev.amount, val));
+      } else {
+        next[field] = raw;
+        if (field === 'projectId') {
+          const proj = allProjects.find((p) => p._id === raw);
+          const client = proj ? clientMap[proj.clientId] : null;
+          next.currency = client?.currency || 'GBP';
+        }
       }
       return next;
     });
@@ -520,6 +515,7 @@ export default function ExpenseForm() {
 
   return (
     <div className={styles.page}>
+      <QueryStringPrefill handleChange={handleChange} />
       <FormCommandBar
         onBack={() => goBack('/expenses')}
         onSave={handleSave}
@@ -574,59 +570,22 @@ export default function ExpenseForm() {
         <FormSection title="Entry Details">
           <FormField changed={changedFields.has('amount')}>
             <Field label="Amount (gross)" required hint="Total amount paid including VAT">
-              <SpinButton
-                key={`amount-${spinKeys.amount}`}
-                defaultValue={form.amount}
-                onChange={(e, data) => {
-                  const val = data.value ?? parseFloat(data.displayValue);
-                  if (val != null && !isNaN(val)) {
-                    setForm((prev) => {
-                      const next = { ...prev, amount: val };
-                      if (prev.vatPercent !== 0) {
-                        Object.assign(next, deriveVatFromPercent(val, prev.vatPercent));
-                      } else if (prev.vatAmount !== 0) {
-                        Object.assign(next, deriveVatFromAmount(val, prev.vatAmount));
-                      } else {
-                        next.netAmount = Math.round((val - prev.vatAmount) * 100) / 100;
-                      }
-                      return next;
-                    });
-                    setSpinKeys((k) => ({ ...k, vatAmount: k.vatAmount + 1, vatPercent: k.vatPercent + 1 }));
-                  }
-                }}
-                step={0.01}
-              />
+              <Input type="number" name="amount" value={String(form.amount)} onChange={handleChange('amount')} step="0.01" />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('date')}>
             <Field label="Date" required>
-              <Input type="date" value={form.date} max={today} onChange={handleChange('date')} />
+              <Input type="date" name="date" value={form.date} max={today} onChange={handleChange('date')} />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('vatPercent')}>
             <Field label="VAT %">
-              <SpinButton
-                key={`vatPercent-${spinKeys.vatPercent}`}
-                defaultValue={form.vatPercent}
-                onChange={(e, data) => {
-                  const val = data.value ?? parseFloat(data.displayValue);
-                  if (val != null && !isNaN(val)) {
-                    setForm((prev) => ({
-                      ...prev,
-                      ...deriveVatFromPercent(prev.amount, val),
-                    }));
-                    setSpinKeys((k) => ({ ...k, vatAmount: k.vatAmount + 1 }));
-                  }
-                }}
-                min={0}
-                max={100}
-                step={0.01}
-              />
+              <Input type="number" name="vatPercent" value={String(form.vatPercent)} onChange={handleChange('vatPercent')} min="0" max="100" step="0.01" />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('projectId')}>
             <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
-              <Select value={form.projectId} onChange={handleChange('projectId')}>
+              <Select name="projectId" value={form.projectId} onChange={handleChange('projectId')}>
                 <option value="">Select project...</option>
                 {Object.entries(projectsByClient).map(([clientName, projs]) => (
                   <optgroup key={clientName} label={clientName}>
@@ -640,27 +599,14 @@ export default function ExpenseForm() {
           </FormField>
           <FormField changed={changedFields.has('vatAmount')}>
             <Field label="VAT Amount" hint="VAT portion included in the Amount (gross)">
-              <SpinButton
-                key={`vatAmount-${spinKeys.vatAmount}`}
-                defaultValue={form.vatAmount}
-                onChange={(e, data) => {
-                  const val = data.value ?? parseFloat(data.displayValue);
-                  if (val != null && !isNaN(val)) {
-                    setForm((prev) => ({
-                      ...prev,
-                      ...deriveVatFromAmount(prev.amount, val),
-                    }));
-                    setSpinKeys((k) => ({ ...k, vatPercent: k.vatPercent + 1 }));
-                  }
-                }}
-                step={0.01}
-              />
+              <Input type="number" name="vatAmount" value={String(form.vatAmount)} onChange={handleChange('vatAmount')} step="0.01" />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('expenseType')}>
             <Field label="Expense Type" hint="Select from previous types or type a new one">
               <Combobox
                 freeform
+                input={{ name: 'expenseType' }}
                 value={form.expenseType}
                 onOptionSelect={(e, data) => setForm((prev) => ({ ...prev, expenseType: data.optionText || '' }))}
                 onChange={(e) => setForm((prev) => ({ ...prev, expenseType: e.target.value }))}
@@ -674,12 +620,13 @@ export default function ExpenseForm() {
           </FormField>
           <FormField changed={changedFields.has('netAmount')}>
             <Field label="Net Amount" hint="Amount (gross) minus VAT">
-              <Input readOnly value={fmtGBP.format(form.netAmount || 0)} />
+              <Input name="netAmount" readOnly value={fmtGBP.format(form.netAmount || 0)} />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('billable')}>
             <Field>
               <Checkbox
+                name="billable"
                 checked={form.billable}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, billable: data.checked }))}
                 label="Billable to client"
@@ -688,12 +635,13 @@ export default function ExpenseForm() {
           </FormField>
           <FormField changed={changedFields.has('currency')}>
             <Field label="Currency" hint="Inherited from client">
-              <Input readOnly value={form.currency} />
+              <Input name="currency" readOnly value={form.currency} />
             </Field>
           </FormField>
           <FormField fullWidth changed={changedFields.has('description')}>
             <Field label="Description" hint="Visible to the client on invoices/reports">
               <Textarea
+                name="description"
                 value={form.description}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, description: data.value }))}
                 placeholder="e.g. Return train London to Manchester for project kickoff"
@@ -704,6 +652,7 @@ export default function ExpenseForm() {
           <FormField changed={changedFields.has('externalReference')}>
             <Field label="External Reference" hint="Invoice number, order ID, or other external reference">
               <Input
+                name="externalReference"
                 value={form.externalReference}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, externalReference: data.value }))}
                 placeholder="e.g. INV-12345"

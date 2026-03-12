@@ -331,6 +331,14 @@ Detailed business rules for each entity (golden rules, validation, computation, 
 - **Invoices** → `invoices.md` (lifecycle, invoice number, line computation, consistency check, PDF generation, locking, payment tracking)
 - **Transactions & Import Jobs** → `transactions.md` (file upload, AI parsing, staged review, linking)
 
+### Query String Pre-fill
+
+All forms support URL query string pre-fill via `QueryStringPrefill` (`src/components/QueryStringPrefill.jsx`). The component calls the form's `handleChange` for each QS param — values flow through the same code path as user interaction, so all side effects fire naturally. Form state keys in `useFormTracker` MUST match database field names (QS keys map to `handleChange` field arguments). See `/forms-guide` for detailed usage.
+
+### VAT Calculation Source of Truth
+
+All VAT calculations MUST use `shared/expenseVatCalc.js` (`deriveVatFromPercent`, `deriveVatFromAmount`). Never duplicate VAT logic in form code.
+
 ### Record Locking
 
 1. Any record can have `isLocked` (boolean) and `isLockedReason` (string). These are protected — cannot be set via regular updates, only by invoice lifecycle methods.
