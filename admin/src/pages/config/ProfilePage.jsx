@@ -43,33 +43,19 @@ export default function ProfilePage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
   const { navigateUnguarded, goBack } = useAppNavigate();
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
-    name: '', email: '', phone: '', address: '',
-    businessName: '', utrNumber: '', vatNumber: '', companyRegistration: '',
-  });
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
-  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    settingsApi.get().then((data) => {
-      if (data) {
-        setBase({
-          name: data.name || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          address: data.address || '',
-          businessName: data.businessName || '',
-          utrNumber: data.utrNumber || '',
-          vatNumber: data.vatNumber || '',
-          companyRegistration: data.companyRegistration || '',
-        });
-      }
-    }).catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [setBase]);
+    settingsApi.get()
+      .then((data) => resetBase(data || {}))
+      .catch((err) => setError(err.message))
+      .finally(() => setInitialized(true));
+  }, [resetBase]);
 
   const handleChange = (field) => (e, data) => {
     setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
@@ -81,7 +67,8 @@ export default function ProfilePage() {
     setSuccess(false);
     try {
       await settingsApi.update(form);
-      setBase({ ...form });
+      const data = await settingsApi.get();
+      resetBase(data || {});
       return { ok: true };
     } catch (err) {
       setError(err.message);
@@ -89,7 +76,7 @@ export default function ProfilePage() {
     } finally {
       setSaving(false);
     }
-  }, [form, setBase]);
+  }, [form, resetBase]);
 
   const handleSave = async () => {
     const { ok } = await saveForm();
@@ -112,54 +99,55 @@ export default function ProfilePage() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
-      <FormCommandBar
-        onBack={() => goBack('/config/profile')}
-        onSave={handleSave}
-        onSaveAndClose={handleSaveAndClose}
-        saving={saving}
-      />
-      <div className={styles.pageBody}>
-        <div className={styles.header}>
-          <Text className={styles.title}>Profile</Text>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+        <FormCommandBar
+          onBack={() => goBack('/config/profile')}
+          onSave={handleSave}
+          onSaveAndClose={handleSaveAndClose}
+          saving={saving}
+        />
+        <div className={styles.pageBody}>
+          <div className={styles.header}>
+            <Text className={styles.title}>Profile</Text>
+          </div>
+
+          {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+          {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Settings saved successfully.</MessageBarBody></MessageBar>}
+
+          <FormSection title="Personal Details">
+            <FormField changed={changedFields.has('name')}>
+              <Field label="Full Name"><Input name="name" value={form.name ?? ''} onChange={handleChange('name')} /></Field>
+            </FormField>
+            <FormField changed={changedFields.has('email')}>
+              <Field label="Email"><Input name="email" type="email" value={form.email ?? ''} onChange={handleChange('email')} /></Field>
+            </FormField>
+            <FormField changed={changedFields.has('phone')}>
+              <Field label="Phone"><Input name="phone" value={form.phone ?? ''} onChange={handleChange('phone')} /></Field>
+            </FormField>
+            <FormField fullWidth changed={changedFields.has('address')}>
+              <Field label="Address"><Textarea name="address" value={form.address ?? ''} onChange={handleChange('address')} resize="vertical" /></Field>
+            </FormField>
+          </FormSection>
+
+          <FormSection title="Business Details">
+            <FormField changed={changedFields.has('businessName')}>
+              <Field label="Business Name"><Input name="businessName" value={form.businessName ?? ''} onChange={handleChange('businessName')} /></Field>
+            </FormField>
+            <FormField changed={changedFields.has('utrNumber')}>
+              <Field label="UTR Number"><Input name="utrNumber" value={form.utrNumber ?? ''} onChange={handleChange('utrNumber')} /></Field>
+            </FormField>
+            <FormField changed={changedFields.has('vatNumber')}>
+              <Field label="VAT Number"><Input name="vatNumber" value={form.vatNumber ?? ''} onChange={handleChange('vatNumber')} /></Field>
+            </FormField>
+            <FormField changed={changedFields.has('companyRegistration')}>
+              <Field label="Company Registration"><Input name="companyRegistration" value={form.companyRegistration ?? ''} onChange={handleChange('companyRegistration')} /></Field>
+            </FormField>
+          </FormSection>
         </div>
-
-        {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-        {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Settings saved successfully.</MessageBarBody></MessageBar>}
-
-        <FormSection title="Personal Details">
-          <FormField changed={changedFields.has('name')}>
-            <Field label="Full Name"><Input value={form.name} onChange={handleChange('name')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('email')}>
-            <Field label="Email"><Input type="email" value={form.email} onChange={handleChange('email')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('phone')}>
-            <Field label="Phone"><Input value={form.phone} onChange={handleChange('phone')} /></Field>
-          </FormField>
-          <FormField fullWidth changed={changedFields.has('address')}>
-            <Field label="Address"><Textarea value={form.address} onChange={handleChange('address')} resize="vertical" /></Field>
-          </FormField>
-        </FormSection>
-
-        <FormSection title="Business Details">
-          <FormField changed={changedFields.has('businessName')}>
-            <Field label="Business Name"><Input value={form.businessName} onChange={handleChange('businessName')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('utrNumber')}>
-            <Field label="UTR Number"><Input value={form.utrNumber} onChange={handleChange('utrNumber')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('vatNumber')}>
-            <Field label="VAT Number"><Input value={form.vatNumber} onChange={handleChange('vatNumber')} /></Field>
-          </FormField>
-          <FormField changed={changedFields.has('companyRegistration')}>
-            <Field label="Company Registration"><Input value={form.companyRegistration} onChange={handleChange('companyRegistration')} /></Field>
-          </FormField>
-        </FormSection>
       </div>
-    </div>
+    </>
   );
 }

@@ -49,15 +49,6 @@ const useStyles = makeStyles({
   },
 });
 
-const INITIAL_STATE = {
-  apiKey: '',
-  model: 'claude-sonnet-4-5-20250929',
-  maxTokens: '',
-  timeoutMinutes: '',
-  systemPrompt: '',
-  expenseSystemPrompt: '',
-};
-
 function mapConfig(data) {
   return {
     apiKey: data.apiKey || '',
@@ -73,21 +64,19 @@ export default function AiConfigPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
   const { navigateUnguarded, goBack } = useAppNavigate();
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker(INITIAL_STATE);
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
-  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState(null);
 
   useEffect(() => {
     aiConfigApi.getConfig()
-      .then((data) => {
-        if (data) setBase(mapConfig(data));
-      })
+      .then((data) => resetBase(mapConfig(data || {})))
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [setBase]);
+      .finally(() => setInitialized(true));
+  }, [resetBase]);
 
   const handleChange = (field) => (e, data) => {
     const value = data?.value ?? e.target.value;
@@ -117,7 +106,7 @@ export default function AiConfigPage() {
     setMessage(null);
     try {
       const saved = await aiConfigApi.updateConfig(form);
-      if (saved) setBase(mapConfig(saved));
+      if (saved) resetBase(mapConfig(saved));
       return { ok: true };
     } catch (err) {
       showMessage('error', `Save failed: ${err.message}`);
@@ -125,7 +114,7 @@ export default function AiConfigPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, setBase]);
+  }, [form, resetBase]);
 
   const handleSave = async () => {
     const { ok } = await saveForm();
@@ -147,85 +136,88 @@ export default function AiConfigPage() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
-      <FormCommandBar
-        onBack={() => goBack('/system/ai')}
-        onSave={handleSave}
-        onSaveAndClose={handleSaveAndClose}
-        saving={saving}
-      />
-      <div className={styles.pageBody}>
-        <div className={styles.header}>
-          <Text className={styles.title}>AI Configuration</Text>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+        <FormCommandBar
+          onBack={() => goBack('/system/ai')}
+          onSave={handleSave}
+          onSaveAndClose={handleSaveAndClose}
+          saving={saving}
+        />
+        <div className={styles.pageBody}>
+          <div className={styles.header}>
+            <Text className={styles.title}>AI Configuration</Text>
+          </div>
+
+          {message && (
+            <MessageBar intent={message.intent} style={{ marginBottom: 16 }}>
+              <MessageBarBody>{message.text}</MessageBarBody>
+            </MessageBar>
+          )}
+
+          <FormSection title="API Connection">
+            <FormField changed={changedFields.has('apiKey')}>
+              <Field label="API Key">
+                <Input name="apiKey" type="password" value={form.apiKey ?? ''} onChange={handleChange('apiKey')} />
+              </Field>
+            </FormField>
+            <FormField changed={changedFields.has('model')}>
+              <Field label="Model">
+                <Input name="model" value={form.model ?? ''} onChange={handleChange('model')} placeholder="claude-sonnet-4-5-20250929" />
+              </Field>
+            </FormField>
+            <FormField changed={changedFields.has('maxTokens')}>
+              <Field label="Max Tokens" hint="Maximum tokens in AI response. Default: 64000. Max: 64000.">
+                <Input name="maxTokens" value={form.maxTokens ?? ''} onChange={handleChange('maxTokens')} placeholder="64000" type="number" max={64000} />
+              </Field>
+            </FormField>
+            <FormField changed={changedFields.has('timeoutMinutes')}>
+              <Field label="Timeout (minutes)" hint="How long to wait for the AI response before giving up. Default: 30 minutes.">
+                <Input name="timeoutMinutes" value={form.timeoutMinutes ?? ''} onChange={handleChange('timeoutMinutes')} placeholder="30" type="number" />
+              </Field>
+            </FormField>
+            <FormField fullWidth>
+              <div className={styles.actions}>
+                <Button appearance="outline" icon={<PlugConnectedRegular />} onClick={handleTestConnection} disabled={testing || !form.apiKey} size="small">
+                  {testing ? 'Testing...' : 'Test Connection'}
+                </Button>
+              </div>
+            </FormField>
+          </FormSection>
+
+          <FormSection title="Transaction Import System Prompt">
+            <FormField fullWidth>
+              <MarkdownEditor
+                name="systemPrompt"
+                value={form.systemPrompt ?? ''}
+                onChange={(val) => setForm((prev) => ({ ...prev, systemPrompt: val }))}
+                height={300}
+                placeholder="General parsing instructions shared across all imports..."
+              />
+              <div className={styles.hint}>
+                General parsing instructions shared across all imports. Each import job can also have a job-specific user prompt.
+              </div>
+            </FormField>
+          </FormSection>
+
+          <FormSection title="Expense Receipt System Prompt">
+            <FormField fullWidth>
+              <MarkdownEditor
+                name="expenseSystemPrompt"
+                value={form.expenseSystemPrompt ?? ''}
+                onChange={(val) => setForm((prev) => ({ ...prev, expenseSystemPrompt: val }))}
+                height={300}
+                placeholder="Instructions for parsing expense receipts..."
+              />
+              <div className={styles.hint}>
+                Instructions sent to the AI when scanning expense receipts. The AI should return a JSON object with date, amount, vatAmount, expenseType, and description.
+              </div>
+            </FormField>
+          </FormSection>
         </div>
-
-        {message && (
-          <MessageBar intent={message.intent} style={{ marginBottom: 16 }}>
-            <MessageBarBody>{message.text}</MessageBarBody>
-          </MessageBar>
-        )}
-
-        <FormSection title="API Connection">
-          <FormField changed={changedFields.has('apiKey')}>
-            <Field label="API Key">
-              <Input type="password" value={form.apiKey} onChange={handleChange('apiKey')} />
-            </Field>
-          </FormField>
-          <FormField changed={changedFields.has('model')}>
-            <Field label="Model">
-              <Input value={form.model} onChange={handleChange('model')} placeholder="claude-sonnet-4-5-20250929" />
-            </Field>
-          </FormField>
-          <FormField changed={changedFields.has('maxTokens')}>
-            <Field label="Max Tokens" hint="Maximum tokens in AI response. Default: 64000. Max: 64000.">
-              <Input value={form.maxTokens} onChange={handleChange('maxTokens')} placeholder="64000" type="number" max={64000} />
-            </Field>
-          </FormField>
-          <FormField changed={changedFields.has('timeoutMinutes')}>
-            <Field label="Timeout (minutes)" hint="How long to wait for the AI response before giving up. Default: 30 minutes.">
-              <Input value={form.timeoutMinutes} onChange={handleChange('timeoutMinutes')} placeholder="30" type="number" />
-            </Field>
-          </FormField>
-          <FormField fullWidth>
-            <div className={styles.actions}>
-              <Button appearance="outline" icon={<PlugConnectedRegular />} onClick={handleTestConnection} disabled={testing || !form.apiKey} size="small">
-                {testing ? 'Testing...' : 'Test Connection'}
-              </Button>
-            </div>
-          </FormField>
-        </FormSection>
-
-        <FormSection title="Transaction Import System Prompt">
-          <FormField fullWidth>
-            <MarkdownEditor
-              value={form.systemPrompt}
-              onChange={(val) => setForm((prev) => ({ ...prev, systemPrompt: val }))}
-              height={300}
-              placeholder="General parsing instructions shared across all imports..."
-            />
-            <div className={styles.hint}>
-              General parsing instructions shared across all imports. Each import job can also have a job-specific user prompt.
-            </div>
-          </FormField>
-        </FormSection>
-
-        <FormSection title="Expense Receipt System Prompt">
-          <FormField fullWidth>
-            <MarkdownEditor
-              value={form.expenseSystemPrompt}
-              onChange={(val) => setForm((prev) => ({ ...prev, expenseSystemPrompt: val }))}
-              height={300}
-              placeholder="Instructions for parsing expense receipts..."
-            />
-            <div className={styles.hint}>
-              Instructions sent to the AI when scanning expense receipts. The AI should return a JSON object with date, amount, vatAmount, expenseType, and description.
-            </div>
-          </FormField>
-        </FormSection>
       </div>
-    </div>
+    </>
   );
 }

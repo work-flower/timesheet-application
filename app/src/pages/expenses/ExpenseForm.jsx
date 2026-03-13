@@ -165,28 +165,15 @@ export default function ExpenseForm() {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
-    projectId: '',
-    date: today,
-    expenseType: '',
-    description: '',
-    amount: 0,
-    vatAmount: 0,
-    vatPercent: 0,
-    netAmount: 0,
-    billable: true,
-    currency: 'GBP',
-    externalReference: '',
-    notes: '',
-  });
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
+  const [initialized, setInitialized] = useState(false);
 
   const [loadedData, setLoadedData] = useState(null);
   const [allProjects, setAllProjects] = useState([]);
   const [allClients, setAllClients] = useState([]);
   const [expenseTypes, setExpenseTypes] = useState([]);
   const [attachments, setAttachments] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
@@ -216,53 +203,28 @@ export default function ExpenseForm() {
         setAllClients(clients);
         setExpenseTypes(types);
 
-        const clientMap = Object.fromEntries(clients.map((c) => [c._id, c]));
+        const clientLookup = Object.fromEntries(clients.map((c) => [c._id, c]));
 
         if (!isNew) {
           const data = await expensesApi.getById(id);
           setLoadedData(data);
           setAttachments(data.attachments || []);
-          setBase({
-            projectId: data.projectId || '',
-            date: data.date || today,
-            expenseType: data.expenseType || '',
-            description: data.description || '',
-            amount: data.amount || 0,
-            vatAmount: data.vatAmount || 0,
-            vatPercent: data.vatPercent || 0,
-            netAmount: data.netAmount || 0,
-            billable: data.billable !== false,
-            currency: data.currency || 'GBP',
-            externalReference: data.externalReference || '',
-            notes: data.notes || '',
-          });
+          resetBase(data);
         } else if (active.length > 0) {
           const firstProj = active[0];
-          const firstClient = clientMap[firstProj.clientId];
-          setBase({
-            projectId: firstProj._id,
-            date: today,
-            expenseType: '',
-            description: '',
-            amount: 0,
-            vatAmount: 0,
-            vatPercent: 0,
-            netAmount: 0,
-            billable: true,
-            currency: firstClient?.currency || 'GBP',
-            externalReference: '',
-            notes: '',
-          });
-
+          const firstClient = clientLookup[firstProj.clientId];
+          resetBase({ date: today, billable: true, currency: firstClient?.currency || 'GBP', projectId: firstProj._id });
+        } else {
+          resetBase({ date: today, billable: true });
         }
       } catch (err) {
         setError(err.message);
       } finally {
-        setLoading(false);
+        setInitialized(true);
       }
     };
     init();
-  }, [id, isNew, setBase, today]);
+  }, [id, isNew, resetBase, today]);
 
   // Group projects by client
   const projectsByClient = useMemo(() => {
@@ -295,9 +257,9 @@ export default function ExpenseForm() {
       if (field === 'amount') {
         const val = parseFloat(raw) || 0;
         next.amount = val;
-        if (prev.vatPercent !== 0) Object.assign(next, deriveVatFromPercent(val, prev.vatPercent));
-        else if (prev.vatAmount !== 0) Object.assign(next, deriveVatFromAmount(val, prev.vatAmount));
-        else next.netAmount = Math.round((val - prev.vatAmount) * 100) / 100;
+        if ((prev.vatPercent || 0) !== 0) Object.assign(next, deriveVatFromPercent(val, prev.vatPercent));
+        else if ((prev.vatAmount || 0) !== 0) Object.assign(next, deriveVatFromAmount(val, prev.vatAmount));
+        else next.netAmount = Math.round((val - (prev.vatAmount || 0)) * 100) / 100;
       } else if (field === 'vatPercent') {
         const val = parseFloat(raw) || 0;
         Object.assign(next, deriveVatFromPercent(prev.amount, val));
@@ -333,20 +295,7 @@ export default function ExpenseForm() {
       } else {
         const updated = await expensesApi.update(id, form);
         setAttachments(updated.attachments || []);
-        setBase({
-          projectId: updated.projectId || '',
-          date: updated.date || today,
-          expenseType: updated.expenseType || '',
-          description: updated.description || '',
-          amount: updated.amount || 0,
-          vatAmount: updated.vatAmount || 0,
-          vatPercent: updated.vatPercent || 0,
-          netAmount: updated.netAmount || 0,
-          billable: updated.billable !== false,
-          currency: updated.currency || 'GBP',
-          externalReference: updated.externalReference || '',
-          notes: updated.notes || '',
-        });
+        resetBase(updated);
         return { ok: true };
       }
     } catch (err) {
@@ -355,7 +304,7 @@ export default function ExpenseForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, setBase, today, sourceTransactionIds]);
+  }, [form, isNew, id, resetBase, today, sourceTransactionIds]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -511,11 +460,11 @@ export default function ExpenseForm() {
   const isLocked = !isNew && loadedData?.isLocked;
   const lockReason = loadedData?.isLockedReason;
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
-      <QueryStringPrefill handleChange={handleChange} />
+    <>
+    {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+    <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
       <FormCommandBar
         onBack={() => goBack('/expenses')}
         onSave={handleSave}
@@ -570,22 +519,22 @@ export default function ExpenseForm() {
         <FormSection title="Entry Details">
           <FormField changed={changedFields.has('amount')}>
             <Field label="Amount (gross)" required hint="Total amount paid including VAT">
-              <Input type="number" name="amount" value={String(form.amount)} onChange={handleChange('amount')} step="0.01" />
+              <Input type="number" name="amount" value={String(form.amount ?? '')} onChange={handleChange('amount')} step="0.01" />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('date')}>
             <Field label="Date" required>
-              <Input type="date" name="date" value={form.date} max={today} onChange={handleChange('date')} />
+              <Input type="date" name="date" value={form.date ?? ''} max={today} onChange={handleChange('date')} />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('vatPercent')}>
             <Field label="VAT %">
-              <Input type="number" name="vatPercent" value={String(form.vatPercent)} onChange={handleChange('vatPercent')} min="0" max="100" step="0.01" />
+              <Input type="number" name="vatPercent" value={String(form.vatPercent ?? '')} onChange={handleChange('vatPercent')} min="0" max="100" step="0.01" />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('projectId')}>
             <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
-              <Select name="projectId" value={form.projectId} onChange={handleChange('projectId')}>
+              <Select name="projectId" value={form.projectId ?? ''} onChange={handleChange('projectId')}>
                 <option value="">Select project...</option>
                 {Object.entries(projectsByClient).map(([clientName, projs]) => (
                   <optgroup key={clientName} label={clientName}>
@@ -599,7 +548,7 @@ export default function ExpenseForm() {
           </FormField>
           <FormField changed={changedFields.has('vatAmount')}>
             <Field label="VAT Amount" hint="VAT portion included in the Amount (gross)">
-              <Input type="number" name="vatAmount" value={String(form.vatAmount)} onChange={handleChange('vatAmount')} step="0.01" />
+              <Input type="number" name="vatAmount" value={String(form.vatAmount ?? '')} onChange={handleChange('vatAmount')} step="0.01" />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('expenseType')}>
@@ -607,7 +556,7 @@ export default function ExpenseForm() {
               <Combobox
                 freeform
                 input={{ name: 'expenseType' }}
-                value={form.expenseType}
+                value={form.expenseType ?? ''}
                 onOptionSelect={(e, data) => setForm((prev) => ({ ...prev, expenseType: data.optionText || '' }))}
                 onChange={(e) => setForm((prev) => ({ ...prev, expenseType: e.target.value }))}
                 placeholder="e.g. Travel, Mileage, Equipment..."
@@ -627,7 +576,7 @@ export default function ExpenseForm() {
             <Field>
               <Checkbox
                 name="billable"
-                checked={form.billable}
+                checked={form.billable ?? false}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, billable: data.checked }))}
                 label="Billable to client"
               />
@@ -635,14 +584,14 @@ export default function ExpenseForm() {
           </FormField>
           <FormField changed={changedFields.has('currency')}>
             <Field label="Currency" hint="Inherited from client">
-              <Input name="currency" readOnly value={form.currency} />
+              <Input name="currency" readOnly value={form.currency ?? ''} />
             </Field>
           </FormField>
           <FormField fullWidth changed={changedFields.has('description')}>
             <Field label="Description" hint="Visible to the client on invoices/reports">
               <Textarea
                 name="description"
-                value={form.description}
+                value={form.description ?? ''}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, description: data.value }))}
                 placeholder="e.g. Return train London to Manchester for project kickoff"
                 resize="vertical"
@@ -653,7 +602,7 @@ export default function ExpenseForm() {
             <Field label="External Reference" hint="Invoice number, order ID, or other external reference">
               <Input
                 name="externalReference"
-                value={form.externalReference}
+                value={form.externalReference ?? ''}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, externalReference: data.value }))}
                 placeholder="e.g. INV-12345"
               />
@@ -665,6 +614,7 @@ export default function ExpenseForm() {
           <div className={styles.notes}>
             <MarkdownEditor
               label="Notes"
+              name="notes"
               value={form.notes}
               onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
               placeholder="Internal notes (not visible to client)..."
@@ -866,5 +816,6 @@ export default function ExpenseForm() {
         sourceId={id}
       />
     </div>
+    </>
   );
 }

@@ -8,7 +8,6 @@ import {
   Textarea,
   Field,
   Spinner,
-  SpinButton,
   Select,
   Tab,
   TabList,
@@ -35,6 +34,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
+import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -188,46 +188,47 @@ export default function ClientForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
-    companyName: '', primaryContactName: '', primaryContactEmail: '',
-    primaryContactPhone: '', defaultRate: 0, currency: 'GBP', workingHoursPerDay: 8,
-    invoicingEntityName: '', invoicingEntityAddress: '',
-    notes: '', ir35Status: 'OUTSIDE_IR35',
-  });
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
+  const [initialized, setInitialized] = useState(false);
+
   const [clientData, setClientData] = useState(null);
-  const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [tab, setTab] = useState('general');
 
   useEffect(() => {
-    if (!isNew) {
-      clientsApi.getById(id)
-        .then((data) => {
+    const init = async () => {
+      try {
+        if (!isNew) {
+          const data = await clientsApi.getById(id);
           setClientData(data);
-          setBase({
-            companyName: data.companyName || '',
-            primaryContactName: data.primaryContactName || '',
-            primaryContactEmail: data.primaryContactEmail || '',
-            primaryContactPhone: data.primaryContactPhone || '',
-            defaultRate: data.defaultRate || 0,
-            currency: data.currency || 'GBP',
-            workingHoursPerDay: data.workingHoursPerDay ?? 8,
-            invoicingEntityName: data.invoicingEntityName || '',
-            invoicingEntityAddress: data.invoicingEntityAddress || '',
-            notes: data.notes || '',
-            ir35Status: 'OUTSIDE_IR35',
-          });
-        })
-        .catch((err) => setError(err.message))
-        .finally(() => setLoading(false));
-    }
-  }, [id, isNew, setBase]);
+          resetBase(data);
+        } else {
+          resetBase({ defaultRate: 0, currency: 'GBP', workingHoursPerDay: 8, ir35Status: 'OUTSIDE_IR35' });
+        }
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setInitialized(true);
+      }
+    };
+    init();
+  }, [id, isNew, resetBase]);
 
   const handleChange = (field) => (e, data) => {
-    setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
+    const raw = data?.value ?? e.target.value;
+    setForm((prev) => {
+      const next = { ...prev };
+      if (field === 'defaultRate' || field === 'workingHoursPerDay') {
+        const val = parseFloat(raw);
+        next[field] = isNaN(val) ? null : val;
+      } else {
+        next[field] = raw;
+      }
+      return next;
+    });
   };
 
   const saveForm = useCallback(async () => {
@@ -243,19 +244,7 @@ export default function ClientForm() {
         await clientsApi.update(id, updatePayload);
         const data = await clientsApi.getById(id);
         setClientData(data);
-        setBase({
-          companyName: data.companyName || '',
-          primaryContactName: data.primaryContactName || '',
-          primaryContactEmail: data.primaryContactEmail || '',
-          primaryContactPhone: data.primaryContactPhone || '',
-          defaultRate: data.defaultRate || 0,
-          currency: data.currency || 'GBP',
-          workingHoursPerDay: data.workingHoursPerDay ?? 8,
-          invoicingEntityName: data.invoicingEntityName || '',
-          invoicingEntityAddress: data.invoicingEntityAddress || '',
-          notes: data.notes || '',
-          ir35Status: 'OUTSIDE_IR35',
-        });
+        resetBase(data);
         return { ok: true };
       }
     } catch (err) {
@@ -264,7 +253,7 @@ export default function ClientForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, setBase]);
+  }, [form, isNew, id, resetBase]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -294,10 +283,11 @@ export default function ClientForm() {
   const isLocked = !isNew && clientData?.isLocked;
   const lockReason = clientData?.isLockedReason;
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
       <FormCommandBar
         onBack={() => goBack('/clients')}
         onSave={handleSave}
@@ -340,12 +330,12 @@ export default function ClientForm() {
               <FormSection title="Company Information">
                 <FormField changed={changedFields.has('companyName')}>
                   <Field label="Company Name" required>
-                    <Input value={form.companyName} onChange={handleChange('companyName')} />
+                    <Input name="companyName" value={form.companyName ?? ''} onChange={handleChange('companyName')} />
                   </Field>
                 </FormField>
                 <FormField changed={changedFields.has('currency')}>
                   <Field label="Currency">
-                    <Select value={form.currency} onChange={handleChange('currency')}>
+                    <Select name="currency" value={form.currency ?? ''} onChange={handleChange('currency')}>
                       <option value="GBP">GBP</option>
                       <option value="USD">USD</option>
                       <option value="EUR">EUR</option>
@@ -354,35 +344,18 @@ export default function ClientForm() {
                 </FormField>
                 <FormField changed={changedFields.has('defaultRate')}>
                   <Field label="Default Rate (per day)">
-                    <SpinButton
-                      defaultValue={form.defaultRate}
-                      onChange={(e, data) => {
-                        const val = data.value ?? parseFloat(data.displayValue);
-                        if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, defaultRate: val }));
-                      }}
-                      min={0}
-                      step={25}
-                    />
+                    <Input name="defaultRate" type="number" value={String(form.defaultRate ?? '')} onChange={handleChange('defaultRate')} min={0} step={25} />
                   </Field>
                 </FormField>
                 <FormField changed={changedFields.has('workingHoursPerDay')}>
                   <Field label="Working Hours Per Day">
-                    <SpinButton
-                      defaultValue={form.workingHoursPerDay}
-                      onChange={(e, data) => {
-                        const val = data.value ?? parseFloat(data.displayValue);
-                        if (val != null && !isNaN(val)) setForm((prev) => ({ ...prev, workingHoursPerDay: val }));
-                      }}
-                      min={0.25}
-                      max={24}
-                      step={0.25}
-                    />
+                    <Input name="workingHoursPerDay" type="number" value={String(form.workingHoursPerDay ?? '')} onChange={handleChange('workingHoursPerDay')} min={0.25} max={24} step={0.25} />
                   </Field>
                 </FormField>
                 {isNew && (
                   <FormField changed={changedFields.has('ir35Status')}>
                     <Field label="IR35 Status (for default project)" required>
-                      <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
+                      <Select name="ir35Status" value={form.ir35Status ?? ''} onChange={handleChange('ir35Status')}>
                         <option value="OUTSIDE_IR35">Outside IR35</option>
                         <option value="INSIDE_IR35">Inside IR35</option>
                         <option value="FIXED_TERM">Fixed Term</option>
@@ -395,25 +368,25 @@ export default function ClientForm() {
               <FormSection title="Invoicing">
                 <FormField changed={changedFields.has('invoicingEntityName')}>
                   <Field label="Invoicing Entity Name" hint="Used in the Bill To section of invoices. Falls back to company name.">
-                    <Input value={form.invoicingEntityName} onChange={handleChange('invoicingEntityName')} />
+                    <Input name="invoicingEntityName" value={form.invoicingEntityName ?? ''} onChange={handleChange('invoicingEntityName')} />
                   </Field>
                 </FormField>
                 <FormField fullWidth changed={changedFields.has('invoicingEntityAddress')}>
                   <Field label="Invoicing Entity Address">
-                    <Textarea value={form.invoicingEntityAddress} onChange={handleChange('invoicingEntityAddress')} resize="vertical" rows={3} />
+                    <Textarea name="invoicingEntityAddress" value={form.invoicingEntityAddress ?? ''} onChange={handleChange('invoicingEntityAddress')} resize="vertical" rows={3} />
                   </Field>
                 </FormField>
               </FormSection>
 
               <FormSection title="Primary Contact">
                 <FormField changed={changedFields.has('primaryContactName')}>
-                  <Field label="Contact Name"><Input value={form.primaryContactName} onChange={handleChange('primaryContactName')} /></Field>
+                  <Field label="Contact Name"><Input name="primaryContactName" value={form.primaryContactName ?? ''} onChange={handleChange('primaryContactName')} /></Field>
                 </FormField>
                 <FormField changed={changedFields.has('primaryContactEmail')}>
-                  <Field label="Contact Email"><Input type="email" value={form.primaryContactEmail} onChange={handleChange('primaryContactEmail')} /></Field>
+                  <Field label="Contact Email"><Input name="primaryContactEmail" type="email" value={form.primaryContactEmail ?? ''} onChange={handleChange('primaryContactEmail')} /></Field>
                 </FormField>
                 <FormField changed={changedFields.has('primaryContactPhone')}>
-                  <Field label="Contact Phone"><Input value={form.primaryContactPhone} onChange={handleChange('primaryContactPhone')} /></Field>
+                  <Field label="Contact Phone"><Input name="primaryContactPhone" value={form.primaryContactPhone ?? ''} onChange={handleChange('primaryContactPhone')} /></Field>
                 </FormField>
               </FormSection>
 
@@ -421,6 +394,7 @@ export default function ClientForm() {
                 <div style={{ marginTop: '16px' }}>
                   <MarkdownEditor
                     label="Notes"
+                    name="notes"
                     value={form.notes}
                     onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
                     placeholder="Additional notes..."
@@ -517,5 +491,6 @@ export default function ClientForm() {
         </div>
       </div>
     </div>
+    </>
   );
 }

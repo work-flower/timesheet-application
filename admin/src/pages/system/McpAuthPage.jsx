@@ -40,38 +40,22 @@ const useStyles = makeStyles({
   },
 });
 
-const INITIAL_STATE = {
-  issuer: '',
-  authorizationEndpoint: '',
-  tokenEndpoint: '',
-  scopes: '',
-};
-
 export default function McpAuthPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
   const { navigateUnguarded, goBack } = useAppNavigate();
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker(INITIAL_STATE);
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
-  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
   useEffect(() => {
     mcpAuthApi.getConfig()
-      .then((data) => {
-        if (data) {
-          setBase({
-            issuer: data.issuer || '',
-            authorizationEndpoint: data.authorizationEndpoint || '',
-            tokenEndpoint: data.tokenEndpoint || '',
-            scopes: data.scopes || '',
-          });
-        }
-      })
+      .then((data) => resetBase(data || {}))
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [setBase]);
+      .finally(() => setInitialized(true));
+  }, [resetBase]);
 
   const handleChange = (field) => (e, data) => {
     const value = data?.value ?? e.target.value;
@@ -89,12 +73,7 @@ export default function McpAuthPage() {
     try {
       const saved = await mcpAuthApi.updateConfig(form);
       if (saved) {
-        setBase({
-          issuer: saved.issuer || '',
-          authorizationEndpoint: saved.authorizationEndpoint || '',
-          tokenEndpoint: saved.tokenEndpoint || '',
-          scopes: saved.scopes || '',
-        });
+        resetBase(saved);
       }
       return { ok: true };
     } catch (err) {
@@ -103,7 +82,7 @@ export default function McpAuthPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, setBase]);
+  }, [form, resetBase]);
 
   const handleSave = async () => {
     const { ok } = await saveForm();
@@ -125,55 +104,56 @@ export default function McpAuthPage() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
-      <FormCommandBar
-        onBack={() => goBack('/system/mcp-auth')}
-        onSave={handleSave}
-        onSaveAndClose={handleSaveAndClose}
-        saving={saving}
-      />
-      <div className={styles.pageBody}>
-        <div className={styles.header}>
-          <Text className={styles.title}>M2M API Authentication</Text>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+        <FormCommandBar
+          onBack={() => goBack('/system/mcp-auth')}
+          onSave={handleSave}
+          onSaveAndClose={handleSaveAndClose}
+          saving={saving}
+        />
+        <div className={styles.pageBody}>
+          <div className={styles.header}>
+            <Text className={styles.title}>M2M API Authentication</Text>
+          </div>
+
+          {message && (
+            <MessageBar intent={message.intent} style={{ marginBottom: 16 }}>
+              <MessageBarBody>{message.text}</MessageBarBody>
+            </MessageBar>
+          )}
+
+          <FormSection title="OAuth Provider">
+            <FormField changed={changedFields.has('issuer')}>
+              <Field label="Issuer" hint="OIDC issuer URL (e.g. https://team.cloudflareaccess.com)">
+                <Input name="issuer" value={form.issuer ?? ''} onChange={handleChange('issuer')} placeholder="https://team.cloudflareaccess.com" />
+              </Field>
+            </FormField>
+            <FormField changed={changedFields.has('authorizationEndpoint')}>
+              <Field label="Authorization Endpoint">
+                <Input name="authorizationEndpoint" value={form.authorizationEndpoint ?? ''} onChange={handleChange('authorizationEndpoint')} placeholder="https://team.cloudflareaccess.com/.../authorization" />
+              </Field>
+            </FormField>
+            <FormField changed={changedFields.has('tokenEndpoint')}>
+              <Field label="Token Endpoint">
+                <Input name="tokenEndpoint" value={form.tokenEndpoint ?? ''} onChange={handleChange('tokenEndpoint')} placeholder="https://team.cloudflareaccess.com/.../token" />
+              </Field>
+            </FormField>
+            <FormField changed={changedFields.has('scopes')}>
+              <Field label="Scopes" hint="Comma-separated (e.g. openid,profile)">
+                <Input name="scopes" value={form.scopes ?? ''} onChange={handleChange('scopes')} placeholder="openid,profile" />
+              </Field>
+            </FormField>
+            <FormField fullWidth>
+              <div className={styles.hint}>
+                Configures the /.well-known/oauth-authorization-server and /.well-known/openid-configuration endpoints for OAuth discovery. Enables machine-to-machine authentication for MCP clients, API integrations, and other external services. See the <a href="/help/mcp-auth" target="_blank" rel="noopener noreferrer">M2M API Authentication</a> guide for setup instructions.
+              </div>
+            </FormField>
+          </FormSection>
         </div>
-
-        {message && (
-          <MessageBar intent={message.intent} style={{ marginBottom: 16 }}>
-            <MessageBarBody>{message.text}</MessageBarBody>
-          </MessageBar>
-        )}
-
-        <FormSection title="OAuth Provider">
-          <FormField>
-            <Field label="Issuer" hint="OIDC issuer URL (e.g. https://team.cloudflareaccess.com)">
-              <Input value={form.issuer} onChange={handleChange('issuer')} placeholder="https://team.cloudflareaccess.com" />
-            </Field>
-          </FormField>
-          <FormField>
-            <Field label="Authorization Endpoint">
-              <Input value={form.authorizationEndpoint} onChange={handleChange('authorizationEndpoint')} placeholder="https://team.cloudflareaccess.com/.../authorization" />
-            </Field>
-          </FormField>
-          <FormField>
-            <Field label="Token Endpoint">
-              <Input value={form.tokenEndpoint} onChange={handleChange('tokenEndpoint')} placeholder="https://team.cloudflareaccess.com/.../token" />
-            </Field>
-          </FormField>
-          <FormField>
-            <Field label="Scopes" hint="Comma-separated (e.g. openid,profile)">
-              <Input value={form.scopes} onChange={handleChange('scopes')} placeholder="openid,profile" />
-            </Field>
-          </FormField>
-          <FormField fullWidth>
-            <div className={styles.hint}>
-              Configures the /.well-known/oauth-authorization-server and /.well-known/openid-configuration endpoints for OAuth discovery. Enables machine-to-machine authentication for MCP clients, API integrations, and other external services. See the <a href="/help/mcp-auth" target="_blank" rel="noopener noreferrer">M2M API Authentication</a> guide for setup instructions.
-            </div>
-          </FormField>
-        </FormSection>
       </div>
-    </div>
+    </>
   );
 }

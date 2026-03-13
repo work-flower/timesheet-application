@@ -33,6 +33,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
+import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -180,14 +181,19 @@ export default function ProjectForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
-    name: '', clientId: '', endClientId: '', ir35Status: 'OUTSIDE_IR35',
-    rate: '', workingHoursPerDay: '', vatPercent: '', status: 'active', notes: '',
-  });
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
+  const [initialized, setInitialized] = useState(false);
+
+  const coerceApi = (data) => ({
+    ...data,
+    rate: data.rate != null ? String(data.rate) : '',
+    workingHoursPerDay: data.workingHoursPerDay != null ? String(data.workingHoursPerDay) : '',
+    vatPercent: data.vatPercent != null ? String(data.vatPercent) : '',
+  });
+
   const [projectData, setProjectData] = useState(null);
   const [allClients, setAllClients] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -215,35 +221,26 @@ export default function ProjectForm() {
               setProjectInvoices(invs);
             } catch {}
           }
-          setBase({
-            name: data.name || '',
-            clientId: data.clientId || '',
-            endClientId: data.endClientId || '',
-            ir35Status: data.ir35Status || 'OUTSIDE_IR35',
-            rate: data.rate != null ? String(data.rate) : '',
-            workingHoursPerDay: data.workingHoursPerDay != null ? String(data.workingHoursPerDay) : '',
-            vatPercent: data.vatPercent != null ? String(data.vatPercent) : '',
-            status: data.status || 'active',
-            notes: data.notes || '',
-          });
+          resetBase(coerceApi(data));
         } else if (clients.length > 0) {
           const firstClient = clients[0];
-          setBase({
-            name: '', clientId: firstClient._id, endClientId: '', ir35Status: 'OUTSIDE_IR35',
+          resetBase({
+            clientId: firstClient._id, ir35Status: 'OUTSIDE_IR35',
             rate: firstClient.defaultRate != null ? String(firstClient.defaultRate) : '',
             workingHoursPerDay: firstClient.workingHoursPerDay != null ? String(firstClient.workingHoursPerDay) : '',
-            vatPercent: '20',
-            status: 'active', notes: '',
+            vatPercent: '20', status: 'active',
           });
+        } else {
+          resetBase({ ir35Status: 'OUTSIDE_IR35', vatPercent: '20', status: 'active' });
         }
       } catch (err) {
         setError(err.message);
       } finally {
-        setLoading(false);
+        setInitialized(true);
       }
     };
     init();
-  }, [id, isNew, setBase]);
+  }, [id, isNew, resetBase]);
 
   const handleChange = (field) => (e, data) => {
     const value = data?.value ?? e.target.value;
@@ -278,17 +275,7 @@ export default function ProjectForm() {
       } else {
         const updated = await projectsApi.update(id, payload);
         setProjectData(updated);
-        setBase({
-          name: updated.name || '',
-          clientId: updated.clientId || '',
-          endClientId: updated.endClientId || '',
-          ir35Status: updated.ir35Status || 'OUTSIDE_IR35',
-          rate: updated.rate != null ? String(updated.rate) : '',
-          workingHoursPerDay: updated.workingHoursPerDay != null ? String(updated.workingHoursPerDay) : '',
-          vatPercent: updated.vatPercent != null ? String(updated.vatPercent) : '',
-          status: updated.status || 'active',
-          notes: updated.notes || '',
-        });
+        resetBase(coerceApi(updated));
         return { ok: true };
       }
     } catch (err) {
@@ -297,7 +284,7 @@ export default function ProjectForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, setBase]);
+  }, [form, isNew, id, resetBase]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -327,15 +314,16 @@ export default function ProjectForm() {
   const isLocked = !isNew && projectData?.isLocked;
   const lockReason = projectData?.isLockedReason;
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   // Compute placeholder for rate
   const selectedClient = allClients.find((c) => c._id === form.clientId);
   const ratePlaceholder = selectedClient ? `Inherited from client: £${selectedClient.defaultRate}/day` : 'Enter rate or leave blank to inherit';
   const hoursPlaceholder = selectedClient ? `Inherited from client: ${selectedClient.workingHoursPerDay ?? 8}h/day` : 'Enter hours or leave blank to inherit';
 
   return (
-    <div className={styles.page}>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
       <FormCommandBar
         onBack={() => goBack('/projects')}
         onSave={handleSave}
@@ -378,12 +366,12 @@ export default function ProjectForm() {
               <FormSection title="Project Details">
                 <FormField changed={changedFields.has('name')}>
                   <Field label="Project Name" required>
-                    <Input value={form.name} onChange={handleChange('name')} />
+                    <Input name="name" value={form.name ?? ''} onChange={handleChange('name')} />
                   </Field>
                 </FormField>
                 <FormField changed={changedFields.has('clientId')}>
                   <Field label="Client" required hint={!isNew && projectData?.isDefault ? 'Client cannot be changed for default projects' : undefined}>
-                    <Select value={form.clientId} onChange={handleChange('clientId')} disabled={!isNew && projectData?.isDefault}>
+                    <Select name="clientId" value={form.clientId ?? ''} onChange={handleChange('clientId')} disabled={!isNew && projectData?.isDefault}>
                       <option value="">Select client...</option>
                       {allClients.map((c) => (
                         <option key={c._id} value={c._id}>{c.companyName}</option>
@@ -393,7 +381,7 @@ export default function ProjectForm() {
                 </FormField>
                 <FormField changed={changedFields.has('endClientId')}>
                   <Field label="End Client">
-                    <Select value={form.endClientId} onChange={handleChange('endClientId')}>
+                    <Select name="endClientId" value={form.endClientId ?? ''} onChange={handleChange('endClientId')}>
                       <option value="">None</option>
                       {allClients.map((c) => (
                         <option key={c._id} value={c._id}>{c.companyName}</option>
@@ -403,7 +391,7 @@ export default function ProjectForm() {
                 </FormField>
                 <FormField changed={changedFields.has('ir35Status')}>
                   <Field label="IR35 Status" required>
-                    <Select value={form.ir35Status} onChange={handleChange('ir35Status')}>
+                    <Select name="ir35Status" value={form.ir35Status ?? ''} onChange={handleChange('ir35Status')}>
                       <option value="OUTSIDE_IR35">Outside IR35</option>
                       <option value="INSIDE_IR35">Inside IR35</option>
                       <option value="FIXED_TERM">Fixed Term</option>
@@ -413,8 +401,9 @@ export default function ProjectForm() {
                 <FormField changed={changedFields.has('rate')}>
                   <Field label="Rate (per day)" hint={form.rate === '' ? ratePlaceholder : undefined}>
                     <Input
+                      name="rate"
                       type="number"
-                      value={form.rate}
+                      value={form.rate ?? ''}
                       onChange={handleChange('rate')}
                       placeholder={ratePlaceholder}
                     />
@@ -423,8 +412,9 @@ export default function ProjectForm() {
                 <FormField changed={changedFields.has('workingHoursPerDay')}>
                   <Field label="Working Hours Per Day" hint={form.workingHoursPerDay === '' ? hoursPlaceholder : undefined}>
                     <Input
+                      name="workingHoursPerDay"
                       type="number"
-                      value={form.workingHoursPerDay}
+                      value={form.workingHoursPerDay ?? ''}
                       onChange={handleChange('workingHoursPerDay')}
                       placeholder={hoursPlaceholder}
                     />
@@ -433,8 +423,9 @@ export default function ProjectForm() {
                 <FormField changed={changedFields.has('vatPercent')}>
                   <Field label="VAT Rate (%)" hint={form.vatPercent === '' ? 'Leave empty for no VAT (exempt)' : undefined}>
                     <Input
+                      name="vatPercent"
                       type="number"
-                      value={form.vatPercent}
+                      value={form.vatPercent ?? ''}
                       onChange={handleChange('vatPercent')}
                       placeholder="Leave empty for no VAT"
                     />
@@ -442,7 +433,7 @@ export default function ProjectForm() {
                 </FormField>
                 <FormField changed={changedFields.has('status')}>
                   <Field label="Status">
-                    <Select value={form.status} onChange={handleChange('status')}>
+                    <Select name="status" value={form.status ?? ''} onChange={handleChange('status')}>
                       <option value="active">Active</option>
                       <option value="archived">Archived</option>
                     </Select>
@@ -454,6 +445,7 @@ export default function ProjectForm() {
                 <div style={{ marginTop: '16px' }}>
                   <MarkdownEditor
                     label="Notes"
+                    name="notes"
                     value={form.notes}
                     onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
                     placeholder="Additional notes..."
@@ -606,5 +598,6 @@ export default function ProjectForm() {
         </div>
       </div>
     </div>
+    </>
   );
 }

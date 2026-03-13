@@ -16,7 +16,7 @@ One component handles both create and edit — detected via `useParams().id`.
 ## Required Imports
 
 ```jsx
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { makeStyles, tokens, Text, Input, Field, Spinner, MessageBar, MessageBarBody,
   Breadcrumb, BreadcrumbItem, BreadcrumbDivider, BreadcrumbButton } from '@fluentui/react-components';
@@ -59,13 +59,11 @@ export default function EntityForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
-    // all form fields with defaults
-  }, { excludeFields: ['computedField1'] });
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
+  const [initialized, setInitialized] = useState(false);
 
   const [loadedData, setLoadedData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -74,6 +72,31 @@ export default function EntityForm() {
   // ... data loading, handlers, render
 }
 ```
+
+The hook owns `formRef`, `resetBase`, and `baseReady` — forms do not define these locally.
+
+### Form Load Lifecycle (PROTECTED — do not change without explicit discussion, plan, and approval)
+
+The form load lifecycle follows five strict milestones. The sequence below is the single source of truth for how forms initialize. Pre-work steps (data fetching, rendering the hidden form) happen before Milestone 1, but the milestones themselves MUST execute in this exact order:
+
+| # | Milestone | What happens |
+|---|-----------|--------------|
+| 1 | **Build initial-object from DOM** | `resetBase(overrides)` scans all `[name]` elements via `buildInitialFromDOM(formRef.current)` → produces an object with every field name and its DOM default value. This is how we eliminated `|| ''` fallbacks — the scanner discovers field names from JSX, making JSX the single source of truth. |
+| 2 | **Edit mode: merge API data** | If editing, the fetched API record is passed as `overrides` to `resetBase(data)` — API values override scanned defaults. |
+| 3 | **New mode: keep initial-object** | If creating, only meaningful defaults are passed as overrides (e.g. `{ date: today, billable: true, projectId }`). Remaining fields keep their DOM-scanned defaults. |
+| 4 | **Set values on form elements** | `setBase(merged)` inside `resetBase` writes the merged object to both `baseRef` (dirty-tracking baseline) and form state. The form becomes visible (`initialized = true`). |
+| 5 | **QueryStringPrefill runs last** | QS prefill is gated on `baseReady` (not `initialized`). It calls `handleChange` for each URL param, simulating user interaction. Side effects fire naturally. Because the base already has all field names (from Milestone 1), side-effect-computed fields don't cause false dirty indicators. |
+
+**Why this order matters:** The DOM scan (M1) must happen before QS prefill (M5) so the base contains every field name. QS prefill must run last because it simulates user input — any earlier and it would race with initialization.
+
+**Hidden-form pattern enables M1:** The form always renders (hidden via `display: none` until `initialized`). This ensures the DOM exists when `resetBase` runs in the init `useEffect`, so the scanner finds all `[name]` elements. Field values use `?? ''` / `?? false` fallbacks for the brief hidden phase before `resetBase` populates real values — this keeps Fluent UI components in controlled mode from first render.
+
+**Key rules:**
+- All form inputs MUST have `name` attributes matching database field names
+- MarkdownEditor fields MUST pass `name="fieldName"` prop (renders a hidden input for scanning)
+- `useFormTracker()` is called with no arguments (defaults to `{}`) — no hardcoded initial objects. **Exception:** complex properties that cannot be discovered by DOM scanning (e.g. `lines: []` in InvoiceForm) may be passed as initial state: `useFormTracker({ lines: [] })`
+- `formRef` and `resetBase` come from the hook, not defined locally
+- `baseReady` gates QS prefill; `initialized` gates form visibility
 
 ## Data Loading Pattern
 
@@ -85,18 +108,18 @@ useEffect(() => {
       if (!isNew) {
         const data = await entityApi.getById(id);
         setLoadedData(data);
-        setBase({ /* map all fields from data */ });
+        resetBase(data);
       } else {
-        setBase({ /* defaults for new record */ });
+        resetBase({ date: today, hours: 8, projectId: active[0]._id });
       }
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setInitialized(true);
     }
   };
   init();
-}, [id, isNew, setBase]);
+}, [id, isNew, resetBase]);
 ```
 
 ## GOLDEN RULE: Query String Pre-fill via `QueryStringPrefill`
@@ -109,19 +132,22 @@ useEffect(() => {
 
 ### How to mount
 
-Mount it inside the form's main return (after the loading guard), before `FormCommandBar`. Pass the form's `handleChange` function:
+Mount it inside the form's main return, before `FormCommandBar`. Pass the form's `handleChange` function:
 
 ```jsx
-if (loading) return <Spinner />;
-
 return (
-  <div className={styles.page}>
-    <QueryStringPrefill handleChange={handleChange} />
-    <FormCommandBar ... />
-    ...
-  </div>
+  <>
+    {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+    <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
+      <FormCommandBar ... />
+      ...
+    </div>
+  </>
 );
 ```
+
+**`ready={baseReady}`** — QS prefill is gated on `baseReady` (from `useFormTracker`), NOT `initialized`. This ensures the DOM scan and base setup (Milestones 1-4) complete before QS prefill fires (Milestone 5).
 
 ### Golden rules
 
@@ -172,7 +198,7 @@ const sourceTransactionId = useMemo(() => {
 
 ### NEVER
 
-- **NEVER** manually parse query params and merge them into `setForm()`/`setBase()` — use the component
+- **NEVER** manually parse query params and merge them into `setForm()`/`resetBase()` — use the component
 - **NEVER** use `useSearchParams` for form field pre-fill — the component handles it via DOM
 - **NEVER** omit `name` attributes from form fields — even read-only/computed fields need them
 
@@ -191,9 +217,9 @@ const saveForm = useCallback(async () => {
       return { ok: true, id: created._id };
     } else {
       await entityApi.update(id, form);
-      // Re-fetch and setBase for fresh baseline
+      // Re-fetch and resetBase for fresh baseline
       const data = await entityApi.getById(id);
-      setBase({ /* map fields */ });
+      resetBase(data);
       return { ok: true };
     }
   } catch (err) {
@@ -202,7 +228,7 @@ const saveForm = useCallback(async () => {
   } finally {
     setSaving(false);
   }
-}, [form, isNew, id, setBase]);
+}, [form, isNew, id, resetBase]);
 
 const handleSave = async () => {
   const result = await saveForm();
@@ -226,13 +252,15 @@ const handleSaveAndClose = async () => {
 };
 ```
 
-## Delete Pattern
+## Delete Pattern (optional — strongly advised)
+
+Not mandatory, but strongly advised for entity forms. Missing delete handler should be flagged as a warning (not a failure) in audits. Some forms (e.g. ClientForm, ProjectForm) may omit delete when it's only available from the list view.
 
 ```jsx
 const handleDelete = async () => {
   try {
     await entityApi.delete(id);
-    notifyParent(handleDelete.name, base, form);
+    notifyParent('delete', base, form);
     navigate('/entities');
   } catch (err) {
     setError(err.message);
@@ -248,15 +276,18 @@ Every form must call `notifyParent` after successful handler actions. This enabl
 const notifyParent = useNotifyParent();
 ```
 
-Call it in each handler **after the action succeeds**, passing the handler's `.name`, `base` (from useFormTracker), and `form`:
+Call it in each handler **after the action succeeds**, passing a command name, `base` (from useFormTracker), and `form`:
 
 ```jsx
 notifyParent(handleSave.name, base, form);
+// or with string literals:
+notifyParent('save', base, form);
 ```
+
+Both `handleFn.name` and string literals are accepted. String literals are preferred when readability matters or to avoid production minification mangling function names.
 
 - **No-op when not in iframe:** The hook checks `window.parent === window` and returns early.
 - **Entity derived from route:** First path segment of `location.pathname` (e.g. `/expenses/new` → `"expenses"`).
-- **Command = `handlerFn.name`:** Uses the literal JS function name. In production builds, minification will mangle this — accepted trade-off for now.
 - **Only generic handlers:** Call from `handleSave`, `handleSaveAndClose`, `handleDelete`. Do NOT call from lifecycle actions (confirm, post, unconfirm, abandon).
 
 ## Navigation Guard
@@ -345,6 +376,7 @@ Use `<Input type="number">` for all numeric fields. This is a controlled compone
 
 ```jsx
 <Input
+  name="fieldName"
   type="number"
   value={String(form.fieldName ?? '')}
   onChange={(e) => {
@@ -356,12 +388,12 @@ Use `<Input type="number">` for all numeric fields. This is a controlled compone
 />
 ```
 
-**Do NOT use SpinButton.** It requires uncontrolled mode (`defaultValue`) which only reads the value on mount and ignores subsequent state updates. This causes stale values when data loads asynchronously or the form baseline changes. Some legacy forms still use SpinButton with a loading guard — new code should always use `Input type="number"` instead.
+**Do NOT use SpinButton.** It requires uncontrolled mode (`defaultValue`) which only reads the value on mount and ignores subsequent state updates. This causes stale values when data loads asynchronously or the form baseline changes.
 
 ### Project Dropdown (grouped by client)
 
 ```jsx
-<Select value={form.projectId} onChange={handleChange('projectId')}>
+<Select name="projectId" value={form.projectId} onChange={handleChange('projectId')}>
   <option value="">Select project...</option>
   {Object.entries(projectsByClient).map(([clientName, projs]) => (
     <optgroup key={clientName} label={clientName}>
@@ -384,6 +416,25 @@ const handleChange = (field) => (e, data) => {
 
 ## Loading State
 
+Forms use the hidden-form pattern — the form always renders (hidden via `display: none`) so DOM scanning works, with a spinner shown until `initialized` is true:
+
 ```jsx
-if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
+return (
+  <>
+    {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+    <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
+      ...form content...
+    </div>
+  </>
+);
+```
+
+Field values use `?? ''` (or `?? false` for checkboxes) to ensure Fluent UI components start in controlled mode during the hidden phase. After `resetBase` populates all fields, these fallbacks never activate:
+
+```jsx
+<Input name="amount" type="number" value={String(form.amount ?? '')} ... />
+<Input name="date" type="date" value={form.date ?? ''} ... />
+<Select name="projectId" value={form.projectId ?? ''} ... />
+<Checkbox name="billable" checked={form.billable ?? false} ... />
 ```

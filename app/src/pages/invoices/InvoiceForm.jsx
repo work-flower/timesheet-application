@@ -68,6 +68,7 @@ import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
+import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -392,24 +393,13 @@ export default function InvoiceForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
-    clientId: '',
-    invoiceNumber: '',
-    invoiceDate: new Date().toISOString().split('T')[0],
-    dueDate: '',
-    servicePeriodStart: '',
-    servicePeriodEnd: '',
-    additionalNotes: '',
-    lines: [],
-    includeTimesheetReport: false,
-    includeExpenseReport: false,
-  }, { excludeFields: ['invoiceNumber'] });
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker({ lines: [] });
   const notifyParent = useNotifyParent();
+  const [initialized, setInitialized] = useState(false);
 
   const [invoiceData, setInvoiceData] = useState(null);
   const [allClients, setAllClients] = useState([]);
   const [clientProjects, setClientProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -493,30 +483,21 @@ export default function InvoiceForm() {
           const data = await invoicesApi.getById(id);
           setInvoiceData(data);
           setClientProjects(data.clientProjects || []);
-          setBase({
-            clientId: data.clientId || '',
-            invoiceNumber: data.invoiceNumber || '',
-            invoiceDate: data.invoiceDate || '',
-            dueDate: data.dueDate || '',
-            servicePeriodStart: data.servicePeriodStart || '',
-            servicePeriodEnd: data.servicePeriodEnd || '',
-            additionalNotes: data.additionalNotes || '',
-            lines: data.lines || [],
-            includeTimesheetReport: data.includeTimesheetReport || false,
-            includeExpenseReport: data.includeExpenseReport || false,
-          });
+          resetBase(data);
 
           // Fetch source data for client-side consistency checking
           await fetchSourceData(data.clientId);
+        } else {
+          resetBase({ invoiceDate: new Date().toISOString().split('T')[0], lines: [] });
         }
       } catch (err) {
         setError(err.message);
       } finally {
-        setLoading(false);
+        setInitialized(true);
       }
     };
     init();
-  }, [id, isNew, setBase, fetchSourceData]);
+  }, [id, isNew, resetBase, fetchSourceData]);
 
   const handleChange = (field) => (e, data) => {
     setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
@@ -546,18 +527,7 @@ export default function InvoiceForm() {
         const updated = await invoicesApi.update(id, payload);
         setInvoiceData(updated);
         setClientProjects(updated.clientProjects || []);
-        setBase({
-          clientId: updated.clientId || '',
-          invoiceNumber: updated.invoiceNumber || '',
-          invoiceDate: updated.invoiceDate || '',
-          dueDate: updated.dueDate || '',
-          servicePeriodStart: updated.servicePeriodStart || '',
-          servicePeriodEnd: updated.servicePeriodEnd || '',
-          additionalNotes: updated.additionalNotes || '',
-          lines: updated.lines || [],
-          includeTimesheetReport: updated.includeTimesheetReport || false,
-          includeExpenseReport: updated.includeExpenseReport || false,
-        });
+        resetBase(updated);
         return { ok: true };
       }
     } catch (err) {
@@ -566,7 +536,7 @@ export default function InvoiceForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, setBase]);
+  }, [form, isNew, id, resetBase]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -618,18 +588,7 @@ export default function InvoiceForm() {
       if (updated) {
         setInvoiceData(updated);
         setClientProjects(updated.clientProjects || []);
-        setBase({
-          clientId: updated.clientId || '',
-          invoiceNumber: updated.invoiceNumber || '',
-          invoiceDate: updated.invoiceDate || '',
-          dueDate: updated.dueDate || '',
-          servicePeriodStart: updated.servicePeriodStart || '',
-          servicePeriodEnd: updated.servicePeriodEnd || '',
-          additionalNotes: updated.additionalNotes || '',
-          lines: updated.lines || [],
-          includeTimesheetReport: updated.includeTimesheetReport || false,
-          includeExpenseReport: updated.includeExpenseReport || false,
-        });
+        resetBase(updated);
         await fetchSourceData(updated.clientId);
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
@@ -650,18 +609,7 @@ export default function InvoiceForm() {
       }
       const updated = await invoicesApi.recalculate(id);
       setInvoiceData(updated);
-      setBase({
-        clientId: updated.clientId || '',
-        invoiceNumber: updated.invoiceNumber || '',
-        invoiceDate: updated.invoiceDate || '',
-        dueDate: updated.dueDate || '',
-        servicePeriodStart: updated.servicePeriodStart || '',
-        servicePeriodEnd: updated.servicePeriodEnd || '',
-        additionalNotes: updated.additionalNotes || '',
-        lines: updated.lines || [],
-        includeTimesheetReport: updated.includeTimesheetReport || false,
-        includeExpenseReport: updated.includeExpenseReport || false,
-      });
+      resetBase(updated);
       await fetchSourceData(updated.clientId);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -707,19 +655,8 @@ export default function InvoiceForm() {
   const refreshFromInvoice = useCallback((updated) => {
     setInvoiceData(updated);
     setClientProjects(updated.clientProjects || []);
-    setBase({
-      clientId: updated.clientId || '',
-      invoiceNumber: updated.invoiceNumber || '',
-      invoiceDate: updated.invoiceDate || '',
-      dueDate: updated.dueDate || '',
-      servicePeriodStart: updated.servicePeriodStart || '',
-      servicePeriodEnd: updated.servicePeriodEnd || '',
-      additionalNotes: updated.additionalNotes || '',
-      lines: updated.lines || [],
-      includeTimesheetReport: updated.includeTimesheetReport || false,
-      includeExpenseReport: updated.includeExpenseReport || false,
-    });
-  }, [setBase]);
+    resetBase(updated);
+  }, [resetBase]);
 
   // --- Transaction picker ---
   const openTxPicker = useCallback(async () => {
@@ -1142,8 +1079,6 @@ export default function InvoiceForm() {
     };
   }, [form.lines]);
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   const actionLabels = {
     confirm: { title: 'Confirm Invoice', message: 'This will assign an invoice number and lock the selected timesheets and expenses. Continue?' },
     post: { title: 'Post Invoice', message: 'This will seal the invoice. Only payment tracking can be changed after posting. Continue?' },
@@ -1151,7 +1086,10 @@ export default function InvoiceForm() {
   };
 
   return (
-    <div className={styles.page}>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
       {/* Custom command bar with lifecycle actions */}
       <div className={styles.commandBar}>
         <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => goBack('/invoices')} size="small">
@@ -1274,7 +1212,8 @@ export default function InvoiceForm() {
                   <FormField changed={changedFields.has('clientId')}>
                     <Field label="Client" required>
                       <Select
-                        value={form.clientId}
+                        name="clientId"
+                        value={form.clientId ?? ''}
                         onChange={handleChange('clientId')}
                         disabled={!isNew}
                       >
@@ -1287,27 +1226,27 @@ export default function InvoiceForm() {
                   </FormField>
                   <FormField>
                     <Field label="Invoice Number">
-                      <Input value={form.invoiceNumber || '—'} disabled />
+                      <Input name="invoiceNumber" value={form.invoiceNumber || '—'} disabled />
                     </Field>
                   </FormField>
                   <FormField changed={changedFields.has('invoiceDate')}>
                     <Field label="Invoice Date">
-                      <Input type="date" value={form.invoiceDate} onChange={handleChange('invoiceDate')} />
+                      <Input type="date" name="invoiceDate" value={form.invoiceDate || ''} onChange={handleChange('invoiceDate')} />
                     </Field>
                   </FormField>
                   <FormField changed={changedFields.has('servicePeriodStart')}>
                     <Field label="Service Period Start">
-                      <Input type="date" value={form.servicePeriodStart} onChange={handleChange('servicePeriodStart')} />
+                      <Input type="date" name="servicePeriodStart" value={form.servicePeriodStart || ''} onChange={handleChange('servicePeriodStart')} />
                     </Field>
                   </FormField>
                   <FormField changed={changedFields.has('dueDate')}>
                     <Field label="Due Date">
-                      <Input type="date" value={form.dueDate} onChange={handleChange('dueDate')} />
+                      <Input type="date" name="dueDate" value={form.dueDate || ''} onChange={handleChange('dueDate')} />
                     </Field>
                   </FormField>
                   <FormField changed={changedFields.has('servicePeriodEnd')}>
                     <Field label="Service Period End">
-                      <Input type="date" value={form.servicePeriodEnd} onChange={handleChange('servicePeriodEnd')} />
+                      <Input type="date" name="servicePeriodEnd" value={form.servicePeriodEnd || ''} onChange={handleChange('servicePeriodEnd')} />
                     </Field>
                   </FormField>
                 </FormSection>
@@ -1315,7 +1254,8 @@ export default function InvoiceForm() {
                 <FormField fullWidth changed={changedFields.has('additionalNotes')}>
                   <Field label="Additional Notes" style={{ marginTop: '8px' }}>
                     <Textarea
-                      value={form.additionalNotes}
+                      name="additionalNotes"
+                      value={form.additionalNotes ?? ''}
                       onChange={handleChange('additionalNotes')}
                       resize="vertical"
                       rows={2}
@@ -1494,12 +1434,14 @@ export default function InvoiceForm() {
               <fieldset disabled={!!isReadOnly} style={{ border: 'none', padding: 0, margin: 0, minWidth: 0, ...(isReadOnly ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
                 <div style={{ display: 'flex', gap: '24px', marginBottom: '12px' }}>
                   <Switch
-                    checked={form.includeTimesheetReport}
+                    name="includeTimesheetReport"
+                    checked={form.includeTimesheetReport ?? false}
                     onChange={(e, data) => { pendingToggleSave.current = true; setForm(prev => ({ ...prev, includeTimesheetReport: data.checked })); }}
                     label="Include Timesheet Report"
                   />
                   <Switch
-                    checked={form.includeExpenseReport}
+                    name="includeExpenseReport"
+                    checked={form.includeExpenseReport ?? false}
                     onChange={(e, data) => { pendingToggleSave.current = true; setForm(prev => ({ ...prev, includeExpenseReport: data.checked })); }}
                     label="Include Expense Report"
                   />
@@ -1655,5 +1597,6 @@ export default function InvoiceForm() {
         message={`Are you sure you want to unlink "${unlinkTarget?.label}" from this invoice?`}
       />
     </div>
+    </>
   );
 }

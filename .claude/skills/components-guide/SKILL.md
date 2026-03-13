@@ -114,7 +114,7 @@ Wraps individual fields inside a FormSection.
 ```jsx
 <FormField changed={changedFields.has('fieldName')}>
   <Field label="Field Label" required hint="Hint text">
-    <Input value={form.fieldName} onChange={handleChange('fieldName')} />
+    <Input name="fieldName" value={form.fieldName} onChange={handleChange('fieldName')} />
   </Field>
 </FormField>
 ```
@@ -161,13 +161,14 @@ Wraps `@uiw/react-md-editor` for notes fields.
 
 ### Usage
 
-Always placed as a fullWidth FormField, outside FormSection:
+Always placed as a fullWidth FormField, outside FormSection. The `name` prop is required — it renders a hidden `<input>` so the DOM scanner (`buildInitialFromDOM`) can discover the field:
 
 ```jsx
 <FormField fullWidth changed={changedFields.has('notes')}>
   <div className={styles.notes}>
     <MarkdownEditor
       label="Notes"
+      name="notes"
       value={form.notes}
       onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
       placeholder="Internal notes..."
@@ -333,6 +334,7 @@ Renderless component (returns `null`) that pre-fills form fields from URL query 
 | Prop | Type | Description |
 | --- | --- | --- |
 | `handleChange` | `(field) => (e, data) => void` | Required. The form's curried change handler. |
+| `ready` | `boolean` | Required. Gate on `baseReady` from `useFormTracker` so prefill fires after DOM scan + base setup. |
 | `onPrefill` | `(prefilledFields: Set<string>) => void` | Optional. Callback after pre-fill completes. |
 
 ### Usage
@@ -340,7 +342,7 @@ Renderless component (returns `null`) that pre-fills form fields from URL query 
 Mount inside the form's main return, after the loading guard. See `/forms-guide` for full documentation including golden rules and developer responsibilities.
 
 ```jsx
-<QueryStringPrefill handleChange={handleChange} />
+<QueryStringPrefill handleChange={handleChange} ready={baseReady} />
 ```
 
 ---
@@ -351,19 +353,22 @@ Mount inside the form's main return, after the loading guard. See `/forms-guide`
 
 **Location:** `src/hooks/useFormTracker.js`
 
-Tracks form state, dirty detection, and changed fields.
+Tracks form state, dirty detection, and changed fields. Also exports `buildInitialFromDOM` for DOM-driven field discovery.
 
 ```jsx
-const { form, setForm, setBase, isDirty, changedFields } = useFormTracker(
-  initialState,
-  { excludeFields: ['computedField'] }
-);
+import { useFormTracker } from '../../hooks/useFormTracker.js';
+
+const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
 ```
 
-- `setBase(state)` — call after API load and after save to set the baseline
-- `isDirty` — true if any non-excluded field differs from baseline
+- Called with no arguments (defaults to `{}`) — field names are discovered from the DOM via `buildInitialFromDOM`
+- `resetBase(overrides)` — scans all `[name]` elements in `formRef`, merges with overrides, sets both baseline and form state, then sets `baseReady = true`. Use this on init and after save.
+- `setBase(state)` — sets the baseline directly (no DOM scan). Rarely needed — prefer `resetBase`.
+- `formRef` — ref to attach to the form container `<div>` (enables DOM scanning)
+- `baseReady` — true after first `resetBase` call. Gates `QueryStringPrefill`.
+- `base` — current baseline object, exposed for `notifyParent` payload
+- `isDirty` — true if any field differs from baseline
 - `changedFields` — `Set<string>` of field names that changed
-- `excludeFields` — computed/read-only fields that don't count toward dirty state
 
 ### usePagination
 

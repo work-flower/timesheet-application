@@ -97,16 +97,6 @@ function formatDate(dateStr) {
   return new Date(dateStr).toLocaleString();
 }
 
-const INITIAL_STATE = {
-  accountId: '',
-  accessKeyId: '',
-  secretAccessKey: '',
-  bucketName: '',
-  backupPath: '',
-  endpoint: '',
-  schedule: 'off',
-};
-
 function mapConfig(data) {
   return {
     accountId: data.accountId || '',
@@ -123,9 +113,9 @@ export default function BackupPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
   const { navigateUnguarded, goBack } = useAppNavigate();
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker(INITIAL_STATE);
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
-  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [backing, setBacking] = useState(false);
@@ -142,12 +132,10 @@ export default function BackupPage() {
 
   useEffect(() => {
     backupApi.getConfig()
-      .then((data) => {
-        if (data) setBase(mapConfig(data));
-      })
+      .then((data) => resetBase(mapConfig(data || {})))
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [setBase]);
+      .finally(() => setInitialized(true));
+  }, [resetBase]);
 
   const handleChange = (field) => (e, data) => {
     const value = data?.value ?? data?.selectedOptions?.[0] ?? e.target.value;
@@ -183,7 +171,7 @@ export default function BackupPage() {
     setMessage(null);
     try {
       const saved = await backupApi.updateConfig(form);
-      if (saved) setBase(mapConfig(saved));
+      if (saved) resetBase(mapConfig(saved));
       return { ok: true };
     } catch (err) {
       showMessage('error', `Save failed: ${err.message}`);
@@ -191,7 +179,7 @@ export default function BackupPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, setBase]);
+  }, [form, resetBase]);
 
   const handleSave = async () => {
     const { ok } = await saveForm();
@@ -240,8 +228,8 @@ export default function BackupPage() {
   }, []);
 
   useEffect(() => {
-    if (!loading) loadBackupList();
-  }, [loading, loadBackupList]);
+    if (initialized) loadBackupList();
+  }, [initialized, loadBackupList]);
 
   const handleRestore = async () => {
     if (!restoreTarget) return;
@@ -310,10 +298,10 @@ export default function BackupPage() {
     }),
   ];
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
       <FormCommandBar
         onBack={() => goBack('/infra/backup')}
         onSave={handleSave}
@@ -333,22 +321,22 @@ export default function BackupPage() {
 
         <FormSection title="R2 Connection">
           <FormField changed={changedFields.has('accountId')}>
-            <Field label="Account ID"><Input value={form.accountId} onChange={handleChange('accountId')} /></Field>
+            <Field label="Account ID"><Input name="accountId" value={form.accountId ?? ''} onChange={handleChange('accountId')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('accessKeyId')}>
-            <Field label="Access Key ID"><Input value={form.accessKeyId} onChange={handleChange('accessKeyId')} /></Field>
+            <Field label="Access Key ID"><Input name="accessKeyId" value={form.accessKeyId ?? ''} onChange={handleChange('accessKeyId')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('secretAccessKey')}>
-            <Field label="Secret Access Key"><Input type="password" value={form.secretAccessKey} onChange={handleChange('secretAccessKey')} /></Field>
+            <Field label="Secret Access Key"><Input name="secretAccessKey" type="password" value={form.secretAccessKey ?? ''} onChange={handleChange('secretAccessKey')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('bucketName')}>
-            <Field label="Bucket Name"><Input value={form.bucketName} onChange={handleChange('bucketName')} /></Field>
+            <Field label="Bucket Name"><Input name="bucketName" value={form.bucketName ?? ''} onChange={handleChange('bucketName')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('backupPath')}>
-            <Field label="Backup Path" hint="e.g. backups/dev"><Input value={form.backupPath} onChange={handleChange('backupPath')} placeholder="backups" /></Field>
+            <Field label="Backup Path" hint="e.g. backups/dev"><Input name="backupPath" value={form.backupPath ?? ''} onChange={handleChange('backupPath')} placeholder="backups" /></Field>
           </FormField>
           <FormField fullWidth changed={changedFields.has('endpoint')}>
-            <Field label="Endpoint URL"><Input value={form.endpoint} onChange={handleChange('endpoint')} /></Field>
+            <Field label="Endpoint URL"><Input name="endpoint" value={form.endpoint ?? ''} onChange={handleChange('endpoint')} /></Field>
           </FormField>
           <FormField fullWidth>
             <div className={styles.actions}>
@@ -362,7 +350,7 @@ export default function BackupPage() {
         <FormSection title="Schedule">
           <FormField changed={changedFields.has('schedule')}>
             <Field label="Frequency">
-              <Select value={form.schedule} onChange={handleChange('schedule')}>
+              <Select name="schedule" value={form.schedule ?? ''} onChange={handleChange('schedule')}>
                 <option value="off">Off</option>
                 <option value="daily">Daily at 2:00 AM</option>
                 <option value="weekly">Weekly on Monday at 2:00 AM</option>
@@ -431,5 +419,6 @@ export default function BackupPage() {
         />
       </div>
     </div>
+    </>
   );
 }

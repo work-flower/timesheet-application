@@ -60,19 +60,12 @@ export default function TimesheetForm() {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
-    projectId: '',
-    date: today,
-    hours: 8,
-    days: null,
-    amount: null,
-    notes: '',
-  });
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
+  const [initialized, setInitialized] = useState(false);
 
   const [loadedData, setLoadedData] = useState(null);
   const [allProjects, setAllProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -100,32 +93,21 @@ export default function TimesheetForm() {
         if (!isNew) {
           const data = await timesheetsApi.getById(id);
           setLoadedData(data);
-          setBase({
-            projectId: data.projectId || '',
-            date: data.date || today,
-            hours: data.hours || 8,
-            days: data.days ?? null,
-            amount: data.amount ?? null,
-            notes: data.notes || '',
-          });
+          resetBase(data);
         } else if (active.length > 0) {
-          setBase({
-            projectId: active[0]._id,
-            date: today,
-            hours: 8,
-            days: null,
-            amount: null,
-            notes: '',
-          });
+          const computed = computeDaysAmount(8, active[0]._id, active);
+          resetBase({ date: today, hours: 8, projectId: active[0]._id, ...computed });
+        } else {
+          resetBase({ date: today, hours: 8 });
         }
       } catch (err) {
         setError(err.message);
       } finally {
-        setLoading(false);
+        setInitialized(true);
       }
     };
     init();
-  }, [id, isNew, setBase, today]);
+  }, [id, isNew, resetBase, today]);
 
   const selectedProject = useMemo(
     () => allProjects.find((p) => p._id === form.projectId),
@@ -175,14 +157,7 @@ export default function TimesheetForm() {
       } else {
         await timesheetsApi.update(id, payload);
         const data = await timesheetsApi.getById(id);
-        setBase({
-          projectId: data.projectId || '',
-          date: data.date || today,
-          hours: data.hours || 8,
-          days: data.days ?? null,
-          amount: data.amount ?? null,
-          notes: data.notes || '',
-        });
+        resetBase(data);
         return { ok: true };
       }
     } catch (err) {
@@ -191,7 +166,7 @@ export default function TimesheetForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, setBase, today]);
+  }, [form, isNew, id, resetBase, today]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -231,11 +206,11 @@ export default function TimesheetForm() {
   const isLocked = !isNew && loadedData?.isLocked;
   const lockReason = loadedData?.isLockedReason;
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
-      <QueryStringPrefill handleChange={handleChange} />
+    <>
+    {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+    <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
       <FormCommandBar
         onBack={() => goBack('/timesheets')}
         onSave={handleSave}
@@ -279,12 +254,12 @@ export default function TimesheetForm() {
           <FormSection title="Entry Details">
             <FormField changed={changedFields.has('date')}>
               <Field label="Date" required>
-                <Input type="date" name="date" value={form.date} max={today} onChange={handleChange('date')} />
+                <Input type="date" name="date" value={form.date ?? ''} max={today} onChange={handleChange('date')} />
               </Field>
             </FormField>
             <FormField changed={changedFields.has('projectId')}>
               <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
-                <Select name="projectId" value={form.projectId} onChange={handleChange('projectId')}>
+                <Select name="projectId" value={form.projectId ?? ''} onChange={handleChange('projectId')}>
                   <option value="">Select project...</option>
                   {Object.entries(projectsByClient).map(([clientName, projs]) => (
                     <optgroup key={clientName} label={clientName}>
@@ -300,7 +275,7 @@ export default function TimesheetForm() {
             </FormField>
             <FormField changed={changedFields.has('hours')}>
               <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
-                <Input type="number" name="hours" value={String(form.hours)} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
+                <Input type="number" name="hours" value={String(form.hours ?? '')} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
               </Field>
             </FormField>
             <FormField changed={changedFields.has('days')}>
@@ -329,6 +304,7 @@ export default function TimesheetForm() {
             <div className={styles.notes}>
               <MarkdownEditor
                 label="Notes"
+                name="notes"
                 value={form.notes}
                 onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
                 placeholder="What did you work on today?"
@@ -358,5 +334,6 @@ export default function TimesheetForm() {
         sourceId={id}
       />
     </div>
+    </>
   );
 }

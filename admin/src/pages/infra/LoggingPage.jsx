@@ -95,21 +95,6 @@ function formatDate(dateStr) {
   return new Date(dateStr).toLocaleString();
 }
 
-const INITIAL_STATE = {
-  logLevel: 'error',
-  maxFileSize: 52428800,
-  messageFilter: '',
-  logPayloads: false,
-  r2AccountId: '',
-  r2AccessKeyId: '',
-  r2SecretAccessKey: '',
-  r2BucketName: '',
-  r2LogPath: 'logs',
-  r2Endpoint: '',
-  uploadEnabled: false,
-  uploadIntervalMinutes: 60,
-};
-
 function mapConfig(data) {
   return {
     logLevel: data.logLevel || 'error',
@@ -131,9 +116,9 @@ export default function LoggingPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
   const { navigateUnguarded, goBack } = useAppNavigate();
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker(INITIAL_STATE);
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
-  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState(null);
@@ -149,12 +134,10 @@ export default function LoggingPage() {
 
   useEffect(() => {
     logApi.getConfig()
-      .then((data) => {
-        if (data) setBase(mapConfig(data));
-      })
+      .then((data) => resetBase(mapConfig(data || {})))
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [setBase]);
+      .finally(() => setInitialized(true));
+  }, [resetBase]);
 
   const handleChange = (field) => (e, data) => {
     const value = data?.value ?? data?.selectedOptions?.[0] ?? e.target.value;
@@ -193,7 +176,7 @@ export default function LoggingPage() {
     setMessage(null);
     try {
       const saved = await logApi.updateConfig(form);
-      if (saved) setBase(mapConfig(saved));
+      if (saved) resetBase(mapConfig(saved));
       return { ok: true };
     } catch (err) {
       showMessage('error', `Save failed: ${err.message}`);
@@ -201,7 +184,7 @@ export default function LoggingPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, setBase]);
+  }, [form, resetBase]);
 
   const handleSave = async () => {
     const { ok } = await saveForm();
@@ -236,8 +219,8 @@ export default function LoggingPage() {
   }, []);
 
   useEffect(() => {
-    if (!loading) loadLocalFiles();
-  }, [loading, loadLocalFiles]);
+    if (initialized) loadLocalFiles();
+  }, [initialized, loadLocalFiles]);
 
   const handleUploadFile = async (filename) => {
     setUploading(filename);
@@ -283,8 +266,8 @@ export default function LoggingPage() {
   }, []);
 
   useEffect(() => {
-    if (!loading) loadR2Files();
-  }, [loading, loadR2Files]);
+    if (initialized) loadR2Files();
+  }, [initialized, loadR2Files]);
 
   const handleDownloadFromR2 = async (filename) => {
     setDownloading(filename);
@@ -384,10 +367,10 @@ export default function LoggingPage() {
     }),
   ];
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
       <FormCommandBar
         onBack={() => goBack('/infra/logging')}
         onSave={handleSave}
@@ -408,7 +391,7 @@ export default function LoggingPage() {
         <FormSection title="Log Configuration">
           <FormField changed={changedFields.has('logLevel')}>
             <Field label="Log Level" hint="Minimum level to write to log files">
-              <Select value={form.logLevel} onChange={handleChange('logLevel')}>
+              <Select name="logLevel" value={form.logLevel ?? ''} onChange={handleChange('logLevel')}>
                 <option value="error">Error</option>
                 <option value="warn">Warn</option>
                 <option value="info">Info</option>
@@ -419,8 +402,9 @@ export default function LoggingPage() {
           <FormField changed={changedFields.has('maxFileSize')}>
             <Field label="Max File Size (MB)" hint="Log file rotates when exceeding this size">
               <Input
+                name="maxFileSize"
                 type="number"
-                value={String(Math.round((form.maxFileSize || 52428800) / (1024 * 1024)))}
+                value={String(Math.round(((form.maxFileSize ?? '') || 52428800) / (1024 * 1024)))}
                 onChange={(e) => {
                   const mb = parseInt(e.target.value, 10);
                   if (!isNaN(mb) && mb > 0) {
@@ -433,13 +417,14 @@ export default function LoggingPage() {
           </FormField>
           <FormField fullWidth changed={changedFields.has('messageFilter')}>
             <Field label="Message Filter" hint="Regex pattern tested against full JSON entry. Leave empty to log everything.">
-              <Input value={form.messageFilter} onChange={handleChange('messageFilter')} placeholder="Regex pattern (empty = log everything)" />
+              <Input name="messageFilter" value={form.messageFilter ?? ''} onChange={handleChange('messageFilter')} placeholder="Regex pattern (empty = log everything)" />
             </Field>
           </FormField>
           <FormField fullWidth changed={changedFields.has('logPayloads')}>
             <Field label="Log Request Payloads">
               <Checkbox
-                checked={form.logPayloads}
+                name="logPayloads"
+                checked={form.logPayloads ?? false}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, logPayloads: data.checked }))}
                 label="Log POST/PUT/PATCH request bodies (debug level only)"
                 disabled={form.logLevel !== 'debug'}
@@ -455,31 +440,31 @@ export default function LoggingPage() {
 
         <FormSection title="R2 Cloud Upload">
           <FormField changed={changedFields.has('r2AccountId')}>
-            <Field label="Account ID"><Input value={form.r2AccountId} onChange={handleChange('r2AccountId')} /></Field>
+            <Field label="Account ID"><Input name="r2AccountId" value={form.r2AccountId ?? ''} onChange={handleChange('r2AccountId')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('r2AccessKeyId')}>
-            <Field label="Access Key ID"><Input value={form.r2AccessKeyId} onChange={handleChange('r2AccessKeyId')} /></Field>
+            <Field label="Access Key ID"><Input name="r2AccessKeyId" value={form.r2AccessKeyId ?? ''} onChange={handleChange('r2AccessKeyId')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('r2SecretAccessKey')}>
-            <Field label="Secret Access Key"><Input type="password" value={form.r2SecretAccessKey} onChange={handleChange('r2SecretAccessKey')} /></Field>
+            <Field label="Secret Access Key"><Input name="r2SecretAccessKey" type="password" value={form.r2SecretAccessKey ?? ''} onChange={handleChange('r2SecretAccessKey')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('r2BucketName')}>
-            <Field label="Bucket Name"><Input value={form.r2BucketName} onChange={handleChange('r2BucketName')} /></Field>
+            <Field label="Bucket Name"><Input name="r2BucketName" value={form.r2BucketName ?? ''} onChange={handleChange('r2BucketName')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('r2LogPath')}>
-            <Field label="Log Path" hint="R2 key prefix"><Input value={form.r2LogPath} onChange={handleChange('r2LogPath')} placeholder="logs" /></Field>
+            <Field label="Log Path" hint="R2 key prefix"><Input name="r2LogPath" value={form.r2LogPath ?? ''} onChange={handleChange('r2LogPath')} placeholder="logs" /></Field>
           </FormField>
           <FormField fullWidth changed={changedFields.has('r2Endpoint')}>
-            <Field label="Endpoint URL"><Input value={form.r2Endpoint} onChange={handleChange('r2Endpoint')} /></Field>
+            <Field label="Endpoint URL"><Input name="r2Endpoint" value={form.r2Endpoint ?? ''} onChange={handleChange('r2Endpoint')} /></Field>
           </FormField>
           <FormField changed={changedFields.has('uploadEnabled')}>
             <Field label="Upload Enabled">
-              <Checkbox checked={form.uploadEnabled} onChange={(e, data) => setForm((prev) => ({ ...prev, uploadEnabled: data.checked }))} label="Periodically upload completed log files to R2" />
+              <Checkbox name="uploadEnabled" checked={form.uploadEnabled ?? false} onChange={(e, data) => setForm((prev) => ({ ...prev, uploadEnabled: data.checked }))} label="Periodically upload completed log files to R2" />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('uploadIntervalMinutes')}>
             <Field label="Upload Interval (minutes)">
-              <Input type="number" value={String(form.uploadIntervalMinutes)} onChange={(e) => { const val = parseInt(e.target.value, 10); if (!isNaN(val) && val > 0) setForm((prev) => ({ ...prev, uploadIntervalMinutes: val })); }} min="1" disabled={!form.uploadEnabled} />
+              <Input name="uploadIntervalMinutes" type="number" value={String(form.uploadIntervalMinutes ?? '')} onChange={(e) => { const val = parseInt(e.target.value, 10); if (!isNaN(val) && val > 0) setForm((prev) => ({ ...prev, uploadIntervalMinutes: val })); }} min="1" disabled={!form.uploadEnabled} />
             </Field>
           </FormField>
           <FormField fullWidth>
@@ -528,5 +513,6 @@ export default function LoggingPage() {
         </FormSection>
       </div>
     </div>
+    </>
   );
 }

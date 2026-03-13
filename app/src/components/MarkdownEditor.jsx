@@ -68,12 +68,13 @@ const extraToolbarCommands = [
   commands.codePreview,
 ];
 
-export default function MarkdownEditor({ value, onChange, label, placeholder, height = 200 }) {
+export default function MarkdownEditor({ value, onChange, label, name, placeholder, height = 200 }) {
   const styles = useStyles();
 
   return (
     <div className={styles.wrapper} data-color-mode="light">
       {label && <label className={styles.label}>{label}</label>}
+      {name && <input type="hidden" name={name} value={value || ''} />}
       <MDEditor
         value={value}
         onChange={(val) => onChange(val || '')}

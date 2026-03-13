@@ -6,8 +6,9 @@ function coerce(value) {
   return value;
 }
 
-export default function QueryStringPrefill({ handleChange, onPrefill }) {
+export default function QueryStringPrefill({ handleChange, onPrefill, ready = true }) {
   useEffect(() => {
+    if (!ready) return;
     const qs = new URLSearchParams(window.location.search);
     const prefilled = new Set();
 
@@ -19,7 +20,7 @@ export default function QueryStringPrefill({ handleChange, onPrefill }) {
     if (prefilled.size > 0 && onPrefill) {
       onPrefill(prefilled);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }

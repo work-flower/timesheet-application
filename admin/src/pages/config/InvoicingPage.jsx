@@ -40,28 +40,15 @@ const useStyles = makeStyles({
   },
 });
 
-const INITIAL_STATE = {
-  businessClientId: '',
-  invoiceNumberSeed: 0,
-  defaultPaymentTermDays: 10,
-  defaultVatRate: 20,
-  invoiceFooterText: '',
-  bankName: '',
-  bankSortCode: '',
-  bankAccountNumber: '',
-  bankAccountOwner: '',
-  accountingReferenceDate: '',
-  vatStaggerGroup: '',
-};
-
 export default function InvoicingPage() {
   const styles = useStyles();
   const { registerGuard } = useUnsavedChanges();
   const { navigateUnguarded, goBack } = useAppNavigate();
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker(INITIAL_STATE);
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
+  const [initialized, setInitialized] = useState(false);
+
   const [clientsList, setClientsList] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
@@ -71,25 +58,11 @@ export default function InvoicingPage() {
       settingsApi.get(),
       clientsApi.getAll(),
     ]).then(([data, clients]) => {
-      if (data) {
-        setBase({
-          businessClientId: data.businessClientId || '',
-          invoiceNumberSeed: data.invoiceNumberSeed ?? 0,
-          defaultPaymentTermDays: data.defaultPaymentTermDays ?? 10,
-          defaultVatRate: data.defaultVatRate ?? 20,
-          invoiceFooterText: data.invoiceFooterText || '',
-          bankName: data.bankName || '',
-          bankSortCode: data.bankSortCode || '',
-          bankAccountNumber: data.bankAccountNumber || '',
-          bankAccountOwner: data.bankAccountOwner || '',
-          accountingReferenceDate: data.accountingReferenceDate || '',
-          vatStaggerGroup: data.vatStaggerGroup || '',
-        });
-      }
+      resetBase(data || {});
       setClientsList(clients);
-      setLoading(false);
+      setInitialized(true);
     });
-  }, [setBase]);
+  }, [resetBase]);
 
   const handleChange = (field) => (e, data) => {
     setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
@@ -105,7 +78,8 @@ export default function InvoicingPage() {
         payload[field] = form[field];
       }
       await settingsApi.update(payload);
-      setBase(form);
+      const data = await settingsApi.get();
+      resetBase(data || {});
       return { ok: true };
     } catch (err) {
       setError(err.message);
@@ -113,7 +87,7 @@ export default function InvoicingPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, changedFields, setBase]);
+  }, [form, changedFields, resetBase]);
 
   const handleSave = async () => {
     const { ok } = await saveForm();
@@ -136,10 +110,10 @@ export default function InvoicingPage() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   return (
-    <div className={styles.page}>
+    <>
+      {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+      <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
       <FormCommandBar
         onBack={() => goBack('/config/invoicing')}
         onSave={handleSave}
@@ -158,7 +132,8 @@ export default function InvoicingPage() {
           <FormField changed={changedFields.has('accountingReferenceDate')}>
             <Field label="Accounting Reference Date" hint="Company year-end date (e.g. 03-31 for 31 March). Drives company year boundaries for financial reports.">
               <Select
-                value={form.accountingReferenceDate}
+                name="accountingReferenceDate"
+                value={form.accountingReferenceDate ?? ''}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, accountingReferenceDate: data.value }))}
               >
                 <option value="">Not set</option>
@@ -180,7 +155,8 @@ export default function InvoicingPage() {
           <FormField changed={changedFields.has('vatStaggerGroup')}>
             <Field label="VAT Stagger Group" hint="Determines VAT quarter boundaries. Group 1: Mar/Jun/Sep/Dec. Group 2: Jan/Apr/Jul/Oct. Group 3: Feb/May/Aug/Nov.">
               <Select
-                value={form.vatStaggerGroup}
+                name="vatStaggerGroup"
+                value={form.vatStaggerGroup ?? ''}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, vatStaggerGroup: data.value }))}
               >
                 <option value="">Not set</option>
@@ -196,7 +172,8 @@ export default function InvoicingPage() {
           <FormField changed={changedFields.has('businessClientId')}>
             <Field label="Business Client" hint="Designate a client to track business-level expenses (rent, software, tax, etc.)">
               <Select
-                value={form.businessClientId}
+                name="businessClientId"
+                value={form.businessClientId ?? ''}
                 onChange={(e, data) => setForm((prev) => ({ ...prev, businessClientId: data.value }))}
               >
                 <option value="">None</option>
@@ -212,6 +189,7 @@ export default function InvoicingPage() {
           <FormField changed={changedFields.has('invoiceNumberSeed')}>
             <Field label="Invoice Number Seed" hint="Last used invoice number. Next invoice will be this + 1.">
               <Input
+                name="invoiceNumberSeed"
                 type="number"
                 value={String(form.invoiceNumberSeed ?? '')}
                 onChange={(e) => {
@@ -226,6 +204,7 @@ export default function InvoicingPage() {
           <FormField changed={changedFields.has('defaultPaymentTermDays')}>
             <Field label="Default Payment Terms (days)">
               <Input
+                name="defaultPaymentTermDays"
                 type="number"
                 value={String(form.defaultPaymentTermDays ?? '')}
                 onChange={(e) => {
@@ -240,6 +219,7 @@ export default function InvoicingPage() {
           <FormField changed={changedFields.has('defaultVatRate')}>
             <Field label="Default VAT Rate (%)" hint="Default VAT rate for new projects.">
               <Input
+                name="defaultVatRate"
                 type="number"
                 value={String(form.defaultVatRate ?? '')}
                 onChange={(e) => {
@@ -257,22 +237,22 @@ export default function InvoicingPage() {
         <FormSection title="Bank Details">
           <FormField changed={changedFields.has('bankName')}>
             <Field label="Bank Name">
-              <Input value={form.bankName} onChange={handleChange('bankName')} />
+              <Input name="bankName" value={form.bankName ?? ''} onChange={handleChange('bankName')} />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('bankSortCode')}>
             <Field label="Sort Code">
-              <Input value={form.bankSortCode} onChange={handleChange('bankSortCode')} />
+              <Input name="bankSortCode" value={form.bankSortCode ?? ''} onChange={handleChange('bankSortCode')} />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('bankAccountNumber')}>
             <Field label="Account Number">
-              <Input value={form.bankAccountNumber} onChange={handleChange('bankAccountNumber')} />
+              <Input name="bankAccountNumber" value={form.bankAccountNumber ?? ''} onChange={handleChange('bankAccountNumber')} />
             </Field>
           </FormField>
           <FormField changed={changedFields.has('bankAccountOwner')}>
             <Field label="Account Holder Name">
-              <Input value={form.bankAccountOwner} onChange={handleChange('bankAccountOwner')} />
+              <Input name="bankAccountOwner" value={form.bankAccountOwner ?? ''} onChange={handleChange('bankAccountOwner')} />
             </Field>
           </FormField>
         </FormSection>
@@ -281,7 +261,8 @@ export default function InvoicingPage() {
           <FormField fullWidth changed={changedFields.has('invoiceFooterText')}>
             <Field label="Footer Text" hint="Text displayed at the bottom of every invoice.">
               <Textarea
-                value={form.invoiceFooterText}
+                name="invoiceFooterText"
+                value={form.invoiceFooterText ?? ''}
                 onChange={handleChange('invoiceFooterText')}
                 resize="vertical"
                 rows={3}
@@ -292,5 +273,6 @@ export default function InvoicingPage() {
 
       </div>
     </div>
+    </>
   );
 }

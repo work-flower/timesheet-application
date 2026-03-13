@@ -40,6 +40,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
+import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -132,14 +133,12 @@ export default function ImportJobForm() {
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
-  const { form, setForm, setBase, isDirty, changedFields, base } = useFormTracker({
-    userPrompt: 'Parse the attached bank statement.',
-  });
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
+  const [initialized, setInitialized] = useState(false);
 
   const [jobData, setJobData] = useState(null);
   const [stagedTransactions, setStagedTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -166,7 +165,7 @@ export default function ImportJobForm() {
           clearInterval(pollRef.current);
           pollRef.current = null;
           setJobData(data);
-          setBase({ userPrompt: data.userPrompt || '' });
+          resetBase(data);
 
           if (data.status === 'ready_for_review') {
             const staged = await stagedTransactionsApi.getAll({ importJobId: id });
@@ -184,7 +183,7 @@ export default function ImportJobForm() {
         pollRef.current = null;
       }
     };
-  }, [isProcessing, id, setBase]);
+  }, [isProcessing, id, resetBase]);
 
   useEffect(() => {
     const init = async () => {
@@ -192,24 +191,24 @@ export default function ImportJobForm() {
         if (!isNew) {
           const data = await importJobsApi.getById(id);
           setJobData(data);
-          setBase({
-            userPrompt: data.userPrompt || '',
-          });
+          resetBase(data);
 
           // Fetch staged transactions for non-terminal, non-processing statuses
           if (!terminalStatuses.has(data.status) && data.status !== 'processing') {
             const staged = await stagedTransactionsApi.getAll({ importJobId: id });
             setStagedTransactions(staged);
           }
+        } else {
+          resetBase({ userPrompt: 'Parse the attached bank statement.' });
         }
       } catch (err) {
         setError(err.message);
       } finally {
-        setLoading(false);
+        setInitialized(true);
       }
     };
     init();
-  }, [id, isNew, setBase]);
+  }, [id, isNew, resetBase]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0] || null;
@@ -239,7 +238,7 @@ export default function ImportJobForm() {
           fd.append('userPrompt', form.userPrompt);
           const updated = await importJobsApi.update(id, fd);
           setJobData(updated);
-          setBase({ userPrompt: updated.userPrompt || '' });
+          resetBase(updated);
           setSelectedFile(null);
           if (fileInputRef.current) fileInputRef.current.value = '';
           return { ok: true };
@@ -247,7 +246,7 @@ export default function ImportJobForm() {
 
         const updated = await importJobsApi.update(id, { userPrompt: form.userPrompt });
         setJobData(updated);
-        setBase({ userPrompt: updated.userPrompt || '' });
+        resetBase(updated);
         return { ok: true };
       }
     } catch (err) {
@@ -256,7 +255,7 @@ export default function ImportJobForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, selectedFile, jobData, setBase]);
+  }, [form, isNew, id, selectedFile, jobData, resetBase]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -300,7 +299,7 @@ export default function ImportJobForm() {
       if (updated) {
         setJobData(updated);
         setStagedTransactions([]);
-        setBase({ userPrompt: updated.userPrompt || '' });
+        resetBase(updated);
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
       }
@@ -369,8 +368,6 @@ export default function ImportJobForm() {
     return cols;
   }, [stagedTransactions]);
 
-  if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
-
   const actionLabels = {
     abandon: { title: 'Abandon Import', message: 'This will discard all staged transactions and mark this import job as abandoned. Continue?' },
   };
@@ -383,7 +380,10 @@ export default function ImportJobForm() {
   const canSave = isNew ? !!selectedFile : true;
 
   return (
-    <div className={styles.page}>
+    <>
+    {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
+    <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
       {/* Custom command bar */}
       <div className={styles.commandBar}>
         <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => goBack('/import-jobs')} size="small">
@@ -500,6 +500,7 @@ export default function ImportJobForm() {
             <FormField fullWidth changed={changedFields.has('userPrompt')}>
               <MarkdownEditor
                 label="User Prompt"
+                name="userPrompt"
                 value={form.userPrompt}
                 onChange={(val) => setForm((prev) => ({ ...prev, userPrompt: val }))}
                 height={150}
@@ -597,5 +598,6 @@ export default function ImportJobForm() {
       />
 
     </div>
+    </>
   );
 }
