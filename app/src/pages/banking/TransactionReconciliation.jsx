@@ -217,19 +217,16 @@ export default function TransactionReconciliation() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   // --- Data loading ---
-  const loadData = useCallback(async (initial) => {
+  const loadData = useCallback(async () => {
     dispatch({ type: 'SET_LOADING', value: true });
     try {
-      const fetches = [
+      const [txs, exps, invs, settings, projects] = await Promise.all([
         transactionsApi.getAll(),
         expensesApi.getAll(),
         invoicesApi.getAll(),
-      ];
-      // Only fetch settings + projects on initial load
-      if (initial) {
-        fetches.push(settingsApi.get(), projectsApi.getAll());
-      }
-      const [txs, exps, invs, settings, projects] = await Promise.all(fetches);
+        settingsApi.get(),
+        projectsApi.getAll(),
+      ]);
 
       let businessProjectId = null;
       if (settings?.businessClientId && projects) {
@@ -244,7 +241,20 @@ export default function TransactionReconciliation() {
     }
   }, []);
 
-  useEffect(() => { loadData(true); }, [loadData]);
+  const refreshData = useCallback(async () => {
+    try {
+      const [txs, exps, invs] = await Promise.all([
+        transactionsApi.getAll(),
+        expensesApi.getAll(),
+        invoicesApi.getAll(),
+      ]);
+      dispatch({ type: 'SET_DATA', transactions: txs, expenses: exps, invoices: invs });
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', value: err.message });
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   // --- Selected transaction objects ---
   const selectedTransactions = useMemo(
@@ -471,16 +481,16 @@ export default function TransactionReconciliation() {
       dispatch({ type: 'RESET_SELECTIONS' });
       dispatch({ type: 'SET_SUCCESS', value: 'Reconciliation changes applied successfully.' });
       setTimeout(() => dispatch({ type: 'SET_SUCCESS', value: null }), 3000);
-      await loadData();
+      await refreshData();
     } catch (err) {
       dispatch({ type: 'SET_ERROR', value: err.message });
       dispatch({ type: 'SET_CONFIRMING', value: false });
     }
-  }, [stagedChanges, loadData]);
+  }, [stagedChanges, refreshData]);
 
   // --- Entity popup message handler ---
   const handlePopupMessage = useCallback(async (data) => {
-    await loadData();
+    await refreshData();
 
     if (state.popupType === 'create-expense') {
       // Only close on saveAndClose or delete — keep open on save
@@ -492,7 +502,7 @@ export default function TransactionReconciliation() {
       // View popups: close on any action
       dispatch({ type: 'SET_POPUP_URL', url: null });
     }
-  }, [loadData, state.popupType]);
+  }, [refreshData, state.popupType]);
 
   // --- Create expense ---
   const handleCreateExpense = useCallback(() => {
