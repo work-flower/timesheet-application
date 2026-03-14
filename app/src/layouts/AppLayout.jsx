@@ -3,6 +3,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import useAppNavigate from '../hooks/useAppNavigate.js';
 import { newTraceId, getTraceId } from '../api/traceId.js';
 import { settingsApi, clientsApi } from '../api/index.js';
+import { useEmbedded } from '../contexts/EmbeddedContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -254,7 +255,7 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [appTitle, setAppTitle] = useState('');
 
-  const isEmbedded = new URLSearchParams(location.search).get('embedded') === 'true';
+  const isEmbedded = useEmbedded();
 
   useEffect(() => {
     if (isEmbedded) return;

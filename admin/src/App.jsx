@@ -2,6 +2,7 @@ import { FluentProvider } from '@fluentui/react-components';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { theme } from './theme.js';
 import { UnsavedChangesProvider } from './contexts/UnsavedChangesContext.jsx';
+import { EmbeddedProvider } from './contexts/EmbeddedContext.jsx';
 import AdminLayout from './layouts/AdminLayout.jsx';
 import ProfilePage from './pages/config/ProfilePage.jsx';
 import InvoicingPage from './pages/config/InvoicingPage.jsx';
@@ -15,6 +16,7 @@ export default function App() {
   return (
     <FluentProvider theme={theme}>
       <BrowserRouter basename="/admin">
+        <EmbeddedProvider>
         <UnsavedChangesProvider>
           <Routes>
             <Route element={<AdminLayout />}>
@@ -29,6 +31,7 @@ export default function App() {
             </Route>
           </Routes>
         </UnsavedChangesProvider>
+        </EmbeddedProvider>
       </BrowserRouter>
     </FluentProvider>
   );

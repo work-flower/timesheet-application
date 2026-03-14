@@ -2,6 +2,7 @@ import { FluentProvider } from '@fluentui/react-components';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { theme } from './theme.js';
 import { UnsavedChangesProvider } from './contexts/UnsavedChangesContext.jsx';
+import { EmbeddedProvider } from './contexts/EmbeddedContext.jsx';
 import AppLayout from './layouts/AppLayout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import ClientList from './pages/clients/ClientList.jsx';
@@ -34,6 +35,7 @@ export default function App() {
   return (
     <FluentProvider theme={theme}>
       <BrowserRouter>
+        <EmbeddedProvider>
         <UnsavedChangesProvider>
           <Routes>
             <Route path="/expenses/:id/attachments/upload" element={<ExpenseAttachmentUpload />} />
@@ -73,6 +75,7 @@ export default function App() {
             </Route>
           </Routes>
         </UnsavedChangesProvider>
+        </EmbeddedProvider>
       </BrowserRouter>
     </FluentProvider>
   );
