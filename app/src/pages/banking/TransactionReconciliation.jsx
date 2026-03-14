@@ -493,10 +493,11 @@ export default function TransactionReconciliation() {
     await refreshData();
 
     if (state.popupType === 'create-expense') {
-      // Only close on saveAndClose or delete — keep open on save
+      // Expense created and linked — clear selections so the page reflects the new state
+      dispatch({ type: 'RESET_SELECTIONS' });
+      // Only close popup on saveAndClose or delete — keep open on save
       if (data.command !== 'save') {
         dispatch({ type: 'SET_POPUP_URL', url: null });
-        dispatch({ type: 'RESET_SELECTIONS' });
       }
     } else {
       // View popups: close on any action
