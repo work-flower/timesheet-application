@@ -361,7 +361,7 @@ export default function Dashboard() {
                     isCurrent && styles.lifelineCellCurrent,
                   )}
                   onClick={() => {
-                    navigate(`/invoices?startDate=${m.start}&endDate=${m.end}`);
+                    navigate(`/invoices?$filter=invoiceDate ge '${m.start}' and invoiceDate le '${m.end}'`);
                   }}
                 >
                   <span className={styles.lifelineCellCount}>{m.count}</span>
@@ -481,7 +481,7 @@ export default function Dashboard() {
         <>
           <Text className={styles.rowTitle}>Action Needed</Text>
           <div className={styles.cards}>
-            <Card className={styles.cardClickable} onClick={() => navigate('/transactions?status=unmatched')}>
+            <Card className={styles.cardClickable} onClick={() => navigate("/transactions?$filter=status eq 'unmatched'")}>
               <div className={styles.cardHeader}>
                 <div className={opsSummary.unmatched.lastImportStale ? styles.cardIconWarning : styles.cardIcon}>
                   <ArrowSwapRegular />
@@ -509,7 +509,7 @@ export default function Dashboard() {
                 </Badge>
               )}
             </Card>
-            <Card className={styles.cardClickable} onClick={() => navigate('/timesheets')}>
+            <Card className={styles.cardClickable} onClick={() => navigate('/timesheets?$filter=invoiceId eq null')}>
               <div className={styles.cardHeader}>
                 <div className={styles.cardIcon}><CalendarClockRegular /></div>
                 <InfoTooltip
@@ -525,7 +525,10 @@ export default function Dashboard() {
                 {opsSummary.uninvoiced.count} entr{opsSummary.uninvoiced.count !== 1 ? 'ies' : 'y'}
               </Text>
             </Card>
-            <Card className={styles.cardClickable} onClick={() => navigate('/invoices')}>
+            <Card className={styles.cardClickable} onClick={() => {
+              const { startDate, endDate } = getMonthRange();
+              navigate(`/invoices?$filter=invoiceDate ge '${startDate}' and invoiceDate le '${endDate}'`);
+            }}>
               <div className={styles.cardHeader}>
                 <div className={opsSummary.monthlyInvoices.warning ? styles.cardIconWarning : styles.cardIcon}>
                   {opsSummary.monthlyInvoices.warning ? <WarningRegular /> : <DocumentTextRegular />}

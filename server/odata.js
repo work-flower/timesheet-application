@@ -121,7 +121,16 @@ export function parseFilter(filterStr) {
       const value = parseValue(rawVal.trim());
       const nedbOp = comparisonOps[op.toLowerCase()];
 
-      if (nedbOp === null) {
+      // NeDB null handling: { field: null } only matches explicit null, not missing fields.
+      // Use $or to match both, or $exists + $ne for ne null.
+      if (value === null && nedbOp === null) {
+        // eq null — match both null and missing
+        if (!query.$and) query.$and = [];
+        query.$and.push({ $or: [{ [field]: null }, { [field]: { $exists: false } }] });
+      } else if (value === null && nedbOp === '$ne') {
+        // ne null — match fields that exist and are not null
+        query[field] = { $exists: true, $ne: null };
+      } else if (nedbOp === null) {
         // eq — direct match
         query[field] = value;
       } else {
