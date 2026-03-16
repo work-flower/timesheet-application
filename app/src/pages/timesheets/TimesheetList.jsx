@@ -347,8 +347,8 @@ export default function TimesheetList() {
         }}>All Time</ToggleButton>
         <ToggleButton size="small" checked={range === 'custom'} onClick={() => {
           if (range !== 'custom') {
-            // Switch to custom with current dates as starting point
-            setFilterValues({ startDate: startDate || getWeekRange().startDate, endDate: endDate || getWeekRange().endDate });
+            const today = new Date().toISOString().split('T')[0];
+            setFilterValues({ startDate: getMonthRange().startDate, endDate: today });
           }
         }}>Custom</ToggleButton>
         {range === 'custom' && (

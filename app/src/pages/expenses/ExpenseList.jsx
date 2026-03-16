@@ -364,7 +364,8 @@ export default function ExpenseList() {
         }}>All Time</ToggleButton>
         <ToggleButton size="small" checked={range === 'custom'} onClick={() => {
           if (range !== 'custom') {
-            setFilterValues({ startDate: startDate || getWeekRange().startDate, endDate: endDate || getWeekRange().endDate });
+            const today = new Date().toISOString().split('T')[0];
+            setFilterValues({ startDate: getMonthRange().startDate, endDate: today });
           }
         }}>Custom</ToggleButton>
         {range === 'custom' && (
