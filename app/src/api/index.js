@@ -25,7 +25,14 @@ export const clientsApi = {
 
 // Projects
 export const projectsApi = {
-  getAll: () => request('/projects'),
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/projects${query ? `?${query}` : ''}`);
+  },
   getById: (id) => request(`/projects/${id}`),
   create: (data) => request('/projects', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
