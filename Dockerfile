@@ -13,6 +13,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 COPY server/ server/
 COPY shared/ shared/
+COPY scripts/ scripts/
 COPY app/src/help/ app/src/help/
 COPY --from=build /app/dist dist/
 COPY --from=build /app/dist-admin dist-admin/
