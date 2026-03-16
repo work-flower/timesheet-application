@@ -177,6 +177,19 @@ export async function buildQuery(collection, query = {}, defaultSort = {}, baseF
     totalCount = await collection.count(filter);
   }
 
+  // $summary: compute sums across ALL matching records (ignoring $top/$skip)
+  let summaryData;
+  if (query.$summary) {
+    const summaryFields = query.$summary.split(',').map(s => s.trim()).filter(Boolean);
+    if (summaryFields.length > 0) {
+      const allMatching = await collection.find(filter);
+      summaryData = {};
+      for (const field of summaryFields) {
+        summaryData[field] = allMatching.reduce((sum, doc) => sum + (Number(doc[field]) || 0), 0);
+      }
+    }
+  }
+
   const sort = parseOrderBy(query.$orderby) || defaultSort;
   let cursor = collection.find(filter).sort(sort);
 
@@ -188,7 +201,7 @@ export async function buildQuery(collection, query = {}, defaultSort = {}, baseF
   }
 
   const results = await cursor;
-  return { results, totalCount };
+  return { results, totalCount, summaryData };
 }
 
 // ---------------------------------------------------------------------------
@@ -223,9 +236,11 @@ export function applySelect(items, selectStr) {
 /**
  * Format the response: plain array or OData envelope with count.
  */
-export function formatResponse(items, totalCount, hasCount) {
+export function formatResponse(items, totalCount, hasCount, summaryData) {
   if (hasCount) {
-    return { '@odata.count': totalCount, value: items };
+    const envelope = { '@odata.count': totalCount, value: items };
+    if (summaryData) envelope['@odata.summary'] = summaryData;
+    return envelope;
   }
   return items;
 }

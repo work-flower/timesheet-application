@@ -11,7 +11,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Form | `app/src/pages/timesheets/TimesheetForm.jsx` | Project dropdown grouped by client, hours SpinButton, computed days/amount, link-to-invoice button. Uses `useNotifyParent` for embedded mode |
-| List | `app/src/pages/timesheets/TimesheetList.jsx` | Period toggles (week/month/all/custom), client/project filters, summary footer (hours/days/amount/entries count) |
+| List | `app/src/pages/timesheets/TimesheetList.jsx` | OData URL-driven filters via `useODataList`. Period toggles (week/month/all/custom), client/project filters, server-side pagination, `$summary` footer (hours/days/amount/entries count). Filter/sort/pagination state lives in URL as `$filter`/`$orderby`/`$top`/`$skip` — bookmarkable/shareable. |
 | Drawer | `app/src/pages/timesheets/TimesheetDrawer.jsx` | Quick-view side panel from list, shows details + invoice link |
 | API client | `app/src/api/index.js` (timesheetsApi) | 5 methods: getAll, getById, create, update, delete |
 
@@ -20,8 +20,17 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Route | `server/routes/timesheets.js` | 5 endpoints: standard CRUD |
-| Service | `server/services/timesheetService.js` | Rate/hours golden rule, days/amount computation, enrichment, lock checks. `getAll`: `$expand` (project, client), `groupBy` (week/month/year/day). `getById`: returns computed effectiveRate/effectiveWorkingHours for display |
+| Service | `server/services/timesheetService.js` | Rate/hours golden rule, days/amount computation, enrichment, lock checks. `getAll`: `$expand` (project, client), `groupBy` (week/month/year/day), `$summary` (server-side field sums across all matching records). `create`/`update`: persists `clientId` from project for direct `$filter` support. `getById`: returns computed effectiveRate/effectiveWorkingHours for display |
 | DB collection | `server/db/index.js` | `timesheets` — wrapped NeDB via execution pipeline |
+
+## Shared Utilities
+
+| What | File | Notes |
+| ---- | ---- | ----- |
+| OData list hook | `app/src/hooks/useODataList.js` | Coordinator hook: URL ↔ localStorage ↔ API. Manages `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$summary`. Non-OData URL params preserved in place. |
+| OData builder | `app/src/utils/odataBuilder.js` | `buildFilterString(filters)` — builds `$filter` string from filter descriptors |
+| OData parser | `app/src/utils/odataParser.js` | `extractFilterValues(filterString, filterDefs)` — parses `$filter` via `odata-filter-to-ast` back to UI state |
+| Migration | `scripts/backfill-timesheet-clientId.js` | One-time backfill of `clientId` on existing timesheets (`npm run migrate:timesheet-clientid`) |
 
 ## Cross-Entity Consumers
 
@@ -51,6 +60,8 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 `effectiveRate` and `effectiveWorkingHours` are always derived from the project (and its client). On create and update, if the client provides values for either field that differ from the project's computed values, the client values are ignored and a `warnings` array is returned in the response listing each overridden field. Calculations always use project values: `days = hours / effectiveWorkingHours`, `amount = days × effectiveRate`. Neither field is stored on the timesheet record.
 
 **Persistence rule:** `days` and `amount` are computed and persisted on save. They become the source of truth — no recomputation on read.
+
+**`clientId` stored field:** `clientId` is persisted on `create`/`update` (derived from the project). This enables direct `$filter=clientId eq 'xxx'` at the DB level without project lookup. Backfill via `npm run migrate:timesheet-clientid`.
 
 **Validation:** Date must not be in the future. Hours must be 0.25–24 in 0.25 increments.
 
@@ -109,3 +120,4 @@ Also included in the Combined PDF — see `invoices.md` → Invoice PDF Generati
 ## Lessons Learned
 
 - **Fluent UI v9 SpinButton** — MUST use uncontrolled mode (`defaultValue`, not `value`). Controlled mode breaks typing. `data.value` is `null` during typing; always parse `data.displayValue` as fallback: `const val = data.value ?? parseFloat(data.displayValue); if (val != null && !isNaN(val)) ...`
+- **OData URL filtering** — `$summary` provides server-side aggregation across all matching records (ignoring pagination). The summary footer must use `$summary` values, not client-side computation from the current page. `odata-filter-to-ast` is used for parsing `$filter` from URL back to UI state — its AST uses typed nodes (`EqExpr`, `GeExpr`, etc.) not a generic `op` field.

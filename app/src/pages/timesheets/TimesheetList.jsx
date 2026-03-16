@@ -26,8 +26,7 @@ import ViewToggle from '../../components/ViewToggle.jsx';
 import ListView from '../../components/ListView.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import TimesheetDrawer from './TimesheetDrawer.jsx';
-import { usePagination } from '../../hooks/usePagination.js';
-import { useListState } from '../../hooks/useListState.js';
+import { useODataList } from '../../hooks/useODataList.js';
 import { timesheetsApi, clientsApi, projectsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -216,17 +215,59 @@ const baseColumns = [
   }),
 ];
 
+/**
+ * Derive which range toggle is active from the current filter values.
+ */
+function deriveRange(startDate, endDate) {
+  const week = getWeekRange();
+  const month = getMonthRange();
+
+  if (!startDate && !endDate) return 'all';
+  if (startDate === week.startDate && endDate === week.endDate) return 'week';
+  if (startDate === month.startDate && endDate === month.endDate) return 'month';
+  return 'custom';
+}
+
 export default function TimesheetList() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useListState('timesheets', {
-    range: 'week', clientId: '', projectId: '',
-    customStart: getWeekRange().startDate, customEnd: getWeekRange().endDate,
-    viewMode: 'grid', page: 1, pageSize: 25,
+
+  // --- OData-driven data flow ---
+  const {
+    getFilterValue, setFilterValues,
+    items, totalCount, loading, refresh,
+    page, pageSize, totalPages, setPage, setPageSize,
+    summary,
+  } = useODataList({
+    key: 'timesheets',
+    apiFn: timesheetsApi.getAll,
+    filters: [
+      { id: 'startDate', field: 'date',      operator: 'ge', defaultValue: getWeekRange().startDate, type: 'date' },
+      { id: 'endDate',   field: 'date',      operator: 'le', defaultValue: getWeekRange().endDate,   type: 'date' },
+      { id: 'clientId',  field: 'clientId',   operator: 'eq', defaultValue: '', type: 'string' },
+      { id: 'projectId', field: 'projectId',  operator: 'eq', defaultValue: '', type: 'string' },
+    ],
+    defaultOrderBy: 'date desc',
+    defaultPageSize: 50,
+    summaryFields: ['hours', 'days', 'amount'],
   });
-  const { range, clientId, projectId, customStart, customEnd, viewMode } = filters;
+
+  const startDate = getFilterValue('startDate') || '';
+  const endDate = getFilterValue('endDate') || '';
+  const clientId = getFilterValue('clientId') || '';
+  const projectId = getFilterValue('projectId') || '';
+  const range = deriveRange(startDate, endDate);
+
+  // --- View mode: display preference, not part of OData ---
+  const [viewMode, setViewMode] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('timesheets.viewMode')) || 'grid'; } catch { return 'grid'; }
+  });
+  const handleViewModeChange = useCallback((v) => {
+    setViewMode(v);
+    try { localStorage.setItem('timesheets.viewMode', JSON.stringify(v)); } catch { /* ignore */ }
+  }, []);
+
+  // --- Reference data for dropdowns ---
   const [selected, setSelected] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [clients, setClients] = useState([]);
@@ -243,35 +284,10 @@ export default function TimesheetList() {
       .then(([c, p]) => {
         setClients(c);
         setAllProjects(p);
-        // Clear stale localStorage IDs that no longer exist
-        const clientIds = new Set(c.map((cl) => cl._id));
-        const projectIds = new Set(p.map((pr) => pr._id));
-        const updates = {};
-        if (!clientIds.has(filters.clientId)) updates.clientId = '';
-        if (!projectIds.has(filters.projectId)) updates.projectId = '';
-        if (Object.keys(updates).length > 0) setFilters(updates);
       });
   }, []);
 
-  const dateRange = useMemo(() => {
-    if (range === 'week') return getWeekRange();
-    if (range === 'month') return getMonthRange();
-    if (range === 'custom') return { startDate: customStart, endDate: customEnd };
-    return {};
-  }, [range, customStart, customEnd]);
-
-  const refreshEntries = useCallback(() => {
-    setLoading(true);
-    const params = { ...dateRange };
-    if (clientId) params.clientId = clientId;
-    if (projectId) params.projectId = projectId;
-    timesheetsApi.getAll(params)
-      .then(setEntries)
-      .finally(() => setLoading(false));
-  }, [dateRange, clientId, projectId]);
-
-  useEffect(() => { refreshEntries(); }, [refreshEntries]);
-
+  // --- Columns ---
   const columns = useMemo(() => [
     createTableColumn({
       columnId: 'actions',
@@ -293,26 +309,14 @@ export default function TimesheetList() {
     ...baseColumns,
   ], []);
 
-  const totals = useMemo(() => {
-    const totalHours = entries.reduce((sum, e) => sum + (e.hours || 0), 0);
-    const totalDays = entries.reduce((sum, e) => sum + (e.days || 0), 0);
-    const totalAmount = entries.reduce((sum, e) => sum + (e.amount || 0), 0);
-    return { totalHours, totalDays, totalAmount };
-  }, [entries]);
-
+  // --- Delete handler ---
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await timesheetsApi.delete(deleteTarget);
-    setEntries((prev) => prev.filter((e) => e._id !== deleteTarget));
     setDeleteTarget(null);
     setSelected(new Set());
+    refresh();
   };
-
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(entries, {
-    page: filters.page, pageSize: filters.pageSize,
-    onPageChange: (p) => setFilters({ page: p }),
-    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
-  });
 
   const selectedId = selected.size === 1 ? [...selected][0] : null;
   const fmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
@@ -330,24 +334,37 @@ export default function TimesheetList() {
       />
       <div className={styles.filters}>
         <Text size={200} weight="semibold">Period:</Text>
-        <ToggleButton size="small" checked={range === 'week'} onClick={() => setFilters({ range: 'week', page: 1 })}>This Week</ToggleButton>
-        <ToggleButton size="small" checked={range === 'month'} onClick={() => setFilters({ range: 'month', page: 1 })}>This Month</ToggleButton>
-        <ToggleButton size="small" checked={range === 'all'} onClick={() => setFilters({ range: 'all', page: 1 })}>All Time</ToggleButton>
-        <ToggleButton size="small" checked={range === 'custom'} onClick={() => setFilters({ range: 'custom', page: 1 })}>Custom</ToggleButton>
+        <ToggleButton size="small" checked={range === 'week'} onClick={() => {
+          const w = getWeekRange();
+          setFilterValues({ startDate: w.startDate, endDate: w.endDate });
+        }}>This Week</ToggleButton>
+        <ToggleButton size="small" checked={range === 'month'} onClick={() => {
+          const m = getMonthRange();
+          setFilterValues({ startDate: m.startDate, endDate: m.endDate });
+        }}>This Month</ToggleButton>
+        <ToggleButton size="small" checked={range === 'all'} onClick={() => {
+          setFilterValues({ startDate: '', endDate: '' });
+        }}>All Time</ToggleButton>
+        <ToggleButton size="small" checked={range === 'custom'} onClick={() => {
+          if (range !== 'custom') {
+            // Switch to custom with current dates as starting point
+            setFilterValues({ startDate: startDate || getWeekRange().startDate, endDate: endDate || getWeekRange().endDate });
+          }
+        }}>Custom</ToggleButton>
         {range === 'custom' && (
           <>
             <input
               type="date"
               className={styles.dateInput}
-              value={customStart}
-              onChange={(e) => setFilters({ customStart: e.target.value, page: 1 })}
+              value={startDate}
+              onChange={(e) => setFilterValues({ startDate: e.target.value })}
             />
             <Text size={200}>to</Text>
             <input
               type="date"
               className={styles.dateInput}
-              value={customEnd}
-              onChange={(e) => setFilters({ customEnd: e.target.value, page: 1 })}
+              value={endDate}
+              onChange={(e) => setFilterValues({ endDate: e.target.value })}
             />
           </>
         )}
@@ -355,7 +372,7 @@ export default function TimesheetList() {
         <Select
           size="small"
           value={clientId}
-          onChange={(e, data) => setFilters({ clientId: data.value, projectId: '', page: 1 })}
+          onChange={(e, data) => setFilterValues({ clientId: data.value, projectId: '' })}
           style={{ minWidth: 160 }}
         >
           <option value="">All Clients</option>
@@ -367,7 +384,7 @@ export default function TimesheetList() {
         <Select
           size="small"
           value={projectId}
-          onChange={(e, data) => setFilters({ projectId: data.value, page: 1 })}
+          onChange={(e, data) => setFilterValues({ projectId: data.value })}
           style={{ minWidth: 160 }}
         >
           <option value="">All Projects</option>
@@ -376,17 +393,17 @@ export default function TimesheetList() {
           ))}
         </Select>
         <div style={{ marginLeft: 'auto' }}>
-          <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
+          <ViewToggle value={viewMode} onChange={handleViewModeChange} />
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div className={styles.loading}><Spinner label="Loading..." /></div>
-        ) : entries.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className={styles.empty}><Text>No timesheet entries found for this period.</Text></div>
         ) : viewMode === 'grid' ? (
           <DataGrid
-            items={pageItems}
+            items={items}
             columns={columns}
             sortable
             resizableColumns
@@ -412,7 +429,7 @@ export default function TimesheetList() {
           </DataGrid>
         ) : viewMode === 'list' ? (
           <ListView
-            items={pageItems}
+            items={items}
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/timesheets/${item._id}`)}
             renderTopLine={(item) => (
@@ -444,7 +461,7 @@ export default function TimesheetList() {
           />
         ) : (
           <CardView
-            items={pageItems}
+            items={items}
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/timesheets/${item._id}`)}
             renderHeader={(item) => (
@@ -480,26 +497,26 @@ export default function TimesheetList() {
         )}
       </div>
       <PaginationControls
-        page={page} pageSize={pageSize} totalItems={totalItems}
+        page={page} pageSize={pageSize} totalItems={totalCount}
         totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
       />
-      {entries.length > 0 && (
+      {totalCount > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Hours</Text>
-            <Text className={styles.summaryValue}>{totals.totalHours}</Text>
+            <Text className={styles.summaryValue}>{summary.hours ?? 0}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Days</Text>
-            <Text className={styles.summaryValue}>{totals.totalDays.toFixed(2)}</Text>
+            <Text className={styles.summaryValue}>{(summary.days ?? 0).toFixed(2)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Amount</Text>
-            <Text className={styles.summaryValue}>{fmt.format(totals.totalAmount)}</Text>
+            <Text className={styles.summaryValue}>{fmt.format(summary.amount ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Entries</Text>
-            <Text className={styles.summaryValue}>{entries.length}</Text>
+            <Text className={styles.summaryValue}>{totalCount}</Text>
           </div>
         </div>
       )}
@@ -513,7 +530,7 @@ export default function TimesheetList() {
       <TimesheetDrawer
         timesheetId={selectedTimesheetId}
         onClose={() => setSelectedTimesheetId(null)}
-        onMutate={refreshEntries}
+        onMutate={refresh}
       />
     </div>
   );

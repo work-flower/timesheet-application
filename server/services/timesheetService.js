@@ -8,10 +8,6 @@ export async function getAll(query = {}) {
 
   if (query.projectId) {
     baseFilter.projectId = query.projectId;
-  } else if (query.clientId) {
-    const clientProjects = await projects.find({ clientId: query.clientId });
-    const projectIds = clientProjects.map((p) => p._id);
-    baseFilter.projectId = { $in: projectIds };
   }
 
   if (query.startDate || query.endDate) {
@@ -21,7 +17,7 @@ export async function getAll(query = {}) {
   }
 
   // OData query merged with base filter
-  const { results: entries, totalCount } = await buildQuery(
+  const { results: entries, totalCount, summaryData } = await buildQuery(
     timesheets, query, { date: -1 }, baseFilter
   );
 
@@ -65,7 +61,7 @@ export async function getAll(query = {}) {
   }
 
   const items = applySelect(enriched, query.$select);
-  return formatResponse(items, totalCount, query.$count === 'true');
+  return formatResponse(items, totalCount, query.$count === 'true', summaryData);
 }
 
 function groupEntries(entries, groupBy) {
@@ -161,6 +157,7 @@ export async function create(data) {
   const now = new Date().toISOString();
   const inserted = await timesheets.insert({
     projectId: data.projectId,
+    clientId: project.clientId,
     date: data.date,
     hours,
     days,
@@ -226,6 +223,7 @@ export async function update(id, data) {
       warnings.push(`effectiveRate ${updateData.effectiveRate} provided by client ignored — project value ${effectiveRate} used`);
     }
 
+    updateData.clientId = project.clientId;
     updateData.days = finalHours / effectiveWorkingHours;
     updateData.amount = updateData.days * effectiveRate;
   }
