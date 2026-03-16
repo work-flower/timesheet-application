@@ -26,9 +26,29 @@ export async function getAll(query = {}) {
     baseFilter.expenseType = query.expenseType;
   }
 
+  // Virtual isLinked filter — intercept from $filter before OData parsing
+  let queryForOData = query;
+  if (query.$filter) {
+    const m = query.$filter.match(/\bisLinked\s+eq\s+(true|false)\b/i);
+    if (m) {
+      if (m[1].toLowerCase() === 'true') {
+        baseFilter['transactions.0'] = { $exists: true };
+      } else {
+        baseFilter['transactions.0'] = { $exists: false };
+      }
+      // Strip isLinked clause from $filter
+      const cleaned = query.$filter
+        .replace(/\s+and\s+isLinked\s+eq\s+(?:true|false)/gi, '')
+        .replace(/isLinked\s+eq\s+(?:true|false)\s+and\s+/gi, '')
+        .replace(/isLinked\s+eq\s+(?:true|false)/gi, '')
+        .trim();
+      queryForOData = { ...query, $filter: cleaned || undefined };
+    }
+  }
+
   // OData query merged with base filter
-  const { results: entries, totalCount } = await buildQuery(
-    expenses, query, { date: -1 }, baseFilter
+  const { results: entries, totalCount, summaryData } = await buildQuery(
+    expenses, queryForOData, { date: -1 }, baseFilter
   );
 
   // Enrich with project and client info
@@ -63,8 +83,8 @@ export async function getAll(query = {}) {
     }
   }
 
-  const items = applySelect(enriched, query.$select);
-  return formatResponse(items, totalCount, query.$count === 'true');
+  const items = applySelect(enriched, queryForOData.$select);
+  return formatResponse(items, totalCount, queryForOData.$count === 'true', summaryData);
 }
 
 export async function getById(id) {
@@ -120,6 +140,7 @@ export async function create(data) {
   const now = new Date().toISOString();
   return expenses.insert({
     projectId: data.projectId,
+    clientId: project.clientId,
     date: data.date,
     expenseType: data.expenseType || '',
     description: data.description || '',
@@ -160,6 +181,13 @@ export async function update(id, data) {
     if (updateData.date > today) {
       throw new Error('Expense date cannot be in the future');
     }
+  }
+
+  // Sync clientId when projectId changes
+  if (updateData.projectId) {
+    const project = await projects.findOne({ _id: updateData.projectId });
+    if (!project) throw new Error('Project not found');
+    updateData.clientId = project.clientId;
   }
 
   // Recompute VAT fields and netAmount when amount/vatAmount/vatPercent changes
