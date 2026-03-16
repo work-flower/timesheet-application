@@ -15,6 +15,7 @@ import {
   TableCellLayout,
   createTableColumn,
   Badge,
+  Button,
   Tooltip,
   mergeClasses,
 } from '@fluentui/react-components';
@@ -28,6 +29,8 @@ import {
   ArrowSwapRegular,
   CalendarClockRegular,
   WarningRegular,
+  ChevronLeftRegular,
+  ChevronRightRegular,
 } from '@fluentui/react-icons';
 import { timesheetsApi, projectsApi, expensesApi, invoicesApi, dashboardApi, settingsApi } from '../api/index.js';
 import InfoTooltip from '../components/InfoTooltip.jsx';
@@ -189,6 +192,103 @@ const useStyles = makeStyles({
     display: 'block',
     opacity: 0.8,
   },
+  // Timesheet Coverage
+  tsCoverageCard: {
+    padding: '20px',
+    marginBottom: '24px',
+  },
+  tsCoverageHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '16px',
+  },
+  tsCoverageTitle: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase400,
+  },
+  tsCoverageNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  tsCoverageMonthLabel: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase300,
+    minWidth: '140px',
+    textAlign: 'center',
+  },
+  tsCoverageDayHeaders: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: '4px',
+    marginBottom: '4px',
+  },
+  tsCoverageDayHeaderCell: {
+    textAlign: 'center',
+    fontSize: tokens.fontSizeBase100,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground3,
+    padding: '4px 0',
+  },
+  tsCoverageWeek: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: '4px',
+    marginBottom: '4px',
+  },
+  tsCoverageDay: {
+    height: '44px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: tokens.fontSizeBase100,
+    border: '2px solid transparent',
+    '&:hover': {
+      opacity: 0.85,
+    },
+  },
+  tsCoverageDayEmpty: {
+    height: '44px',
+  },
+  tsCoverageDayNum: {
+    fontWeight: tokens.fontWeightBold,
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: '1',
+  },
+  tsCoverageDayHours: {
+    fontSize: '9px',
+    lineHeight: '1',
+    marginTop: '3px',
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  tsCoverageGreen: {
+    backgroundColor: '#E6F4EA',
+    color: '#1B7D3A',
+  },
+  tsCoverageAmber: {
+    backgroundColor: '#FFF8E1',
+    color: '#E65100',
+  },
+  tsCoverageGrey: {
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground3,
+  },
+  tsCoverageWeekendGreen: {
+    backgroundColor: '#d4edda',
+    color: '#1B7D3A',
+  },
+  tsCoverageWeekend: {
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground4,
+    opacity: 0.6,
+  },
+  tsCoverageCurrent: {
+    borderColor: tokens.colorBrandForeground1,
+  },
 });
 
 function getWeekRange() {
@@ -258,6 +358,11 @@ export default function Dashboard() {
   const [coverageData, setCoverageData] = useState({});
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [coverageMonth, setCoverageMonth] = useState(() => {
+    const n = new Date();
+    return { year: n.getFullYear(), month: n.getMonth() };
+  });
+  const [coverageEntries, setCoverageEntries] = useState([]);
 
   useEffect(() => {
     const init = async () => {
@@ -303,6 +408,16 @@ export default function Dashboard() {
     init();
   }, []);
 
+  useEffect(() => {
+    const start = new Date(coverageMonth.year, coverageMonth.month, 1);
+    const end = new Date(coverageMonth.year, coverageMonth.month + 1, 0);
+    timesheetsApi.getAll({
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+      $expand: 'project',
+    }).then(setCoverageEntries).catch(console.error);
+  }, [coverageMonth]);
+
   const weekHours = weekEntries.reduce((s, e) => s + (e.hours || 0), 0);
   const monthHours = monthEntries.reduce((s, e) => s + (e.hours || 0), 0);
   const monthEarnings = monthEntries.reduce((s, e) => s + (e.amount || 0), 0);
@@ -314,6 +429,59 @@ export default function Dashboard() {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
   }, []);
+
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  const coverageWeeks = useMemo(() => {
+    const { year, month } = coverageMonth;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Group entries by date
+    const byDate = {};
+    for (const entry of coverageEntries) {
+      if (!byDate[entry.date]) byDate[entry.date] = [];
+      byDate[entry.date].push(entry);
+    }
+
+    // Build flat day list
+    const allDays = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      const dateStr = date.toISOString().split('T')[0];
+      const dow = date.getDay(); // 0=Sun, 6=Sat
+      const isWeekend = dow === 0 || dow === 6;
+      const isFuture = date > today;
+      const isToday = dateStr === todayStr;
+      const entries = byDate[dateStr] || [];
+      const totalHours = entries.reduce((s, e) => s + (e.hours || 0), 0);
+
+      allDays.push({ day: d, dateStr, dow, isWeekend, isFuture, isToday, entries, totalHours });
+    }
+
+    // Group into weeks (Mon=0 col, Sun=6 col) — grid uses Mon-Sun order
+    const weeks = [];
+    let currentWeek = new Array(7).fill(null);
+    for (const d of allDays) {
+      // Convert JS day (0=Sun) to Mon-first index (Mon=0, Tue=1, ..., Sun=6)
+      const col = d.dow === 0 ? 6 : d.dow - 1;
+      currentWeek[col] = d;
+      if (col === 6) {
+        weeks.push(currentWeek);
+        currentWeek = new Array(7).fill(null);
+      }
+    }
+    // Push last partial week if it has any days
+    if (currentWeek.some(Boolean)) weeks.push(currentWeek);
+
+    return weeks;
+  }, [coverageMonth, coverageEntries, todayStr]);
+
+  const coverageMonthLabel = useMemo(() => {
+    const date = new Date(coverageMonth.year, coverageMonth.month, 1);
+    return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  }, [coverageMonth]);
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading dashboard..." /></div>;
 
@@ -380,6 +548,90 @@ export default function Dashboard() {
   return (
     <div className={styles.page}>
       <Text className={styles.title}>Dashboard</Text>
+
+      {/* Timesheet Coverage */}
+      <Card className={styles.tsCoverageCard}>
+        <div className={styles.tsCoverageHeader}>
+          <Text className={styles.tsCoverageTitle}>Timesheet Coverage</Text>
+          <div className={styles.tsCoverageNav}>
+            <Button
+              appearance="subtle"
+              icon={<ChevronLeftRegular />}
+              size="small"
+              onClick={() => setCoverageMonth((prev) => {
+                const d = new Date(prev.year, prev.month - 1, 1);
+                return { year: d.getFullYear(), month: d.getMonth() };
+              })}
+            />
+            <Text className={styles.tsCoverageMonthLabel}>{coverageMonthLabel}</Text>
+            <Button
+              appearance="subtle"
+              icon={<ChevronRightRegular />}
+              size="small"
+              onClick={() => setCoverageMonth((prev) => {
+                const d = new Date(prev.year, prev.month + 1, 1);
+                return { year: d.getFullYear(), month: d.getMonth() };
+              })}
+            />
+          </div>
+        </div>
+        <div className={styles.tsCoverageDayHeaders}>
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((h) => (
+            <div key={h} className={styles.tsCoverageDayHeaderCell}>{h}</div>
+          ))}
+        </div>
+        {coverageWeeks.map((week, wi) => (
+          <div key={wi} className={styles.tsCoverageWeek}>
+            {week.map((d, ci) => {
+              if (!d) return <div key={ci} className={styles.tsCoverageDayEmpty} />;
+
+              let cellClass;
+              if (d.isWeekend) {
+                cellClass = d.entries.length > 0 ? styles.tsCoverageWeekendGreen : styles.tsCoverageWeekend;
+              } else if (d.isFuture) {
+                cellClass = styles.tsCoverageGrey;
+              } else {
+                cellClass = d.entries.length > 0 ? styles.tsCoverageGreen : styles.tsCoverageAmber;
+              }
+
+              const tooltipContent = d.entries.length > 0
+                ? d.entries.map((e) =>
+                  `${e.project?.name || e.projectName || 'Unknown'}: ${e.hours}h — ${fmt.format(e.amount || 0)}`
+                ).join('\n')
+                : 'No timesheets';
+
+              return (
+                <Tooltip
+                  key={d.day}
+                  content={<span style={{ whiteSpace: 'pre-line' }}>{tooltipContent}</span>}
+                  relationship="description"
+                  positioning="above"
+                >
+                  <div
+                    className={mergeClasses(
+                      styles.tsCoverageDay,
+                      cellClass,
+                      d.isToday && styles.tsCoverageCurrent,
+                    )}
+                    onClick={() => {
+                      if (d.entries.length > 0) {
+                        navigate(`/timesheets?$filter=date eq '${d.dateStr}'`);
+                      } else {
+                        navigate(`/timesheets/new?date=${d.dateStr}`);
+                      }
+                    }}
+                  >
+                    <span className={styles.tsCoverageDayNum}>{d.day}</span>
+                    {d.totalHours > 0 && (
+                      <span className={styles.tsCoverageDayHours}>{d.totalHours}h</span>
+                    )}
+                  </div>
+                </Tooltip>
+              );
+            })}
+          </div>
+        ))}
+      </Card>
 
       {/* Row 1 — Activity */}
       <Text className={styles.rowTitle}>Activity</Text>
