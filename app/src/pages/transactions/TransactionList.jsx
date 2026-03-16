@@ -25,8 +25,7 @@ import PaginationControls from '../../components/PaginationControls.jsx';
 import ViewToggle from '../../components/ViewToggle.jsx';
 import ListView from '../../components/ListView.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
-import { usePagination } from '../../hooks/usePagination.js';
-import { useListState } from '../../hooks/useListState.js';
+import { useODataList } from '../../hooks/useODataList.js';
 import { transactionsApi } from '../../api/index.js';
 import TransactionDrawer from './TransactionDrawer.jsx';
 
@@ -120,10 +119,6 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground3,
   },
-  dot: {
-    fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground3,
-  },
   amountText: {
     fontSize: tokens.fontSizeBase300,
     fontWeight: tokens.fontWeightSemibold,
@@ -153,6 +148,15 @@ function getMonthRange() {
     startDate: start.toISOString().split('T')[0],
     endDate: end.toISOString().split('T')[0],
   };
+}
+
+function deriveRange(startDate, endDate) {
+  const week = getWeekRange();
+  const month = getMonthRange();
+  if (!startDate && !endDate) return 'all';
+  if (startDate === week.startDate && endDate === week.endDate) return 'week';
+  if (startDate === month.startDate && endDate === month.endDate) return 'month';
+  return 'custom';
 }
 
 const fmtGBP = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
@@ -223,62 +227,64 @@ const baseColumns = [
 export default function TransactionList() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filters, setFilters] = useListState('transactions', {
-    statusFilter: 'all', range: 'all', accountFilter: '',
-    customStart: getWeekRange().startDate, customEnd: getWeekRange().endDate,
-    viewMode: 'grid', page: 1, pageSize: 25,
+
+  // --- OData-driven data flow ---
+  const {
+    getFilterValue, setFilterValues,
+    items, totalCount, loading, refresh,
+    page, pageSize, totalPages, setPage, setPageSize,
+    summary,
+  } = useODataList({
+    key: 'transactions',
+    apiFn: transactionsApi.getAll,
+    filters: [
+      { id: 'startDate',    field: 'date',        operator: 'ge', defaultValue: '', type: 'date' },
+      { id: 'endDate',      field: 'date',        operator: 'le', defaultValue: '', type: 'date' },
+      { id: 'status',       field: 'status',      operator: 'eq', defaultValue: '', type: 'string' },
+      { id: 'accountName',  field: 'accountName',  operator: 'eq', defaultValue: '', type: 'string' },
+    ],
+    defaultOrderBy: 'date desc',
+    defaultPageSize: 25,
+    summaryFields: ['amount'],
   });
-  const { statusFilter, range, accountFilter, customStart, customEnd, viewMode } = filters;
+
+  const startDate = getFilterValue('startDate') || '';
+  const endDate = getFilterValue('endDate') || '';
+  const statusFilter = getFilterValue('status') || '';
+  const accountName = getFilterValue('accountName') || '';
+  const range = deriveRange(startDate, endDate);
+
+  // --- View mode: display preference, not part of OData ---
+  const [viewMode, setViewMode] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('transactions.viewMode')) || 'grid'; } catch { return 'grid'; }
+  });
+  const handleViewModeChange = useCallback((v) => {
+    setViewMode(v);
+    try { localStorage.setItem('transactions.viewMode', JSON.stringify(v)); } catch { /* ignore */ }
+  }, []);
+
+  // --- Reference data for account dropdown ---
+  const [accounts, setAccounts] = useState([]);
   const [selectedTransactionId, setSelectedTransactionId] = useState(null);
 
-  const dateRange = useMemo(() => {
-    if (range === 'week') return getWeekRange();
-    if (range === 'month') return getMonthRange();
-    if (range === 'custom') return { startDate: customStart, endDate: customEnd };
-    return {};
-  }, [range, customStart, customEnd]);
-
-  const refreshEntries = useCallback(() => {
-    const params = { ...dateRange };
-    if (statusFilter !== 'all') params.status = statusFilter;
-    return transactionsApi.getAll(params).then(setEntries);
-  }, [dateRange, statusFilter]);
-
   useEffect(() => {
-    setLoading(true);
-    refreshEntries().finally(() => setLoading(false));
-  }, [refreshEntries]);
+    transactionsApi.getAccounts().then(setAccounts);
+  }, []);
 
-  const accounts = useMemo(() => {
-    const names = [...new Set(entries.map((e) => e.accountName).filter(Boolean))];
-    names.sort();
-    return names;
-  }, [entries]);
-
-  // Validate persisted account filter against loaded data
-  useEffect(() => {
-    const accountNames = new Set(entries.map((e) => e.accountName).filter(Boolean));
-    if (filters.accountFilter && !accountNames.has(filters.accountFilter)) setFilters({ accountFilter: '' });
-  }, [entries]);
-
+  // --- Search (client-side, current page only) ---
+  const [search, setSearch] = useState('');
   const filtered = useMemo(() => {
-    let result = entries;
-    if (accountFilter) {
-      result = result.filter((e) => e.accountName === accountFilter);
-    }
-    if (!search) return result;
+    if (!search) return items;
     const q = search.toLowerCase();
-    return result.filter((e) =>
+    return items.filter((e) =>
       (e.description || '').toLowerCase().includes(q) ||
       (e.accountName || '').toLowerCase().includes(q) ||
       (e.accountNumber || '').toLowerCase().includes(q) ||
       (e.reference || '').toLowerCase().includes(q)
     );
-  }, [entries, search, accountFilter]);
+  }, [items, search]);
 
+  // --- Columns (with quick view action) ---
   const columns = useMemo(() => [
     createTableColumn({
       columnId: 'actions',
@@ -300,19 +306,6 @@ export default function TransactionList() {
     ...baseColumns,
   ], []);
 
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered, {
-    page: filters.page, pageSize: filters.pageSize,
-    onPageChange: (p) => setFilters({ page: p }),
-    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
-  });
-
-  const totals = useMemo(() => {
-    const credits = filtered.filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0);
-    const debits = filtered.filter((e) => e.amount < 0).reduce((sum, e) => sum + e.amount, 0);
-    const unmatched = filtered.filter((e) => e.status === 'unmatched').length;
-    return { credits, debits, net: credits + debits, unmatched, count: filtered.length };
-  }, [filtered]);
-
   return (
     <div className={styles.page}>
       <div className={styles.header}>
@@ -324,30 +317,43 @@ export default function TransactionList() {
       />
       <div className={styles.filters}>
         <Text size={200} weight="semibold">Status:</Text>
-        <ToggleButton size="small" checked={statusFilter === 'all'} onClick={() => setFilters({ statusFilter: 'all', page: 1 })}>All</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'unmatched'} onClick={() => setFilters({ statusFilter: 'unmatched', page: 1 })}>Unmatched</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'matched'} onClick={() => setFilters({ statusFilter: 'matched', page: 1 })}>Matched</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'ignored'} onClick={() => setFilters({ statusFilter: 'ignored', page: 1 })}>Ignored</ToggleButton>
+        <ToggleButton size="small" checked={!statusFilter} onClick={() => setFilterValues({ status: '' })}>All</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'unmatched'} onClick={() => setFilterValues({ status: 'unmatched' })}>Unmatched</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'matched'} onClick={() => setFilterValues({ status: 'matched' })}>Matched</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'ignored'} onClick={() => setFilterValues({ status: 'ignored' })}>Ignored</ToggleButton>
 
         <Text size={200} weight="semibold" style={{ marginLeft: 12 }}>Period:</Text>
-        <ToggleButton size="small" checked={range === 'all'} onClick={() => setFilters({ range: 'all', page: 1 })}>All Time</ToggleButton>
-        <ToggleButton size="small" checked={range === 'month'} onClick={() => setFilters({ range: 'month', page: 1 })}>This Month</ToggleButton>
-        <ToggleButton size="small" checked={range === 'week'} onClick={() => setFilters({ range: 'week', page: 1 })}>This Week</ToggleButton>
-        <ToggleButton size="small" checked={range === 'custom'} onClick={() => setFilters({ range: 'custom', page: 1 })}>Custom</ToggleButton>
+        <ToggleButton size="small" checked={range === 'all'} onClick={() => {
+          setFilterValues({ startDate: '', endDate: '' });
+        }}>All Time</ToggleButton>
+        <ToggleButton size="small" checked={range === 'month'} onClick={() => {
+          const m = getMonthRange();
+          setFilterValues({ startDate: m.startDate, endDate: m.endDate });
+        }}>This Month</ToggleButton>
+        <ToggleButton size="small" checked={range === 'week'} onClick={() => {
+          const w = getWeekRange();
+          setFilterValues({ startDate: w.startDate, endDate: w.endDate });
+        }}>This Week</ToggleButton>
+        <ToggleButton size="small" checked={range === 'custom'} onClick={() => {
+          if (range !== 'custom') {
+            const today = new Date().toISOString().split('T')[0];
+            setFilterValues({ startDate: getMonthRange().startDate, endDate: today });
+          }
+        }}>Custom</ToggleButton>
         {range === 'custom' && (
           <>
             <input
               type="date"
               className={styles.dateInput}
-              value={customStart}
-              onChange={(e) => setFilters({ customStart: e.target.value, page: 1 })}
+              value={startDate}
+              onChange={(e) => setFilterValues({ startDate: e.target.value })}
             />
             <Text size={200}>to</Text>
             <input
               type="date"
               className={styles.dateInput}
-              value={customEnd}
-              onChange={(e) => setFilters({ customEnd: e.target.value, page: 1 })}
+              value={endDate}
+              onChange={(e) => setFilterValues({ endDate: e.target.value })}
             />
           </>
         )}
@@ -357,8 +363,8 @@ export default function TransactionList() {
             <Text size={200} weight="semibold" style={{ marginLeft: 12 }}>Account:</Text>
             <Select
               size="small"
-              value={accountFilter}
-              onChange={(e, data) => setFilters({ accountFilter: data.value, page: 1 })}
+              value={accountName}
+              onChange={(e, data) => setFilterValues({ accountName: data.value })}
               style={{ minWidth: 160 }}
             >
               <option value="">All Accounts</option>
@@ -369,7 +375,7 @@ export default function TransactionList() {
           </>
         )}
         <div style={{ marginLeft: 'auto' }}>
-          <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
+          <ViewToggle value={viewMode} onChange={handleViewModeChange} />
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
@@ -379,7 +385,7 @@ export default function TransactionList() {
           <div className={styles.empty}><Text>No transactions found.</Text></div>
         ) : viewMode === 'grid' ? (
           <DataGrid
-            items={pageItems}
+            items={filtered}
             columns={columns}
             sortable
             resizableColumns
@@ -402,7 +408,7 @@ export default function TransactionList() {
           </DataGrid>
         ) : viewMode === 'list' ? (
           <ListView
-            items={pageItems}
+            items={filtered}
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/transactions/${item._id}`)}
             renderTopLine={(item) => (
@@ -438,7 +444,7 @@ export default function TransactionList() {
           />
         ) : (
           <CardView
-            items={pageItems}
+            items={filtered}
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/transactions/${item._id}`)}
             renderHeader={(item) => (
@@ -479,41 +485,41 @@ export default function TransactionList() {
         )}
       </div>
       <PaginationControls
-        page={page} pageSize={pageSize} totalItems={totalItems}
+        page={page} pageSize={pageSize} totalItems={totalCount}
         totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
       />
-      {filtered.length > 0 && (
+      {totalCount > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Credits</Text>
             <Text className={styles.summaryValue} style={{ color: '#107C10' }}>
-              {fmtGBP.format(totals.credits)}
+              {fmtGBP.format(summary.credits ?? 0)}
             </Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Debits</Text>
             <Text className={styles.summaryValue} style={{ color: '#D13438' }}>
-              {fmtGBP.format(totals.debits)}
+              {fmtGBP.format(summary.debits ?? 0)}
             </Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Net</Text>
-            <Text className={styles.summaryValue}>{fmtGBP.format(totals.net)}</Text>
+            <Text className={styles.summaryValue}>{fmtGBP.format(summary.amount ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Unmatched</Text>
-            <Text className={styles.summaryValue}>{totals.unmatched}</Text>
+            <Text className={styles.summaryValue}>{summary.unmatched ?? 0}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Transactions</Text>
-            <Text className={styles.summaryValue}>{totals.count}</Text>
+            <Text className={styles.summaryValue}>{totalCount}</Text>
           </div>
         </div>
       )}
       <TransactionDrawer
         transactionId={selectedTransactionId}
         onClose={() => setSelectedTransactionId(null)}
-        onMutate={refreshEntries}
+        onMutate={refresh}
       />
     </div>
   );

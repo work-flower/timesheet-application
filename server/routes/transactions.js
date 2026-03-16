@@ -7,6 +7,16 @@ router.get('/\\$metadata', (req, res) => {
   res.json(transactionService.transactionSchema);
 });
 
+router.get('/accounts', async (req, res) => {
+  try {
+    const accounts = await transactionService.getDistinctAccounts();
+    res.json(accounts);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const result = await transactionService.getAll(req.query);

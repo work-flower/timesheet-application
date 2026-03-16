@@ -23,12 +23,31 @@ export async function getAll(query = {}) {
     if (query.endDate) baseFilter.date.$lte = query.endDate;
   }
 
-  const { results: entries, totalCount } = await buildQuery(
+  const { results: entries, totalCount, summaryData } = await buildQuery(
     transactions, query, { date: -1 }, baseFilter
   );
 
+  // Enhance summary with transaction-specific aggregations (credits, debits, unmatched)
+  let finalSummary = summaryData;
+  if (query.$summary) {
+    const { results: allMatching } = await buildQuery(
+      transactions, { $filter: query.$filter }, { date: -1 }, baseFilter
+    );
+    const credits = allMatching.filter((t) => (t.amount || 0) > 0).reduce((sum, t) => sum + t.amount, 0);
+    const debits = allMatching.filter((t) => (t.amount || 0) < 0).reduce((sum, t) => sum + t.amount, 0);
+    const unmatched = allMatching.filter((t) => t.status === 'unmatched').length;
+    finalSummary = { ...(summaryData || {}), credits, debits, unmatched };
+  }
+
   const items = applySelect(entries, query.$select);
-  return formatResponse(items, totalCount, query.$count === 'true');
+  return formatResponse(items, totalCount, query.$count === 'true', finalSummary);
+}
+
+export async function getDistinctAccounts() {
+  const all = await transactions.find({});
+  const names = [...new Set(all.map((t) => t.accountName).filter(Boolean))];
+  names.sort();
+  return names;
 }
 
 export async function getById(id) {
