@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
@@ -23,8 +23,7 @@ import PaginationControls from '../../components/PaginationControls.jsx';
 import ViewToggle from '../../components/ViewToggle.jsx';
 import ListView from '../../components/ListView.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
-import { usePagination } from '../../hooks/usePagination.js';
-import { useListState } from '../../hooks/useListState.js';
+import { useODataList } from '../../hooks/useODataList.js';
 import { invoicesApi, clientsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -215,69 +214,59 @@ const columns = [
 export default function InvoiceList() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const [invoices, setInvoices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [clients, setClients] = useState([]);
-  const [filters, setFilters] = useListState('invoices', { statusFilter: '', clientId: '', paymentFilter: '', viewMode: 'grid', page: 1, pageSize: 25 });
-  const { statusFilter, clientId, paymentFilter, viewMode } = filters;
-  const [selected, setSelected] = useState(new Set());
-  const [deleteTarget, setDeleteTarget] = useState(null);
 
-  useEffect(() => {
-    clientsApi.getAll().then((c) => {
-      setClients(c);
-      // Clear stale localStorage ID that no longer exists
-      const clientIds = new Set(c.map((cl) => cl._id));
-      if (!clientIds.has(filters.clientId)) setFilters({ clientId: '' });
-    });
-  }, []);
-
-  useEffect(() => {
-    setLoading(true);
-    const params = {};
-    if (statusFilter) params.status = statusFilter;
-    if (clientId) params.clientId = clientId;
-    invoicesApi.getAll(params)
-      .then(setInvoices)
-      .finally(() => setLoading(false));
-  }, [statusFilter, clientId]);
-
-  const filteredInvoices = useMemo(() => {
-    if (!paymentFilter) return invoices;
-    return invoices.filter(inv => inv.paymentStatus === paymentFilter);
-  }, [invoices, paymentFilter]);
-
-  const totals = useMemo(() => {
-    const totalAmount = filteredInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
-    const unpaidAmount = filteredInvoices
-      .filter(inv => inv.status === 'posted' && inv.paymentStatus !== 'paid')
-      .reduce((sum, inv) => sum + (inv.total || 0), 0);
-    const paidAmount = filteredInvoices
-      .filter(inv => inv.paymentStatus === 'paid')
-      .reduce((sum, inv) => sum + (inv.total || 0), 0);
-    return { totalAmount, unpaidAmount, paidAmount };
-  }, [filteredInvoices]);
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    try {
-      await invoicesApi.delete(deleteTarget);
-      setInvoices((prev) => prev.filter((inv) => inv._id !== deleteTarget));
-    } catch (err) {
-      alert(err.message);
-    }
-    setDeleteTarget(null);
-    setSelected(new Set());
-  };
-
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filteredInvoices, {
-    page: filters.page, pageSize: filters.pageSize,
-    onPageChange: (p) => setFilters({ page: p }),
-    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
+  // --- OData-driven data flow ---
+  const {
+    getFilterValue, setFilterValues,
+    items, totalCount, loading, refresh,
+    page, pageSize, totalPages, setPage, setPageSize,
+    summary,
+  } = useODataList({
+    key: 'invoices',
+    apiFn: invoicesApi.getAll,
+    filters: [
+      { id: 'status',        field: 'status',        operator: 'eq', defaultValue: '', type: 'string' },
+      { id: 'clientId',      field: 'clientId',      operator: 'eq', defaultValue: '', type: 'string' },
+      { id: 'paymentStatus', field: 'paymentStatus', operator: 'eq', defaultValue: '', type: 'string' },
+    ],
+    defaultOrderBy: 'createdAt desc',
+    defaultPageSize: 25,
+    summaryFields: ['total'],
   });
 
+  const statusFilter = getFilterValue('status') || '';
+  const clientId = getFilterValue('clientId') || '';
+  const paymentFilter = getFilterValue('paymentStatus') || '';
+
+  // --- View mode: display preference, not part of OData ---
+  const [viewMode, setViewMode] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('invoices.viewMode')) || 'grid'; } catch { return 'grid'; }
+  });
+  const handleViewModeChange = useCallback((v) => {
+    setViewMode(v);
+    try { localStorage.setItem('invoices.viewMode', JSON.stringify(v)); } catch { /* ignore */ }
+  }, []);
+
+  // --- Reference data for dropdowns ---
+  const [selected, setSelected] = useState(new Set());
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [clients, setClients] = useState([]);
+
+  useEffect(() => {
+    clientsApi.getAll().then(setClients);
+  }, []);
+
+  // --- Delete handler ---
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    await invoicesApi.delete(deleteTarget);
+    setDeleteTarget(null);
+    setSelected(new Set());
+    refresh();
+  };
+
   const selectedId = selected.size === 1 ? [...selected][0] : null;
-  const selectedInvoice = selectedId ? invoices.find(i => i._id === selectedId) : null;
+  const selectedInvoice = selectedId ? items.find(i => i._id === selectedId) : null;
   const canDelete = selectedInvoice?.status === 'draft';
   const fmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
 
@@ -294,16 +283,16 @@ export default function InvoiceList() {
       />
       <div className={styles.filters}>
         <Text size={200} weight="semibold">Status:</Text>
-        <ToggleButton size="small" checked={statusFilter === ''} onClick={() => setFilters({ statusFilter: '', page: 1 })}>All</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'draft'} onClick={() => setFilters({ statusFilter: 'draft', page: 1 })}>Draft</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'confirmed'} onClick={() => setFilters({ statusFilter: 'confirmed', page: 1 })}>Confirmed</ToggleButton>
-        <ToggleButton size="small" checked={statusFilter === 'posted'} onClick={() => setFilters({ statusFilter: 'posted', page: 1 })}>Posted</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === ''} onClick={() => setFilterValues({ status: '' })}>All</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'draft'} onClick={() => setFilterValues({ status: 'draft' })}>Draft</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'confirmed'} onClick={() => setFilterValues({ status: 'confirmed' })}>Confirmed</ToggleButton>
+        <ToggleButton size="small" checked={statusFilter === 'posted'} onClick={() => setFilterValues({ status: 'posted' })}>Posted</ToggleButton>
 
         <Text size={200} weight="semibold" style={{ marginLeft: 12 }}>Client:</Text>
         <Select
           size="small"
           value={clientId}
-          onChange={(e, data) => setFilters({ clientId: data.value, page: 1 })}
+          onChange={(e, data) => setFilterValues({ clientId: data.value })}
           style={{ minWidth: 160 }}
         >
           <option value="">All Clients</option>
@@ -316,7 +305,7 @@ export default function InvoiceList() {
         <Select
           size="small"
           value={paymentFilter}
-          onChange={(e, data) => setFilters({ paymentFilter: data.value, page: 1 })}
+          onChange={(e, data) => setFilterValues({ paymentStatus: data.value })}
           style={{ minWidth: 120 }}
         >
           <option value="">All</option>
@@ -325,17 +314,17 @@ export default function InvoiceList() {
           <option value="overdue">Overdue</option>
         </Select>
         <div style={{ marginLeft: 'auto' }}>
-          <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
+          <ViewToggle value={viewMode} onChange={handleViewModeChange} />
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div className={styles.loading}><Spinner label="Loading..." /></div>
-        ) : filteredInvoices.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className={styles.empty}><Text>No invoices found.</Text></div>
         ) : viewMode === 'grid' ? (
           <DataGrid
-            items={pageItems}
+            items={items}
             columns={columns}
             sortable
             getRowId={(item) => item._id}
@@ -359,7 +348,7 @@ export default function InvoiceList() {
           </DataGrid>
         ) : viewMode === 'list' ? (
           <ListView
-            items={pageItems}
+            items={items}
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/invoices/${item._id}`)}
             renderTopLine={(item) => (
@@ -402,7 +391,7 @@ export default function InvoiceList() {
           />
         ) : (
           <CardView
-            items={pageItems}
+            items={items}
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/invoices/${item._id}`)}
             renderHeader={(item) => (
@@ -449,26 +438,18 @@ export default function InvoiceList() {
         )}
       </div>
       <PaginationControls
-        page={page} pageSize={pageSize} totalItems={totalItems}
+        page={page} pageSize={pageSize} totalItems={totalCount}
         totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
       />
-      {filteredInvoices.length > 0 && (
+      {totalCount > 0 && (
         <div className={styles.summary}>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Amount</Text>
-            <Text className={styles.summaryValue}>{fmt.format(totals.totalAmount)}</Text>
-          </div>
-          <div className={styles.summaryItem}>
-            <Text className={styles.summaryLabel}>Unpaid</Text>
-            <Text className={styles.summaryValue}>{fmt.format(totals.unpaidAmount)}</Text>
-          </div>
-          <div className={styles.summaryItem}>
-            <Text className={styles.summaryLabel}>Paid</Text>
-            <Text className={styles.summaryValue}>{fmt.format(totals.paidAmount)}</Text>
+            <Text className={styles.summaryValue}>{fmt.format(summary.total ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Invoices</Text>
-            <Text className={styles.summaryValue}>{filteredInvoices.length}</Text>
+            <Text className={styles.summaryValue}>{totalCount}</Text>
           </div>
         </div>
       )}

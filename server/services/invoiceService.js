@@ -21,7 +21,7 @@ export async function getAll(query = {}) {
     if (query.endDate) baseFilter.invoiceDate.$lte = query.endDate;
   }
 
-  const { results, totalCount } = await buildQuery(invoices, query, { createdAt: -1 }, baseFilter);
+  const { results, totalCount, summaryData } = await buildQuery(invoices, query, { createdAt: -1 }, baseFilter);
 
   const allClients = await clients.find({});
   const clientMap = Object.fromEntries(allClients.map(c => [c._id, c]));
@@ -41,7 +41,7 @@ export async function getAll(query = {}) {
   }
 
   const items = applySelect(enriched, query.$select);
-  return formatResponse(items, totalCount, query.$count === 'true');
+  return formatResponse(items, totalCount, query.$count === 'true', summaryData);
 }
 
 export async function getById(id) {
