@@ -16,7 +16,14 @@ async function request(path, options = {}) {
 
 // Clients
 export const clientsApi = {
-  getAll: () => request('/clients'),
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/clients${query ? `?${query}` : ''}`);
+  },
   getById: (id) => request(`/clients/${id}`),
   create: (data) => request('/clients', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),

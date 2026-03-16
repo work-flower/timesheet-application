@@ -13,6 +13,9 @@ const typeToOp = {
 /**
  * Extract UI filter values from a $filter string.
  *
+ * Uses odata-filter-to-ast for robust AST-based parsing. Best-effort: matched
+ * clauses populate UI filter controls, unmatched clauses are silently skipped.
+ *
  * @param {string} filterString - OData $filter string (e.g. "date ge '2026-03-09' and clientId eq 'abc'")
  * @param {Array} filterDefs - Array of { id, field, operator } filter definitions
  * @returns {Object} Map of { filterId: extractedValue } for matched clauses

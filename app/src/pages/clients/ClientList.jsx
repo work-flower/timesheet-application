@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
@@ -21,8 +21,7 @@ import PaginationControls from '../../components/PaginationControls.jsx';
 import ViewToggle from '../../components/ViewToggle.jsx';
 import ListView from '../../components/ListView.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
-import { usePagination } from '../../hooks/usePagination.js';
-import { useListState } from '../../hooks/useListState.js';
+import { useODataList } from '../../hooks/useODataList.js';
 import { clientsApi } from '../../api/index.js';
 
 const useStyles = makeStyles({
@@ -45,6 +44,7 @@ const useStyles = makeStyles({
     padding: '8px 16px',
     backgroundColor: tokens.colorNeutralBackground1,
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    flexWrap: 'wrap',
   },
   loading: {
     display: 'flex',
@@ -61,7 +61,7 @@ const useStyles = makeStyles({
   },
   row: {
     cursor: 'pointer',
-    '&:hover': {
+    ':hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
   },
@@ -123,40 +123,51 @@ const columns = [
 export default function ClientList() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filters, setFilters] = useListState('clients', { viewMode: 'grid', page: 1, pageSize: 25 });
-  const { viewMode } = filters;
-  const [selected, setSelected] = useState(new Set());
-  const [deleteTarget, setDeleteTarget] = useState(null);
 
-  useEffect(() => {
-    clientsApi.getAll()
-      .then(setClients)
-      .finally(() => setLoading(false));
+  // --- OData-driven data flow ---
+  const {
+    items, totalCount, loading, refresh,
+    page, pageSize, totalPages, setPage, setPageSize,
+  } = useODataList({
+    key: 'clients',
+    apiFn: clientsApi.getAll,
+    filters: [],
+    defaultOrderBy: 'companyName asc',
+    defaultPageSize: 25,
+  });
+
+  // --- View mode: display preference, not part of OData ---
+  const [viewMode, setViewMode] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('clients.viewMode')) || 'grid'; } catch { return 'grid'; }
+  });
+  const handleViewModeChange = useCallback((v) => {
+    setViewMode(v);
+    try { localStorage.setItem('clients.viewMode', JSON.stringify(v)); } catch { /* ignore */ }
   }, []);
 
-  const filtered = clients.filter((c) =>
-    !search || c.companyName.toLowerCase().includes(search.toLowerCase()) ||
-    c.primaryContactName?.toLowerCase().includes(search.toLowerCase())
-  );
+  // --- Search (client-side, filters current page) ---
+  const [search, setSearch] = useState('');
+  const filtered = useMemo(() => {
+    if (!search) return items;
+    const q = search.toLowerCase();
+    return items.filter((c) =>
+      (c.companyName || '').toLowerCase().includes(q) ||
+      (c.primaryContactName || '').toLowerCase().includes(q)
+    );
+  }, [items, search]);
+
+  // --- Selection & delete ---
+  const [selected, setSelected] = useState(new Set());
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const selectedId = selected.size === 1 ? [...selected][0] : null;
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await clientsApi.delete(deleteTarget);
-    setClients((prev) => prev.filter((c) => c._id !== deleteTarget));
     setDeleteTarget(null);
     setSelected(new Set());
+    refresh();
   };
-
-  const { pageItems, page, pageSize, setPage, setPageSize, totalPages, totalItems } = usePagination(filtered, {
-    page: filters.page, pageSize: filters.pageSize,
-    onPageChange: (p) => setFilters({ page: p }),
-    onPageSizeChange: (ps) => setFilters({ pageSize: ps, page: 1 }),
-  });
-
-  const selectedId = selected.size === 1 ? [...selected][0] : null;
 
   return (
     <div className={styles.page}>
@@ -173,7 +184,7 @@ export default function ClientList() {
       />
       <div className={styles.filters}>
         <div style={{ marginLeft: 'auto' }}>
-          <ViewToggle value={viewMode} onChange={(v) => setFilters({ viewMode: v })} />
+          <ViewToggle value={viewMode} onChange={handleViewModeChange} />
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
@@ -183,7 +194,7 @@ export default function ClientList() {
           <div className={styles.empty}><Text>No clients found. Click 'New Client' to create one.</Text></div>
         ) : viewMode === 'grid' ? (
           <DataGrid
-            items={pageItems}
+            items={filtered}
             columns={columns}
             sortable
             getRowId={(item) => item._id}
@@ -211,7 +222,7 @@ export default function ClientList() {
           </DataGrid>
         ) : viewMode === 'list' ? (
           <ListView
-            items={pageItems}
+            items={filtered}
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/clients/${item._id}`)}
             renderTopLine={(item) => (
@@ -239,7 +250,7 @@ export default function ClientList() {
           />
         ) : (
           <CardView
-            items={pageItems}
+            items={filtered}
             getRowId={(item) => item._id}
             onItemClick={(item) => navigate(`/clients/${item._id}`)}
             renderHeader={(item) => (
@@ -264,7 +275,7 @@ export default function ClientList() {
         )}
       </div>
       <PaginationControls
-        page={page} pageSize={pageSize} totalItems={totalItems}
+        page={page} pageSize={pageSize} totalItems={totalCount}
         totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
       />
       <ConfirmDialog

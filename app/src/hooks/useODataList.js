@@ -67,6 +67,12 @@ function buildSearch(currentSearch, managedValues) {
  * Coordinator hook for OData-driven list views with URL-based filter state.
  *
  * Replaces useListState + usePagination + manual fetch for data-affecting state.
+ *
+ * Initial page load: URL $filter is passed as-is to the backend. The hook
+ * best-effort maps URL filter clauses to declared UI filters and persists
+ * matched values to localStorage. Unrecognised clauses are silently skipped.
+ *
+ * After init: UI filter state drives $filter building normally.
  */
 export function useODataList({
   key,
@@ -80,17 +86,19 @@ export function useODataList({
   const location = useLocation();
   const isInitRef = useRef(false);
 
+  // Raw URL $filter captured at mount — used as-is for the initial fetch only
+  const initFilterRef = useRef(new URLSearchParams(location.search).get('$filter'));
+
   // --- Initialization: URL → localStorage → defaults (single pass) ---
   const [state, setState] = useState(() => {
     const urlParams = new URLSearchParams(location.search);
     const ls = readLS(`odata.${key}`) || {};
 
-    // Parse $filter from URL or localStorage
+    // Parse $filter from URL or localStorage — best-effort map to UI filters
     const urlFilter = urlParams.get('$filter');
     const lsFilter = ls.$filter || '';
     const activeFilter = urlFilter ?? (lsFilter || null);
 
-    // Extract UI filter values from whichever $filter source we're using
     const urlFilterValues = activeFilter
       ? extractFilterValues(activeFilter, filterDefs)
       : {};
@@ -105,6 +113,14 @@ export function useODataList({
       } else {
         filterValues[def.id] = def.defaultValue;
       }
+    }
+
+    // Persist matched URL filter values to localStorage
+    if (urlFilter && Object.keys(urlFilterValues).length > 0) {
+      writeLS(`odata.${key}`, {
+        ...ls,
+        filterValues: { ...(ls.filterValues || {}), ...urlFilterValues },
+      });
     }
 
     // orderBy: URL > localStorage > default
@@ -131,11 +147,11 @@ export function useODataList({
   // --- Fetch counter for ignoring stale responses ---
   const fetchIdRef = useRef(0);
 
-  // --- Build API params from state ---
+  // --- Build API params from UI state ---
   const buildApiParams = useCallback(() => {
     const params = {};
 
-    // $filter
+    // $filter from declared UI filters
     const filterClauses = filterDefs.map((def) => ({
       field: def.field,
       operator: def.operator,
@@ -165,13 +181,12 @@ export function useODataList({
     return params;
   }, [filterValues, orderBy, page, pageSize, filterDefs, defaultOrderBy, summaryFields]);
 
-  // --- Fetch data ---
-  const fetchData = useCallback(async () => {
+  // --- Fetch data with given params ---
+  const doFetch = useCallback(async (params) => {
     const id = ++fetchIdRef.current;
     setLoading(true);
 
     try {
-      const params = buildApiParams();
       const result = await apiFn(params);
 
       // Stale response guard
@@ -197,32 +212,29 @@ export function useODataList({
     } finally {
       if (id === fetchIdRef.current) setLoading(false);
     }
-  }, [buildApiParams, apiFn]);
+  }, [apiFn]);
 
   // --- Sync URL when state changes (after init) ---
   useEffect(() => {
+    const params = buildApiParams();
+
     if (!isInitRef.current) {
       isInitRef.current = true;
-      // On init, just fetch — don't update URL unless filters differ from defaults
-      fetchData();
+
+      // Init: pass raw URL $filter as-is to backend (overrides UI-built filter)
+      if (initFilterRef.current) {
+        params.$filter = initFilterRef.current;
+        initFilterRef.current = null;
+      }
+
+      doFetch(params);
       return;
     }
 
-    // Build managed values for URL
+    // Post-init: sync URL from UI state, then fetch
     const managed = {};
-
-    const filterClauses = filterDefs.map((def) => ({
-      field: def.field,
-      operator: def.operator,
-      value: filterValues[def.id],
-      type: def.type || 'string',
-    }));
-    const filterStr = buildFilterString(filterClauses);
-    if (filterStr) managed.$filter = filterStr;
-
-    // Only put $orderby in URL if explicitly set (not the silent default)
+    if (params.$filter) managed.$filter = params.$filter;
     if (orderBy) managed.$orderby = orderBy;
-
     managed.$top = String(pageSize);
     managed.$skip = String((page - 1) * pageSize);
 
@@ -230,6 +242,7 @@ export function useODataList({
     navigate({ search: newSearch ? `?${newSearch}` : '' }, { replace: true });
 
     // Persist to localStorage
+    const filterStr = params.$filter || '';
     writeLS(`odata.${key}`, {
       filterValues,
       orderBy,
@@ -237,7 +250,7 @@ export function useODataList({
       $filter: filterStr,
     });
 
-    fetchData();
+    doFetch(params);
   }, [filterValues, orderBy, page, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Public API ---
@@ -268,8 +281,8 @@ export function useODataList({
   }, []);
 
   const refresh = useCallback(() => {
-    fetchData();
-  }, [fetchData]);
+    doFetch(buildApiParams());
+  }, [doFetch, buildApiParams]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
