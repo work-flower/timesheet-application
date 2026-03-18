@@ -201,16 +201,42 @@ export default function BackupPage() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
+  const pollOperation = useCallback(async (operationId, { onComplete, onFailed, onFinally }) => {
+    const poll = async () => {
+      try {
+        const op = await backupApi.getOperation(operationId);
+        if (op.status === 'completed') {
+          onComplete(op);
+          onFinally?.();
+        } else if (op.status === 'failed') {
+          onFailed(op.error);
+          onFinally?.();
+        } else {
+          setTimeout(poll, 2000);
+        }
+      } catch {
+        onFailed('Lost connection to server');
+        onFinally?.();
+      }
+    };
+    setTimeout(poll, 1000);
+  }, []);
+
   const handleBackupNow = async () => {
     setBacking(true);
     setMessage(null);
     try {
-      await backupApi.create();
-      showMessage('success', 'Backup created successfully.');
-      loadBackupList();
+      const { operationId } = await backupApi.create();
+      pollOperation(operationId, {
+        onComplete: () => {
+          showMessage('success', 'Backup created successfully.');
+          loadBackupList();
+        },
+        onFailed: (error) => showMessage('error', `Backup failed: ${error}`),
+        onFinally: () => setBacking(false),
+      });
     } catch (err) {
       showMessage('error', `Backup failed: ${err.message}`);
-    } finally {
       setBacking(false);
     }
   };
@@ -234,14 +260,20 @@ export default function BackupPage() {
   const handleRestore = async () => {
     if (!restoreTarget) return;
     setRestoring(true);
+    const key = restoreTarget.key;
+    setRestoreTarget(null);
     try {
-      await backupApi.restore(restoreTarget.key);
-      setRestoreTarget(null);
-      setShowReload(true);
-      showMessage('success', 'Data restored successfully. Please reload the page.');
+      const { operationId } = await backupApi.restore(key);
+      pollOperation(operationId, {
+        onComplete: () => {
+          setShowReload(true);
+          showMessage('success', 'Data restored successfully. Please reload the page.');
+        },
+        onFailed: (error) => showMessage('error', `Restore failed: ${error}`),
+        onFinally: () => setRestoring(false),
+      });
     } catch (err) {
       showMessage('error', `Restore failed: ${err.message}`);
-    } finally {
       setRestoring(false);
     }
   };
@@ -313,6 +345,15 @@ export default function BackupPage() {
           <Text className={styles.title}>Backup</Text>
         </div>
 
+        {(backing || restoring) && (
+          <MessageBar intent="info" style={{ marginBottom: 16 }}>
+            <MessageBarBody style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Spinner size="tiny" />
+              {backing ? 'Backup in progress...' : 'Restore in progress... This may take a moment.'}
+            </MessageBarBody>
+          </MessageBar>
+        )}
+
         {message && (
           <MessageBar intent={message.intent} style={{ marginBottom: 16 }}>
             <MessageBarBody>{message.text}</MessageBarBody>
@@ -359,7 +400,7 @@ export default function BackupPage() {
           </FormField>
           <FormField>
             <div className={styles.actions} style={{ marginTop: 24 }}>
-              <Button appearance="primary" icon={backing ? <Spinner size="tiny" /> : <CloudArrowUpRegular />} onClick={handleBackupNow} disabled={backing || !form.endpoint || !form.accessKeyId || !form.bucketName} size="small">
+              <Button appearance="primary" icon={backing ? <Spinner size="tiny" /> : <CloudArrowUpRegular />} onClick={handleBackupNow} disabled={backing || restoring || !form.endpoint || !form.accessKeyId || !form.bucketName} size="small">
                 {backing ? 'Backing up...' : 'Backup Now'}
               </Button>
             </div>
@@ -408,7 +449,7 @@ export default function BackupPage() {
           onClose={() => setRestoreTarget(null)}
           onConfirm={handleRestore}
           title="Restore Backup"
-          message={restoring ? 'Restoring... This may take a moment.' : `This will replace ALL current data with the backup from ${restoreTarget ? formatDate(restoreTarget.lastModified) : ''}. This cannot be undone.`}
+          message={`This will replace ALL current data with the backup from ${restoreTarget ? formatDate(restoreTarget.lastModified) : ''}. This cannot be undone.`}
         />
         <ConfirmDialog
           open={!!deleteTarget}

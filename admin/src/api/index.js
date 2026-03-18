@@ -45,6 +45,7 @@ export const backupApi = {
   updateConfig: (data) => request('/backup/config', { method: 'PUT', body: JSON.stringify(data) }),
   testConnection: (data) => request('/backup/test-connection', { method: 'POST', body: JSON.stringify(data) }),
   create: () => request('/backup/create', { method: 'POST', body: JSON.stringify({}) }),
+  getOperation: (id) => request(`/backup/operations/${id}`),
   list: () => request('/backup/list'),
   restore: (backupKey) => request('/backup/restore', { method: 'POST', body: JSON.stringify({ backupKey }) }),
   delete: (key) => request(`/backup/${encodeURIComponent(key)}`, { method: 'DELETE' }),

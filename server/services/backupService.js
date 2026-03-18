@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync, createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
+import crypto from 'crypto';
 import backupConfig from '../db/backupConfig.js';
 import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions } from '../db/index.js';
 
@@ -39,6 +40,59 @@ function copyDirSync(src, dest) {
 }
 
 let operationLock = false;
+
+// --- Background operation tracking ---
+
+const operations = new Map();
+const OPERATION_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function cleanupOperations() {
+  const now = Date.now();
+  for (const [id, op] of operations) {
+    if (op.completedAt && now - new Date(op.completedAt).getTime() > OPERATION_TTL_MS) {
+      operations.delete(id);
+    }
+  }
+}
+
+export function getOperation(id) {
+  return operations.get(id) || null;
+}
+
+export function startBackup() {
+  if (operationLock) throw new Error('Another backup or restore operation is in progress');
+  cleanupOperations();
+  const id = crypto.randomUUID();
+  operations.set(id, { type: 'backup', status: 'running', startedAt: new Date().toISOString() });
+
+  createBackup()
+    .then(result => {
+      operations.set(id, { ...operations.get(id), status: 'completed', result, completedAt: new Date().toISOString() });
+    })
+    .catch(err => {
+      operations.set(id, { ...operations.get(id), status: 'failed', error: err.message, completedAt: new Date().toISOString() });
+    });
+
+  return { operationId: id };
+}
+
+export function startRestore(backupKey) {
+  if (operationLock) throw new Error('Another backup or restore operation is in progress');
+  if (!backupKey) throw new Error('backupKey is required');
+  cleanupOperations();
+  const id = crypto.randomUUID();
+  operations.set(id, { type: 'restore', status: 'running', startedAt: new Date().toISOString() });
+
+  restoreFromBackup(backupKey)
+    .then(result => {
+      operations.set(id, { ...operations.get(id), status: 'completed', result, completedAt: new Date().toISOString() });
+    })
+    .catch(err => {
+      operations.set(id, { ...operations.get(id), status: 'failed', error: err.message, completedAt: new Date().toISOString() });
+    });
+
+  return { operationId: id };
+}
 
 function buildS3Client(config) {
   return new S3Client({
@@ -309,17 +363,17 @@ export async function restoreFromBackup(backupKey) {
     ];
 
     for (const { name, db } of collections) {
+      await db.remove({}, { multi: true });
       const filePath = join(extractDir, `${name}.json`);
       if (existsSync(filePath)) {
         const data = JSON.parse(readFileSync(filePath, 'utf-8'));
-        await db.remove({}, { multi: true });
         if (data.length > 0) {
           await db.insert(data);
         }
       }
     }
 
-    // Restore file directories
+    // Restore file directories — always clear, then copy from backup if present
     // v2 backups store files under files/ subdirectory; v1 backups store documents at top level
     const isV2 = existsSync(join(extractDir, 'files'));
     const fileDirs = [
@@ -330,14 +384,16 @@ export async function restoreFromBackup(backupKey) {
     ];
 
     for (const { target, restoreSubdir } of fileDirs) {
+      // Always clear existing directory
+      if (existsSync(target)) {
+        rmSync(target, { recursive: true, force: true });
+      }
+      // Copy from backup if present
       const restoreSource = join(extractDir, restoreSubdir);
       if (existsSync(restoreSource)) {
-        // Clear existing directory
-        if (existsSync(target)) {
-          rmSync(target, { recursive: true, force: true });
-        }
-        // Copy restored directory recursively
         copyDirSync(restoreSource, target);
+      } else {
+        mkdirSync(target, { recursive: true });
       }
     }
 

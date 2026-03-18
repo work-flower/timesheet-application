@@ -3,9 +3,10 @@ import {
   getConfig,
   updateConfig,
   testConnection,
-  createBackup,
+  startBackup,
+  startRestore,
+  getOperation,
   listBackups,
-  restoreFromBackup,
   deleteBackup,
 } from '../services/backupService.js';
 import { updateSchedule } from '../services/backupScheduler.js';
@@ -46,11 +47,11 @@ router.post('/test-connection', async (req, res) => {
   }
 });
 
-// POST /api/backup/create
-router.post('/create', async (req, res) => {
+// POST /api/backup/create — starts backup in background, returns operation ID
+router.post('/create', (req, res) => {
   try {
-    const result = await createBackup();
-    res.json(result);
+    const result = startBackup();
+    res.status(202).json(result);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: err.message });
@@ -68,17 +69,23 @@ router.get('/list', async (req, res) => {
   }
 });
 
-// POST /api/backup/restore
-router.post('/restore', async (req, res) => {
+// POST /api/backup/restore — starts restore in background, returns operation ID
+router.post('/restore', (req, res) => {
   try {
     const { backupKey } = req.body;
-    if (!backupKey) return res.status(400).json({ error: 'backupKey is required' });
-    const result = await restoreFromBackup(backupKey);
-    res.json(result);
+    const result = startRestore(backupKey);
+    res.status(202).json(result);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: err.message });
+    console.warn(err.message);
+    res.status(400).json({ error: err.message });
   }
+});
+
+// GET /api/backup/operations/:id — poll operation status
+router.get('/operations/:id', (req, res) => {
+  const operation = getOperation(req.params.id);
+  if (!operation) return res.status(404).json({ error: 'Operation not found' });
+  res.json(operation);
 });
 
 // DELETE /api/backup/:key(*) - wildcard to capture slashes in key
