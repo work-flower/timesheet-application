@@ -395,23 +395,37 @@ export default function DayTimelineCard({ date, onEventClick }) {
     ? `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(nowMinutes % 60).padStart(2, '0')}`
     : '';
 
+  const scrollTo = useCallback((node) => {
+    const target = isToday ? (nowMinutes / 30) * SLOT_HEIGHT - node.clientHeight / 2 : 16 * SLOT_HEIGHT;
+    node.scrollTop = Math.max(0, target);
+  }, [isToday, nowMinutes]);
+
   const scrollRef = useCallback((node) => {
     if (!node) return;
     scrollNodeRef.current = node;
-    // Scroll to current time (centered) on today, or 08:00 otherwise
-    const target = isToday ? (nowMinutes / 30) * SLOT_HEIGHT - node.clientHeight / 2 : 16 * SLOT_HEIGHT;
-    node.scrollTop = Math.max(0, target);
-  }, [isToday]); // eslint-disable-line react-hooks/exhaustive-deps
+    scrollTo(node);
+  }, [scrollTo]);
+
+  // Scroll when container first becomes visible (e.g. parent switches from display:none)
+  useEffect(() => {
+    const node = scrollNodeRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(() => {
+      if (node.clientHeight > 0) {
+        scrollTo(node);
+        observer.disconnect();
+      }
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [scrollTo]);
 
   // Re-scroll when date or events change
   useEffect(() => {
     const node = scrollNodeRef.current;
-    if (!node) return;
-    requestAnimationFrame(() => {
-      const target = isToday ? (nowMinutes / 30) * SLOT_HEIGHT - node.clientHeight / 2 : 16 * SLOT_HEIGHT;
-      node.scrollTop = Math.max(0, target);
-    });
-  }, [timelineDate, timelineEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!node || node.clientHeight === 0) return;
+    scrollTo(node);
+  }, [timelineDate, timelineEvents, scrollTo]);
 
   return (
     <Card className={styles.card}>
