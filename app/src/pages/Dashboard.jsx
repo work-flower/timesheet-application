@@ -648,25 +648,66 @@ export default function Dashboard() {
                 cellClass = d.entries.length > 0 ? styles.tsCoverageGreen : styles.tsCoverageAmber;
               }
 
-              const tsTooltip = d.entries.length > 0
-                ? d.entries.map((e) =>
-                  `${e.project?.name || e.projectName || 'Unknown'}: ${e.hours}h — ${fmt.format(e.amount || 0)}`
-                ).join('\n')
-                : 'No timesheets';
-              const evtTooltip = d.events.length > 0
-                ? d.events.map((ev) => {
-                  const time = ev.allDay ? 'All day' : new Date(ev.start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                  return `${time} — ${ev.summary} (${ev.sourceName})`;
-                }).join('\n')
-                : '';
-              const tooltipContent = evtTooltip
-                ? `${tsTooltip}\n\n📅 Calendar:\n${evtTooltip}`
-                : tsTooltip;
+              const tooltipContent = (
+                <div style={{ maxWidth: 280 }}>
+                  {d.entries.length > 0 ? d.entries.map((e, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 2 }}>
+                      <span style={{
+                        fontWeight: 600,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        flex: 1,
+                        minWidth: 0,
+                      }}>
+                        {e.project?.name || e.projectName || 'Unknown'}
+                      </span>
+                      <span style={{ flexShrink: 0, opacity: 0.7, fontSize: '0.9em' }}>{e.hours}h</span>
+                      <span style={{ flexShrink: 0, fontWeight: 600, fontSize: '0.9em' }}>{fmt.format(e.amount || 0)}</span>
+                    </div>
+                  )) : (
+                    <span style={{ opacity: 0.5 }}>No timesheets</span>
+                  )}
+                  {d.events.length > 0 && (
+                    <div style={{
+                      borderTop: d.entries.length > 0 ? '1px solid rgba(0,0,0,0.1)' : 'none',
+                      marginTop: d.entries.length > 0 ? 6 : 0,
+                      paddingTop: d.entries.length > 0 ? 6 : 0,
+                    }}>
+                      {d.events.slice(0, 5).map((ev, ei) => {
+                        const time = ev.allDay ? 'All day' : new Date(ev.start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <div key={ei} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                            <div style={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: '50%',
+                              backgroundColor: ev.sourceColour || '#0078D4',
+                              flexShrink: 0,
+                            }} />
+                            <span style={{ flexShrink: 0, opacity: 0.6, fontSize: '0.85em' }}>{time}</span>
+                            <span style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flex: 1,
+                              minWidth: 0,
+                            }}>{ev.summary}</span>
+                          </div>
+                        );
+                      })}
+                      {d.events.length > 5 && (
+                        <div style={{ opacity: 0.5, fontSize: '0.85em', marginTop: 2 }}>+{d.events.length - 5} more</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
 
               return (
                 <Tooltip
                   key={d.day}
-                  content={<span style={{ whiteSpace: 'pre-line' }}>{tooltipContent}</span>}
+                  content={tooltipContent}
                   relationship="description"
                   positioning="above"
                 >
