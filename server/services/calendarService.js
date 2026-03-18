@@ -97,6 +97,8 @@ export async function fetchAndCache(sourceId) {
     const windowEnd = new Date(now.getFullYear(), now.getMonth() + 4, 0);
 
     const events = [];
+    const cachedAt = new Date().toISOString();
+
     for (const [, comp] of Object.entries(data)) {
       if (comp.type !== 'VEVENT') continue;
 
@@ -104,24 +106,52 @@ export async function fetchAndCache(sourceId) {
       const end = comp.end ? new Date(comp.end) : null;
       if (!start) continue;
 
-      // Skip events outside cache window
-      if (start > windowEnd) continue;
-      if (end && end < windowStart) continue;
-      if (!end && start < windowStart) continue;
-
       const allDay = !!(comp.start && comp.start.dateOnly);
-
-      events.push({
+      const duration = end ? end.getTime() - start.getTime() : 0;
+      const baseUid = comp.uid || `${start.toISOString()}-${comp.summary || ''}`;
+      const baseFields = {
         sourceId,
-        uid: comp.uid || `${start.toISOString()}-${comp.summary || ''}`,
         summary: comp.summary || '',
         description: comp.description || '',
-        start: start.toISOString(),
-        end: end ? end.toISOString() : start.toISOString(),
         location: comp.location || '',
         allDay,
-        cachedAt: new Date().toISOString(),
-      });
+        cachedAt,
+      };
+
+      if (comp.rrule) {
+        // Build exdate set for filtering cancelled occurrences
+        const exdates = new Set();
+        if (comp.exdate) {
+          for (const val of Object.values(comp.exdate)) {
+            if (val instanceof Date) exdates.add(val.getTime());
+            else if (val?.toISOString) exdates.add(new Date(val).getTime());
+          }
+        }
+
+        const occurrences = comp.rrule.between(windowStart, windowEnd, true);
+        for (const occ of occurrences) {
+          if (exdates.has(occ.getTime())) continue;
+          const occEnd = new Date(occ.getTime() + duration);
+          events.push({
+            ...baseFields,
+            uid: `${baseUid}_${occ.toISOString()}`,
+            start: occ.toISOString(),
+            end: occEnd.toISOString(),
+          });
+        }
+      } else {
+        // Single (non-recurring) event
+        if (start > windowEnd) continue;
+        if (end && end < windowStart) continue;
+        if (!end && start < windowStart) continue;
+
+        events.push({
+          ...baseFields,
+          uid: baseUid,
+          start: start.toISOString(),
+          end: end ? end.toISOString() : start.toISOString(),
+        });
+      }
     }
 
     // Full replace: delete all events for this source, then bulk insert

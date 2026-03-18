@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   makeStyles,
   tokens,
@@ -184,6 +184,28 @@ const useStyles = makeStyles({
     zIndex: 5,
     marginBottom: '-20px',
   },
+  nowLine: {
+    position: 'absolute',
+    left: '50px',
+    right: 0,
+    height: '1px',
+    backgroundColor: tokens.colorNeutralForeground3,
+    zIndex: 8,
+    pointerEvents: 'auto',
+    cursor: 'default',
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      left: '-4px',
+      top: '-4px',
+      width: '8px',
+      height: '8px',
+      borderRadius: '50%',
+      border: `1.5px solid ${tokens.colorNeutralForeground3}`,
+      backgroundColor: tokens.colorNeutralBackground1,
+      boxSizing: 'border-box',
+    },
+  },
   tooltipBubble: {
     maxWidth: '280px',
   },
@@ -209,11 +231,44 @@ const useStyles = makeStyles({
 
 const SLOT_HEIGHT = 28;
 
+/** Blend a hex colour with white to produce a pastel background. ratio 0–1 = colour intensity. */
+function pastel(hex, ratio = 0.12) {
+  const c = hex.replace('#', '');
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  const pr = Math.round(255 - (255 - r) * ratio);
+  const pg = Math.round(255 - (255 - g) * ratio);
+  const pb = Math.round(255 - (255 - b) * ratio);
+  return `rgb(${pr}, ${pg}, ${pb})`;
+}
+
 export default function DayTimelineCard({ date }) {
   const styles = useStyles();
   const [timelineDate, setTimelineDate] = useState(() => date || new Date().toISOString().split('T')[0]);
   const [timelineEvents, setTimelineEvents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [nowMinutes, setNowMinutes] = useState(() => {
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes();
+  });
+  const scrollNodeRef = useRef(null);
+
+  const isToday = useMemo(() => {
+    const today = new Date();
+    const local = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    return timelineDate === local;
+  }, [timelineDate]);
+
+  // Tick the now-line every 60 seconds
+  useEffect(() => {
+    if (!isToday) return;
+    const id = setInterval(() => {
+      const n = new Date();
+      setNowMinutes(n.getHours() * 60 + n.getMinutes());
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [isToday]);
 
   useEffect(() => {
     calendarEventsApi.getAll({ startDate: timelineDate, endDate: timelineDate })
@@ -322,15 +377,24 @@ export default function DayTimelineCard({ date }) {
     setRefreshing(true);
     try {
       await calendarEventsApi.refreshAll();
-      const evts = await calendarEventsApi.getEvents(timelineDate, timelineDate);
+      const evts = await calendarEventsApi.getAll({ startDate: timelineDate, endDate: timelineDate });
       setTimelineEvents(evts);
     } catch {}
     setRefreshing(false);
   }, [timelineDate]);
 
+  const nowTop = isToday ? (nowMinutes / 30) * SLOT_HEIGHT : null;
+  const nowLabel = isToday
+    ? `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(nowMinutes % 60).padStart(2, '0')}`
+    : '';
+
   const scrollRef = useCallback((node) => {
-    if (node) node.scrollTop = 16 * SLOT_HEIGHT; // auto-scroll to 08:00
-  }, []);
+    if (!node) return;
+    scrollNodeRef.current = node;
+    // Scroll to current time (centered) on today, or 08:00 otherwise
+    const target = isToday ? (nowMinutes / 30) * SLOT_HEIGHT - node.clientHeight / 2 : 16 * SLOT_HEIGHT;
+    node.scrollTop = Math.max(0, target);
+  }, [isToday]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Card className={styles.card}>
@@ -374,8 +438,7 @@ export default function DayTimelineCard({ date }) {
             className={styles.allDay}
             style={{
               borderLeftColor: evt.sourceColour || '#0078D4',
-              backgroundColor: (evt.sourceColour || '#0078D4') + '18',
-              color: tokens.colorNeutralForeground1,
+              backgroundColor: pastel(evt.sourceColour || '#0078D4'),
             }}
           >
             {evt.summary}
@@ -398,6 +461,11 @@ export default function DayTimelineCard({ date }) {
               <div className={styles.slotArea} />
             </div>
           ))}
+          {nowTop != null && (
+            <Tooltip content={nowLabel} relationship="label" positioning="before">
+              <div className={styles.nowLine} style={{ top: nowTop }} />
+            </Tooltip>
+          )}
           <div className={styles.eventsLayer}>
             {timedEvents.map((evt, i) => (
               <Tooltip
@@ -422,7 +490,7 @@ export default function DayTimelineCard({ date }) {
                     left: `${(evt.col / evt.totalCols) * 100}%`,
                     width: `${(1 / evt.totalCols) * 100}%`,
                     borderLeftColor: evt.sourceColour || '#0078D4',
-                    backgroundColor: (evt.sourceColour || '#0078D4') + '18',
+                    backgroundColor: pastel(evt.sourceColour || '#0078D4'),
                   }}
                 >
                   <span className={styles.eventTitle}>{evt.summary}</span>
