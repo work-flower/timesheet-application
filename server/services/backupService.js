@@ -13,13 +13,30 @@ import { dirname, join } from 'path';
 import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync, createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import backupConfig from '../db/backupConfig.js';
-import { clients, projects, timesheets, settings, documents } from '../db/index.js';
+import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions } from '../db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 function getDataDir() { return process.env.DATA_DIR || join(__dirname, '..', '..', 'data'); }
 function getDocumentsDir() { return join(getDataDir(), 'documents'); }
+function getExpensesDir() { return join(getDataDir(), 'expenses'); }
+function getInvoicesDir() { return join(getDataDir(), 'invoices'); }
+function getUploadsDir() { return join(getDataDir(), 'uploads'); }
 
+
+function copyDirSync(src, dest) {
+  mkdirSync(dest, { recursive: true });
+  const entries = readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = join(src, entry.name);
+    const destPath = join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      writeFileSync(destPath, readFileSync(srcPath));
+    }
+  }
+}
 
 let operationLock = false;
 
@@ -117,23 +134,33 @@ export async function createBackup() {
     const key = `${prefix}/${folderName}.tar.gz`;
 
     // Export all collections
-    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs] = await Promise.all([
+    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs] = await Promise.all([
       clients.find({}),
       projects.find({}),
       timesheets.find({}),
       settings.find({}),
       documents.find({}),
+      expenses.find({}),
+      invoices.find({}),
+      transactions.find({}),
+      importJobs.find({}),
+      stagedTransactions.find({}),
     ]);
 
     const metadata = {
       createdAt: new Date().toISOString(),
-      version: '1.0',
+      version: '2.0',
       totalRecords: {
         clients: clientDocs.length,
         projects: projectDocs.length,
         timesheets: timesheetDocs.length,
         settings: settingsDocs.length,
         documents: documentDocs.length,
+        expenses: expenseDocs.length,
+        invoices: invoiceDocs.length,
+        transactions: transactionDocs.length,
+        importJobs: importJobDocs.length,
+        stagedTransactions: stagedTransactionDocs.length,
       },
     };
 
@@ -153,14 +180,22 @@ export async function createBackup() {
     archive.append(JSON.stringify(timesheetDocs, null, 2), { name: `${folderName}/timesheets.json` });
     archive.append(JSON.stringify(settingsDocs, null, 2), { name: `${folderName}/settings.json` });
     archive.append(JSON.stringify(documentDocs, null, 2), { name: `${folderName}/documents.json` });
+    archive.append(JSON.stringify(expenseDocs, null, 2), { name: `${folderName}/expenses.json` });
+    archive.append(JSON.stringify(invoiceDocs, null, 2), { name: `${folderName}/invoices.json` });
+    archive.append(JSON.stringify(transactionDocs, null, 2), { name: `${folderName}/transactions.json` });
+    archive.append(JSON.stringify(importJobDocs, null, 2), { name: `${folderName}/importJobs.json` });
+    archive.append(JSON.stringify(stagedTransactionDocs, null, 2), { name: `${folderName}/stagedTransactions.json` });
 
-    // Add PDF documents directory
-    const docsDir = getDocumentsDir();
-    if (existsSync(docsDir)) {
-      const files = readdirSync(docsDir);
-      for (const file of files) {
-        const filePath = join(docsDir, file);
-        archive.file(filePath, { name: `${folderName}/documents/${file}` });
+    // Add file directories (documents, expenses, invoices, uploads)
+    const fileDirs = [
+      { dir: getDocumentsDir(), archiveName: 'documents' },
+      { dir: getExpensesDir(), archiveName: 'expenses' },
+      { dir: getInvoicesDir(), archiveName: 'invoices' },
+      { dir: getUploadsDir(), archiveName: 'uploads' },
+    ];
+    for (const { dir, archiveName } of fileDirs) {
+      if (existsSync(dir)) {
+        archive.directory(dir, `${folderName}/files/${archiveName}`);
       }
     }
 
@@ -266,6 +301,11 @@ export async function restoreFromBackup(backupKey) {
       { name: 'timesheets', db: timesheets },
       { name: 'settings', db: settings },
       { name: 'documents', db: documents },
+      { name: 'expenses', db: expenses },
+      { name: 'invoices', db: invoices },
+      { name: 'transactions', db: transactions },
+      { name: 'importJobs', db: importJobs },
+      { name: 'stagedTransactions', db: stagedTransactions },
     ];
 
     for (const { name, db } of collections) {
@@ -279,21 +319,25 @@ export async function restoreFromBackup(backupKey) {
       }
     }
 
-    // Restore PDF documents
-    const documentsDir = getDocumentsDir();
-    const restoreDocsDir = join(extractDir, 'documents');
-    if (existsSync(restoreDocsDir)) {
-      // Clear existing documents directory
-      const existingFiles = existsSync(documentsDir) ? readdirSync(documentsDir) : [];
-      for (const file of existingFiles) {
-        rmSync(join(documentsDir, file), { force: true });
-      }
-      // Copy restored documents
-      mkdirSync(documentsDir, { recursive: true });
-      const restoredFiles = readdirSync(restoreDocsDir);
-      for (const file of restoredFiles) {
-        const src = readFileSync(join(restoreDocsDir, file));
-        writeFileSync(join(documentsDir, file), src);
+    // Restore file directories
+    // v2 backups store files under files/ subdirectory; v1 backups store documents at top level
+    const isV2 = existsSync(join(extractDir, 'files'));
+    const fileDirs = [
+      { target: getDocumentsDir(), restoreSubdir: isV2 ? 'files/documents' : 'documents' },
+      { target: getExpensesDir(), restoreSubdir: 'files/expenses' },
+      { target: getInvoicesDir(), restoreSubdir: 'files/invoices' },
+      { target: getUploadsDir(), restoreSubdir: 'files/uploads' },
+    ];
+
+    for (const { target, restoreSubdir } of fileDirs) {
+      const restoreSource = join(extractDir, restoreSubdir);
+      if (existsSync(restoreSource)) {
+        // Clear existing directory
+        if (existsSync(target)) {
+          rmSync(target, { recursive: true, force: true });
+        }
+        // Copy restored directory recursively
+        copyDirSync(restoreSource, target);
       }
     }
 
