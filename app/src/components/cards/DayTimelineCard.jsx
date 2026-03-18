@@ -52,6 +52,8 @@ const useStyles = makeStyles({
   title: {
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase400,
+    minWidth: '190px',
+    textAlign: 'center',
   },
   dateLabel: {
     fontSize: tokens.fontSizeBase200,
