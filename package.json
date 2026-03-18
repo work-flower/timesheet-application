@@ -25,6 +25,7 @@
     "multer": "^2.0.2",
     "nedb-promises": "^6.2.3",
     "node-cron": "^4.2.1",
+    "node-ical": "^0.25.6",
     "odata-filter-to-ast": "^4.0.0",
     "pdf-lib": "^1.17.1",
     "pdfmake": "^0.3.3",

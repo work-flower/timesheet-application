@@ -16,6 +16,7 @@ import {
   MoneyRegular,
   BrainCircuitRegular,
   KeyRegular,
+  CalendarMonthRegular,
   CloudArrowUpRegular,
   DocumentBulletListRegular,
   TextBulletListSquareRegular,
@@ -213,6 +214,7 @@ const navItems = [
     children: [
       { to: '/system/ai', label: 'AI', icon: <BrainCircuitRegular /> },
       { to: '/system/mcp-auth', label: 'M2M API Auth', icon: <KeyRegular /> },
+      { to: '/system/calendars', label: 'Calendars', icon: <CalendarMonthRegular /> },
     ],
   },
   {

@@ -319,6 +319,19 @@ export const stagedTransactionsApi = {
   checkDuplicates: (importJobId) => request('/staged-transactions/check-duplicates', { method: 'POST', body: JSON.stringify({ importJobId }) }),
 };
 
+// Calendar Events
+export const calendarEventsApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/calendar-events${query ? `?${query}` : ''}`);
+  },
+  refreshAll: () => request('/calendar-sources/refresh-all', { method: 'POST', body: '{}' }),
+};
+
 // Dashboard
 export const dashboardApi = {
   getOperations: () => request('/dashboard/operations'),

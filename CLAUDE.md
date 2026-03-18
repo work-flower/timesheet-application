@@ -10,15 +10,19 @@ No authentication — single user, local app.
 - **Simplicity and user experience centricity** — every feature should be straightforward to use and maintain, favour minimal solutions over elaborate ones
 - **Lightweight dependencies** — prefer built-in APIs or minimal custom code over adding libraries; always present alternatives to the user when a library seems warranted
 
-## Standards (Claude Code Skills)
+## Standards (Claude Code Skills) — MANDATORY
 
-Project standards are enforced via Claude Code skills (`.claude/skills/`). These should be loaded when **creating, modifying, or fixing** any part of the codebase they cover. Invoke with `/skill-name` or let Claude auto-load based on context:
+**Before making ANY code change, you MUST load the relevant skill(s) below.** These are the project's golden rules — never create, modify, or fix code in these areas without first loading the corresponding skill. Do not rely on memory or assumptions about the patterns; always load the skill to get the current standards.
 
-- `/forms-guide` — Form structure, save pattern, locking, dirty tracking, field layout
-- `/list-views-guide` — DataGrid, filters, pagination, search, summary footer
-- `/api-services-guide` — Backend CRUD, OData support, enrichment, route/API client patterns
-- `/routing-guide` — Route registration, sidebar navigation, guards, breadcrumbs
-- `/components-guide` — Shared component contracts (FormCommandBar, CommandBar, FormSection, FormField, etc.)
+| Changing... | MUST load |
+|---|---|
+| Form views (any `*Form.jsx`, `*Page.jsx` with form logic) | `/forms-guide` |
+| List views (any `*List.jsx`, `*Page.jsx` with DataGrid) | `/list-views-guide` |
+| Backend services, routes, or frontend API clients | `/api-services-guide` |
+| Route registration, sidebar menu, navigation | `/routing-guide` |
+| Shared components or hooks (`FormCommandBar`, `FormSection`, `FormField`, `ConfirmDialog`, `useFormTracker`, etc.) | `/components-guide` |
+
+If a change spans multiple areas (e.g. adding a new entity end-to-end), load ALL applicable skills before starting.
 
 ## Entity Wiring Docs
 
@@ -28,7 +32,7 @@ Project standards are enforced via Claude Code skills (`.claude/skills/`). These
 2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
 3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
 
-Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`
 
 ### Keeping Wiring Docs Up to Date (MANDATORY)
 
@@ -69,6 +73,7 @@ When the user requests an audit, systematically verify the entity's documentatio
 - **Backend:** Node.js, Express.js, NeDB (`nedb-promises`), ESM throughout (`"type": "module"`)
 - **PDF:** pdfmake (server-side), pdf-lib (PDF merging)
 - **AI:** `@anthropic-ai/sdk` (Claude API for bank statement parsing and expense receipt scanning)
+- **Calendar:** `node-ical` (ICS feed fetching and parsing)
 - **Other:** `@uiw/react-md-editor` (markdown notes), `multer` + `sharp` (expense attachments + thumbnails), `@aws-sdk/client-s3` + `archiver` + `tar` + `node-cron` (R2 cloud backup), `dotenv`
 
 ## Configuration
@@ -317,6 +322,34 @@ Deleted when job is abandoned.
 | ignoreReason | Reason for ignoring (nullable) |
 | isLocked, isLockedReason | Record locking fields |
 
+### calendarSources (standalone DB — not in backups)
+
+ICS calendar feed registrations managed via admin app.
+
+| Field | Description |
+|-------|-------------|
+| name | Display name (e.g. "Work Calendar") |
+| icsUrl | Full ICS subscription URL |
+| colour | Hex colour for UI display (default: #0078D4) |
+| enabled | Boolean, default true |
+| refreshIntervalMinutes | Optional auto-refresh interval in minutes; null = manual only |
+| lastFetchedAt | ISO timestamp of last successful fetch |
+| lastError | Error message from last failed fetch |
+
+### calendarEvents (standalone DB — ephemeral cache, not in backups)
+
+Parsed ICS events cached from calendar sources.
+
+| Field | Description |
+|-------|-------------|
+| sourceId | FK → calendarSources |
+| uid | ICS event UID |
+| summary | Event title |
+| description | Event description |
+| start, end | ISO datetime strings |
+| location | String |
+| allDay | Boolean |
+
 ---
 
 ## Business Rules
@@ -366,7 +399,7 @@ Full logging infrastructure is documented in `logging.md` wiring doc. Key cross-
 
 All endpoints prefixed with `/api`. All list endpoints support OData-style query parameters (`$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`) alongside entity-specific query params. Standard CRUD per entity.
 
-Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods) for clients, projects, timesheets, expenses, invoices, and transactions are documented in their wiring docs at `.claude/docs/`.
+Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods) for clients, projects, timesheets, expenses, invoices, transactions, and calendar sources are documented in their wiring docs at `.claude/docs/`.
 
 ### Other API endpoints (no wiring docs)
 
@@ -456,6 +489,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/config/invoicing` | InvoicingPage (invoice seed, payment terms, VAT, bank details) |
 | `/system/ai` | AiConfigPage (Claude API key, model, prompts) |
 | `/system/mcp-auth` | McpAuthPage (OAuth config) |
+| `/system/calendars` | CalendarSourcesPage (ICS feed management) |
 | `/infra/backup` | BackupPage (R2 config, backup/restore) |
 | `/infra/logging` | LoggingPage (log config, R2 upload) |
 | `/reports/logs` | LogViewer (search, filters, detail drawer) |

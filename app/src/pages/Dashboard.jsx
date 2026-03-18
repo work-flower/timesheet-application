@@ -32,8 +32,9 @@ import {
   ChevronLeftRegular,
   ChevronRightRegular,
 } from '@fluentui/react-icons';
-import { timesheetsApi, projectsApi, expensesApi, invoicesApi, dashboardApi, settingsApi } from '../api/index.js';
+import { timesheetsApi, projectsApi, expensesApi, invoicesApi, dashboardApi, settingsApi, calendarEventsApi } from '../api/index.js';
 import InfoTooltip from '../components/InfoTooltip.jsx';
+import DayTimelineCard from '../components/cards/DayTimelineCard.jsx';
 import {
   getCompanyYear,
   getTaxYear,
@@ -289,6 +290,41 @@ const useStyles = makeStyles({
   tsCoverageCurrent: {
     borderColor: tokens.colorBrandForeground1,
   },
+  tsCoverageDayDots: {
+    display: 'flex',
+    gap: '2px',
+    marginTop: '2px',
+    justifyContent: 'center',
+  },
+  tsCoverageDayDot: {
+    width: '5px',
+    height: '5px',
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  // Top row: Coverage + Timeline side by side
+  coverageRow: {
+    display: 'flex',
+    gap: '16px',
+    marginBottom: '24px',
+    position: 'relative',
+  },
+  coverageCol: {
+    flex: '7 1 0',
+    minWidth: 0,
+  },
+  timelineCol: {
+    flex: '3 1 0',
+    minWidth: '240px',
+    position: 'relative',
+  },
+  timelineColInner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
 });
 
 function getWeekRange() {
@@ -363,6 +399,7 @@ export default function Dashboard() {
     return { year: n.getFullYear(), month: n.getMonth() };
   });
   const [coverageEntries, setCoverageEntries] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
 
   useEffect(() => {
     const init = async () => {
@@ -411,12 +448,18 @@ export default function Dashboard() {
   useEffect(() => {
     const start = new Date(coverageMonth.year, coverageMonth.month, 1);
     const end = new Date(coverageMonth.year, coverageMonth.month + 1, 0);
+    const startStr = start.toISOString().split('T')[0];
+    const endStr = end.toISOString().split('T')[0];
     timesheetsApi.getAll({
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0],
+      startDate: startStr,
+      endDate: endStr,
       $expand: 'project',
     }).then(setCoverageEntries).catch(console.error);
+    calendarEventsApi.getAll({ startDate: startStr, endDate: endStr })
+      .then(setCalendarEvents)
+      .catch(() => setCalendarEvents([]));
   }, [coverageMonth]);
+
 
   const weekHours = weekEntries.reduce((s, e) => s + (e.hours || 0), 0);
   const monthHours = monthEntries.reduce((s, e) => s + (e.hours || 0), 0);
@@ -445,6 +488,14 @@ export default function Dashboard() {
       byDate[entry.date].push(entry);
     }
 
+    // Group calendar events by date
+    const eventsByDate = {};
+    for (const evt of calendarEvents) {
+      const evtDate = evt.start.split('T')[0];
+      if (!eventsByDate[evtDate]) eventsByDate[evtDate] = [];
+      eventsByDate[evtDate].push(evt);
+    }
+
     // Build flat day list
     const allDays = [];
     for (let d = 1; d <= daysInMonth; d++) {
@@ -456,8 +507,9 @@ export default function Dashboard() {
       const isToday = dateStr === todayStr;
       const entries = byDate[dateStr] || [];
       const totalHours = entries.reduce((s, e) => s + (e.hours || 0), 0);
+      const events = eventsByDate[dateStr] || [];
 
-      allDays.push({ day: d, dateStr, dow, isWeekend, isFuture, isToday, entries, totalHours });
+      allDays.push({ day: d, dateStr, dow, isWeekend, isFuture, isToday, entries, totalHours, events });
     }
 
     // Group into weeks (Mon=0 col, Sun=6 col) — grid uses Mon-Sun order
@@ -476,12 +528,13 @@ export default function Dashboard() {
     if (currentWeek.some(Boolean)) weeks.push(currentWeek);
 
     return weeks;
-  }, [coverageMonth, coverageEntries, todayStr]);
+  }, [coverageMonth, coverageEntries, calendarEvents, todayStr]);
 
   const coverageMonthLabel = useMemo(() => {
     const date = new Date(coverageMonth.year, coverageMonth.month, 1);
     return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   }, [coverageMonth]);
+
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading dashboard..." /></div>;
 
@@ -549,8 +602,9 @@ export default function Dashboard() {
     <div className={styles.page}>
       <Text className={styles.title}>Dashboard</Text>
 
-      {/* Timesheet Coverage */}
-      <Card className={styles.tsCoverageCard}>
+      {/* Timesheet Coverage + Day Timeline */}
+      <div className={styles.coverageRow}>
+      <Card className={mergeClasses(styles.tsCoverageCard, styles.coverageCol)} style={{ marginBottom: 0 }}>
         <div className={styles.tsCoverageHeader}>
           <Text className={styles.tsCoverageTitle}>Timesheet Coverage</Text>
           <div className={styles.tsCoverageNav}>
@@ -594,11 +648,20 @@ export default function Dashboard() {
                 cellClass = d.entries.length > 0 ? styles.tsCoverageGreen : styles.tsCoverageAmber;
               }
 
-              const tooltipContent = d.entries.length > 0
+              const tsTooltip = d.entries.length > 0
                 ? d.entries.map((e) =>
                   `${e.project?.name || e.projectName || 'Unknown'}: ${e.hours}h — ${fmt.format(e.amount || 0)}`
                 ).join('\n')
                 : 'No timesheets';
+              const evtTooltip = d.events.length > 0
+                ? d.events.map((ev) => {
+                  const time = ev.allDay ? 'All day' : new Date(ev.start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                  return `${time} — ${ev.summary} (${ev.sourceName})`;
+                }).join('\n')
+                : '';
+              const tooltipContent = evtTooltip
+                ? `${tsTooltip}\n\n📅 Calendar:\n${evtTooltip}`
+                : tsTooltip;
 
               return (
                 <Tooltip
@@ -625,6 +688,17 @@ export default function Dashboard() {
                     {d.totalHours > 0 && (
                       <span className={styles.tsCoverageDayHours}>{d.totalHours}h</span>
                     )}
+                    {d.events.length > 0 && (
+                      <div className={styles.tsCoverageDayDots}>
+                        {d.events.slice(0, 4).map((ev, ei) => (
+                          <div
+                            key={ei}
+                            className={styles.tsCoverageDayDot}
+                            style={{ backgroundColor: ev.sourceColour || '#0078D4' }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </Tooltip>
               );
@@ -632,6 +706,14 @@ export default function Dashboard() {
           </div>
         ))}
       </Card>
+
+      {/* Day Timeline */}
+      <div className={styles.timelineCol}>
+      <div className={styles.timelineColInner}>
+        <DayTimelineCard date={new Date().toISOString().split('T')[0]} />
+      </div>
+      </div>
+      </div>
 
       {/* Row 1 — Activity */}
       <Text className={styles.rowTitle}>Activity</Text>

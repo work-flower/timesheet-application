@@ -38,4 +38,8 @@ const transactions = wrapCollection('transactions', _transactions);
 const importJobs = wrapCollection('importJobs', _importJobs);
 const stagedTransactions = wrapCollection('stagedTransactions', _stagedTransactions);
 
-export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions };
+// Standalone datastores (not wrapped — ephemeral/infrastructure, not business entities)
+const calendarSources = Datastore.create({ filename: join(dataDir, 'calendar-sources.db'), autoload: true });
+const calendarEvents = Datastore.create({ filename: join(dataDir, 'calendar-events.db'), autoload: true });
+
+export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, calendarSources, calendarEvents };

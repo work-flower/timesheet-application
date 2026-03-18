@@ -50,6 +50,17 @@ export const backupApi = {
   delete: (key) => request(`/backup/${encodeURIComponent(key)}`, { method: 'DELETE' }),
 };
 
+// Calendar Sources
+export const calendarSourcesApi = {
+  getAll: () => request('/calendar-sources'),
+  getById: (id) => request(`/calendar-sources/${id}`),
+  create: (data) => request('/calendar-sources', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/calendar-sources/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/calendar-sources/${id}`, { method: 'DELETE' }),
+  refresh: (id) => request(`/calendar-sources/${id}/refresh`, { method: 'POST', body: '{}' }),
+  refreshAll: () => request('/calendar-sources/refresh-all', { method: 'POST', body: '{}' }),
+};
+
 // Logs
 export const logApi = {
   getConfig: () => request('/logs/config'),

@@ -24,9 +24,12 @@ import mcpRoutes from './routes/mcp.js';
 import mcpAuthRoutes from './routes/mcpAuth.js';
 import helpRoutes from './routes/help.js';
 import logRoutes from './routes/logs.js';
+import calendarSourceRoutes from './routes/calendarSources.js';
+import calendarEventRoutes from './routes/calendarEvents.js';
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
 import { initScheduler } from './services/backupScheduler.js';
 import { initUploader } from './logging/logUploader.js';
+import { initCalendarScheduler } from './services/calendarService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -117,6 +120,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/mcp', mcpRoutes);
 app.use('/api/mcp-auth', mcpAuthRoutes);
 app.use('/api/help', helpRoutes);
+app.use('/api/calendar-sources', calendarSourceRoutes);
+app.use('/api/calendar-events', calendarEventRoutes);
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)
 async function wellKnownHandler(req, res) {
@@ -159,4 +164,5 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   initScheduler();
   initUploader();
+  initCalendarScheduler();
 });
