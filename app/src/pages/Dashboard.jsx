@@ -35,6 +35,7 @@ import {
 import { timesheetsApi, projectsApi, expensesApi, invoicesApi, dashboardApi, settingsApi, calendarEventsApi } from '../api/index.js';
 import InfoTooltip from '../components/InfoTooltip.jsx';
 import DayTimelineCard from '../components/cards/DayTimelineCard.jsx';
+import TicketsCard from '../components/cards/TicketsCard.jsx';
 import {
   getCompanyYear,
   getTaxYear,
@@ -436,6 +437,7 @@ export default function Dashboard() {
           dashboardApi.getInvoiceCoverage(calYear.start, calYear.end),
         ]);
         setCoverageData({ company: companyCov, tax: taxCov, calendar: calCov });
+
       } catch (err) {
         console.error(err);
       } finally {
@@ -474,6 +476,8 @@ export default function Dashboard() {
   }, []);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+
 
   const coverageWeeks = useMemo(() => {
     const { year, month } = coverageMonth;
@@ -755,6 +759,10 @@ export default function Dashboard() {
       </div>
       </div>
       </div>
+
+      <TicketsCard onTicketClick={(ticket) => {
+        if (ticket.url) return navigator.clipboard.writeText(ticket.url);
+      }} />
 
       {/* Row 1 — Activity */}
       <Text className={styles.rowTitle}>Activity</Text>

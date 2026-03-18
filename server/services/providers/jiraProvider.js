@@ -1,0 +1,95 @@
+const MAX_RESULTS_PER_PAGE = 50;
+
+function authHeader(source) {
+  const token = Buffer.from(`${source.email}:${source.apiToken}`).toString('base64');
+  return { Authorization: `Basic ${token}`, 'Content-Type': 'application/json' };
+}
+
+export async function testConnection(source) {
+  const url = `${source.baseUrl.replace(/\/+$/, '')}/rest/api/3/myself`;
+  const res = await fetch(url, { headers: authHeader(source) });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Jira connection failed (${res.status}): ${body}`);
+  }
+  return { ok: true };
+}
+
+export async function fetchTickets(source) {
+  const baseUrl = source.baseUrl.replace(/\/+$/, '');
+  const jql = source.preQuery || 'updated >= -30d ORDER BY updated DESC';
+  const fields = 'summary,description,status,issuetype,assignee,priority,project,sprint,updated,created';
+
+  let allIssues = [];
+  let nextPageToken = null;
+
+  while (true) {
+    const body = {
+      jql,
+      fields: fields.split(','),
+      maxResults: MAX_RESULTS_PER_PAGE,
+    };
+    if (nextPageToken) body.nextPageToken = nextPageToken;
+
+    const res = await fetch(`${baseUrl}/rest/api/3/search/jql`, {
+      method: 'POST',
+      headers: authHeader(source),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Jira search failed (${res.status}): ${text}`);
+    }
+    const data = await res.json();
+    allIssues = allIssues.concat(data.issues || []);
+
+    if (!data.nextPageToken) break;
+    nextPageToken = data.nextPageToken;
+  }
+
+  return allIssues.map((issue) => mapToCanonical(issue, source));
+}
+
+function mapToCanonical(issue, source) {
+  const fields = issue.fields || {};
+  const sprint = fields.sprint;
+  const sprintName = sprint?.name || null;
+
+  return {
+    externalId: issue.key,
+    title: fields.summary || '',
+    description: truncate(extractText(fields.description), 500),
+    state: fields.status?.name || '',
+    type: fields.issuetype?.name || '',
+    assignedTo: fields.assignee?.displayName || '',
+    sprint: sprintName,
+    areaPath: fields.project?.key || '',
+    priority: fields.priority?.name || '',
+    project: fields.project?.name || '',
+    url: `${source.baseUrl.replace(/\/+$/, '')}/browse/${issue.key}`,
+    created: fields.created || '',
+    updated: fields.updated || '',
+  };
+}
+
+function extractText(description) {
+  if (!description) return '';
+  if (typeof description === 'string') return description;
+  // Atlassian Document Format — extract text from content nodes
+  try {
+    const texts = [];
+    const walk = (node) => {
+      if (node.text) texts.push(node.text);
+      if (node.content) node.content.forEach(walk);
+    };
+    walk(description);
+    return texts.join(' ');
+  } catch {
+    return '';
+  }
+}
+
+function truncate(str, max) {
+  if (!str || str.length <= max) return str || '';
+  return str.slice(0, max) + '...';
+}

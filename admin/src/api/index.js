@@ -61,6 +61,25 @@ export const calendarSourcesApi = {
   refreshAll: () => request('/calendar-sources/refresh-all', { method: 'POST', body: '{}' }),
 };
 
+// Ticket Sources
+export const ticketSourcesApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/ticket-sources${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/ticket-sources/${id}`),
+  create: (data) => request('/ticket-sources', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/ticket-sources/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/ticket-sources/${id}`, { method: 'DELETE' }),
+  refresh: (id) => request(`/ticket-sources/${id}/refresh`, { method: 'POST', body: '{}' }),
+  refreshAll: () => request('/ticket-sources/refresh-all', { method: 'POST', body: '{}' }),
+  test: (id) => request(`/ticket-sources/${id}/test`, { method: 'POST', body: '{}' }),
+};
+
 // Logs
 export const logApi = {
   getConfig: () => request('/logs/config'),

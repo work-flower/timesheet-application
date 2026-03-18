@@ -41,5 +41,7 @@ const stagedTransactions = wrapCollection('stagedTransactions', _stagedTransacti
 // Standalone datastores (not wrapped — ephemeral/infrastructure, not business entities)
 const calendarSources = Datastore.create({ filename: join(dataDir, 'calendar-sources.db'), autoload: true });
 const calendarEvents = Datastore.create({ filename: join(dataDir, 'calendar-events.db'), autoload: true });
+const ticketSources = Datastore.create({ filename: join(dataDir, 'ticket-sources.db'), autoload: true });
+const tickets = Datastore.create({ filename: join(dataDir, 'tickets.db'), autoload: true });
 
-export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, calendarSources, calendarEvents };
+export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, calendarSources, calendarEvents, ticketSources, tickets };

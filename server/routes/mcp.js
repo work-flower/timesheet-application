@@ -4,6 +4,7 @@ import * as projectService from '../services/projectService.js';
 import * as timesheetService from '../services/timesheetService.js';
 import * as expenseService from '../services/expenseService.js';
 import * as calendarService from '../services/calendarService.js';
+import * as ticketService from '../services/ticketService.js';
 
 const router = Router();
 
@@ -99,6 +100,18 @@ Follow this flow (each entry is an independent session — never reuse projectId
       properties: {
         startDate: { type: 'string', description: 'YYYY-MM-DD start of range (default: today)' },
         endDate: { type: 'string', description: 'YYYY-MM-DD end of range (default: same as startDate)' },
+      },
+    },
+  },
+  {
+    name: 'list_tickets',
+    description: 'List tickets from configured Jira and Azure DevOps sources. Returns cached ticket data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        state: { type: 'string', description: 'Filter by ticket state/status' },
+        assignedTo: { type: 'string', description: 'Filter by assigned person (partial match)' },
+        search: { type: 'string', description: 'Search in ticket title' },
       },
     },
   },
@@ -233,6 +246,31 @@ const handlers = {
       ...lines,
       '',
       `Totals: ${fmtGBP(billableTotal + nonBillableTotal)} (billable: ${fmtGBP(billableTotal)}, non-billable: ${fmtGBP(nonBillableTotal)})`,
+    ].join('\n');
+  },
+
+  async list_tickets({ state, assignedTo, search } = {}) {
+    const params = { $orderby: 'updated desc', $top: '50' };
+    if (state) params.state = state;
+    if (assignedTo) params.assignedTo = assignedTo;
+
+    const data = rows(await ticketService.getTickets(params));
+
+    let filtered = data;
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = data.filter(t => (t.title || '').toLowerCase().includes(q) || (t.externalId || '').toLowerCase().includes(q));
+    }
+
+    if (filtered.length === 0) return 'No tickets found matching the criteria.';
+
+    const lines = filtered.map(t =>
+      `  ${t.externalId} | ${t.title} | ${t.state} | ${t.assignedTo || '—'} | Sprint: ${t.sprint || '—'} | ${t.areaPath} (${t.sourceName})`
+    );
+
+    return [
+      `Tickets (${filtered.length}):`,
+      ...lines,
     ].join('\n');
   },
 };

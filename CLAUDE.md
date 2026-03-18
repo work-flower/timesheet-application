@@ -32,7 +32,7 @@ If a change spans multiple areas (e.g. adding a new entity end-to-end), load ALL
 2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
 3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
 
-Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`
 
 ### Keeping Wiring Docs Up to Date (MANDATORY)
 
@@ -74,6 +74,7 @@ When the user requests an audit, systematically verify the entity's documentatio
 - **PDF:** pdfmake (server-side), pdf-lib (PDF merging)
 - **AI:** `@anthropic-ai/sdk` (Claude API for bank statement parsing and expense receipt scanning)
 - **Calendar:** `node-ical` (ICS feed fetching and parsing)
+- **Tickets:** Native `fetch` with Basic auth (Jira REST API v3, Azure DevOps REST API)
 - **Other:** `@uiw/react-md-editor` (markdown notes), `multer` + `sharp` (expense attachments + thumbnails), `@aws-sdk/client-s3` + `archiver` + `tar` + `node-cron` (R2 cloud backup), `dotenv`
 
 ## Configuration
@@ -350,6 +351,45 @@ Parsed ICS events cached from calendar sources.
 | location | String |
 | allDay | Boolean |
 
+### ticketSources (standalone DB — not in backups)
+
+Jira and Azure DevOps ticket source registrations managed via admin app.
+
+| Field | Description |
+|-------|-------------|
+| name | Display name |
+| type | `jira` or `azure-devops` |
+| baseUrl | Instance URL (e.g. `https://foo.atlassian.net` or `https://dev.azure.com/org`) |
+| email | Jira only — account email for API token auth |
+| apiToken | Jira only — API token (masked on read) |
+| pat | ADO only — Personal Access Token (masked on read) |
+| preQuery | Optional JQL (Jira) or WIQL (ADO); empty = last 30 days |
+| colour | Hex colour for UI display (default: #0078D4) |
+| enabled | Boolean, default true |
+| refreshIntervalMinutes | Optional auto-refresh interval; null = manual only |
+| lastFetchedAt | ISO timestamp of last successful fetch |
+| lastError | Error message from last failed fetch |
+
+### tickets (standalone DB — ephemeral cache, not in backups)
+
+Cached tickets from ticket sources in canonical shape.
+
+| Field | Description |
+|-------|-------------|
+| sourceId | FK → ticketSources |
+| externalId | Jira issue key (e.g. `PAY-123`) or ADO work item ID |
+| title | Summary/title |
+| description | Description (truncated to 500 chars) |
+| state | Status/state name |
+| type | Issue type (bug, story, task, etc.) |
+| assignedTo | Assigned person name |
+| sprint | Sprint name (if any) |
+| areaPath | ADO area path or Jira project key |
+| priority | Priority level |
+| project | Source project name |
+| url | Direct link to ticket in source system |
+| created, updated | Dates from source system |
+
 ---
 
 ## Business Rules
@@ -388,7 +428,7 @@ Full logging infrastructure is documented in `logging.md` wiring doc. Key cross-
 ### MCP (Model Context Protocol)
 
 1. The application exposes an MCP endpoint at `POST /mcp` (outside `/api` prefix) for AI assistants via JSON-RPC 2.0.
-2. **Available tools:** `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`.
+2. **Available tools:** `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`, `list_tickets`.
 3. **Confirmation flow:** All MCP tools follow a confirmation flow — the AI must list projects first, confirm the project with the user, present a summary, and only submit after user confirmation.
 4. **Authentication:** MCP auth configuration managed via `/api/mcp-auth` endpoints. OAuth 2.0 metadata served at `/.well-known/oauth-authorization-server`.
 5. **Upload Expense Image Skill:** Downloadable Claude.ai skill for receipt image upload after expense creation via MCP.
@@ -490,6 +530,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/system/ai` | AiConfigPage (Claude API key, model, prompts) |
 | `/system/mcp-auth` | McpAuthPage (OAuth config) |
 | `/system/calendars` | CalendarSourcesPage (ICS feed management) |
+| `/system/ticket-sources` | TicketSourcesPage (Jira & Azure DevOps ticket source management) |
 | `/infra/backup` | BackupPage (R2 config, backup/restore) |
 | `/infra/logging` | LoggingPage (log config, R2 upload) |
 | `/reports/logs` | LogViewer (search, filters, detail drawer) |

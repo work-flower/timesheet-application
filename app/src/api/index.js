@@ -332,6 +332,18 @@ export const calendarEventsApi = {
   refreshAll: () => request('/calendar-sources/refresh-all', { method: 'POST', body: '{}' }),
 };
 
+// Tickets
+export const ticketsApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/tickets${query ? `?${query}` : ''}`);
+  },
+};
+
 // Dashboard
 export const dashboardApi = {
   getOperations: () => request('/dashboard/operations'),
