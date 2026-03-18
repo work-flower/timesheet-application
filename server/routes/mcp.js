@@ -3,6 +3,7 @@ import als from '../logging/asyncContext.js';
 import * as projectService from '../services/projectService.js';
 import * as timesheetService from '../services/timesheetService.js';
 import * as expenseService from '../services/expenseService.js';
+import * as calendarService from '../services/calendarService.js';
 
 const router = Router();
 
@@ -87,6 +88,17 @@ Follow this flow (each entry is an independent session — never reuse projectId
       type: 'object',
       properties: {
         days: { type: 'number', description: 'Number of days to look back (default: 30)' },
+      },
+    },
+  },
+  {
+    name: 'list_calendar_events',
+    description: 'List calendar events for a date range. Useful for checking your schedule before logging time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        startDate: { type: 'string', description: 'YYYY-MM-DD start of range (default: today)' },
+        endDate: { type: 'string', description: 'YYYY-MM-DD end of range (default: same as startDate)' },
       },
     },
   },
@@ -177,6 +189,25 @@ const handlers = {
       ...lines,
       '',
       `Totals: ${totalHours}h (${totalDays.toFixed(2)} days)`,
+    ].join('\n');
+  },
+
+  async list_calendar_events({ startDate, endDate } = {}) {
+    const start = startDate || today();
+    const end = endDate || start;
+    const data = rows(await calendarService.getEvents({ startDate: start, endDate: end }));
+
+    if (data.length === 0) return `No calendar events from ${start} to ${end}.`;
+
+    const lines = data.map(e => {
+      const time = e.allDay ? 'All day' : `${e.start.slice(11, 16)}–${e.end.slice(11, 16)}`;
+      const loc = e.location ? ` | ${e.location}` : '';
+      return `  ${e.start.slice(0, 10)} | ${time} | ${e.summary} (${e.sourceName})${loc}`;
+    });
+
+    return [
+      `Calendar events from ${start} to ${end}:`,
+      ...lines,
     ].join('\n');
   },
 
