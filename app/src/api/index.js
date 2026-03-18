@@ -342,6 +342,7 @@ export const ticketsApi = {
     const query = qs.toString();
     return request(`/tickets${query ? `?${query}` : ''}`);
   },
+  refreshAll: () => request('/ticket-sources/refresh-all', { method: 'POST', body: '{}' }),
 };
 
 // Dashboard

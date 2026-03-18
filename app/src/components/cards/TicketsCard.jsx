@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   makeStyles,
   tokens,
@@ -7,7 +7,10 @@ import {
   Badge,
   Button,
   ToggleButton,
+  Tooltip,
+  mergeClasses,
 } from '@fluentui/react-components';
+import { ArrowSyncRegular } from '@fluentui/react-icons';
 import { ticketsApi } from '../../api/index.js';
 
 const STORAGE_KEY = 'dashboard.ticketStateFilter';
@@ -16,15 +19,41 @@ const useStyles = makeStyles({
   wrapper: {
     marginBottom: '24px',
   },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+    marginTop: '8px',
+  },
   title: {
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase300,
     color: tokens.colorNeutralForeground3,
     textTransform: 'uppercase',
     letterSpacing: '0.5px',
-    display: 'block',
-    marginBottom: '8px',
-    marginTop: '8px',
+  },
+  refresh: {
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: tokens.colorNeutralForeground3,
+    display: 'flex',
+    alignItems: 'center',
+    padding: '2px',
+    borderRadius: '4px',
+    '&:hover': {
+      color: tokens.colorNeutralForeground1,
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+  },
+  refreshSpinning: {
+    animationName: {
+      from: { transform: 'rotate(0deg)' },
+      to: { transform: 'rotate(360deg)' },
+    },
+    animationDuration: '1s',
+    animationIterationCount: 'infinite',
+    animationTimingFunction: 'linear',
   },
   filters: {
     display: 'flex',
@@ -85,6 +114,30 @@ const useStyles = makeStyles({
   sep: {
     color: tokens.colorNeutralStroke2,
   },
+  toast: {
+    position: 'fixed',
+    bottom: '24px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '8px 20px',
+    borderRadius: tokens.borderRadiusMedium,
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    zIndex: 10000,
+    pointerEvents: 'none',
+    backgroundColor: '#fff',
+    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    color: '#C41E3A',
+    animationName: {
+      '0%': { opacity: 0 },
+      '10%': { opacity: 1 },
+      '80%': { opacity: 1 },
+      '100%': { opacity: 0 },
+    },
+    animationDuration: '3s',
+    animationTimingFunction: 'ease',
+  },
 });
 
 function stateBadgeColour(state) {
@@ -129,12 +182,30 @@ export default function TicketsCard({ onTicketClick }) {
   const styles = useStyles();
   const [items, setItems] = useState([]);
   const [stateFilter, setStateFilter] = useState(loadSavedFilter);
+  const [refreshing, setRefreshing] = useState(false);
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
 
-  useEffect(() => {
+  const fetchTickets = useCallback(() =>
     ticketsApi.getAll({ $top: '50', $orderby: 'updated desc' })
       .then(setItems)
-      .catch(() => setItems([]));
-  }, []);
+      .catch(() => setItems([])),
+  []);
+
+  useEffect(() => { fetchTickets(); }, [fetchTickets]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await ticketsApi.refreshAll();
+      await fetchTickets();
+    } catch {
+      clearTimeout(toastTimer.current);
+      setToast('Failed to refresh tickets');
+      toastTimer.current = setTimeout(() => setToast(null), 3000);
+    }
+    setRefreshing(false);
+  }, [fetchTickets]);
 
   const states = useMemo(() => {
     const s = [...new Set(items.map((t) => t.state).filter(Boolean))];
@@ -170,7 +241,18 @@ export default function TicketsCard({ onTicketClick }) {
 
   return (
     <div className={styles.wrapper}>
-      <Text className={styles.title}>Tickets</Text>
+      <div className={styles.header}>
+        <Text className={styles.title}>Tickets</Text>
+        <Tooltip content="Refresh tickets" relationship="label">
+          <span
+            className={mergeClasses(styles.refresh, refreshing && styles.refreshSpinning)}
+            onClick={refreshing ? undefined : handleRefresh}
+            style={refreshing ? { cursor: 'default' } : undefined}
+          >
+            <ArrowSyncRegular />
+          </span>
+        </Tooltip>
+      </div>
       {states.length > 1 && (
         <div className={styles.filters}>
           {states.map((state) => (
@@ -230,6 +312,7 @@ export default function TicketsCard({ onTicketClick }) {
           );
         })}
       </div>
+      {toast && <div className={styles.toast}>{toast}</div>}
     </div>
   );
 }

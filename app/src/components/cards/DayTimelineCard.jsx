@@ -229,6 +229,30 @@ const useStyles = makeStyles({
     marginTop: '4px',
     wordBreak: 'break-word',
   },
+  toast: {
+    position: 'fixed',
+    bottom: '24px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '8px 20px',
+    borderRadius: tokens.borderRadiusMedium,
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    zIndex: 10000,
+    pointerEvents: 'none',
+    backgroundColor: '#fff',
+    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    color: '#C41E3A',
+    animationName: {
+      '0%': { opacity: 0 },
+      '10%': { opacity: 1 },
+      '80%': { opacity: 1 },
+      '100%': { opacity: 0 },
+    },
+    animationDuration: '3s',
+    animationTimingFunction: 'ease',
+  },
 });
 
 const SLOT_HEIGHT = 28;
@@ -255,6 +279,8 @@ export default function DayTimelineCard({ date, onEventClick }) {
   }, [date]);
   const [timelineEvents, setTimelineEvents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
   const [nowMinutes, setNowMinutes] = useState(() => {
     const n = new Date();
     return n.getHours() * 60 + n.getMinutes();
@@ -386,7 +412,11 @@ export default function DayTimelineCard({ date, onEventClick }) {
       await calendarEventsApi.refreshAll();
       const evts = await calendarEventsApi.getAll({ startDate: timelineDate, endDate: timelineDate });
       setTimelineEvents(evts);
-    } catch {}
+    } catch {
+      clearTimeout(toastTimer.current);
+      setToast('Failed to refresh calendars');
+      toastTimer.current = setTimeout(() => setToast(null), 3000);
+    }
     setRefreshing(false);
   }, [timelineDate]);
 
@@ -536,6 +566,7 @@ export default function DayTimelineCard({ date, onEventClick }) {
           </div>
         </div>
       </div>
+      {toast && <div className={styles.toast}>{toast}</div>}
     </Card>
   );
 }
