@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
@@ -326,6 +326,29 @@ const useStyles = makeStyles({
     right: 0,
     bottom: 0,
   },
+  toast: {
+    position: 'fixed',
+    bottom: '24px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '8px 20px',
+    borderRadius: tokens.borderRadiusMedium,
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    zIndex: 10000,
+    pointerEvents: 'none',
+    backgroundColor: '#fff',
+    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    animationName: {
+      '0%': { opacity: 0 },
+      '10%': { opacity: 1 },
+      '80%': { opacity: 1 },
+      '100%': { opacity: 0 },
+    },
+    animationDuration: '2s',
+    animationTimingFunction: 'ease',
+  },
 });
 
 function getWeekRange() {
@@ -349,6 +372,17 @@ function getMonthRange() {
     startDate: start.toISOString().split('T')[0],
     endDate: end.toISOString().split('T')[0],
   };
+}
+
+function useToast() {
+  const [toast, setToast] = useState(null);
+  const timer = useRef(null);
+  const showToast = useCallback((message, intent) => {
+    clearTimeout(timer.current);
+    setToast({ message, intent });
+    timer.current = setTimeout(() => setToast(null), 2000);
+  }, []);
+  return { toast, showToast };
 }
 
 const fmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
@@ -385,6 +419,7 @@ const recentColumns = [
 export default function Dashboard() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { toast, showToast } = useToast();
   const [weekEntries, setWeekEntries] = useState([]);
   const [monthEntries, setMonthEntries] = useState([]);
   const [activeProjects, setActiveProjects] = useState(0);
@@ -760,8 +795,13 @@ export default function Dashboard() {
       </div>
       </div>
 
-      <TicketsCard onTicketClick={(ticket) => {
-        if (ticket.url) return navigator.clipboard.writeText(ticket.url);
+      <TicketsCard onTicketClick={async (ticket) => {
+        try {
+          if (ticket.url) await navigator.clipboard.writeText(ticket.url);
+          showToast('Link copied to clipboard', 'success');
+        } catch {
+          showToast('Failed to copy link', 'error');
+        }
       }} />
 
       {/* Row 1 — Activity */}
@@ -992,6 +1032,14 @@ export default function Dashboard() {
             )}
           </DataGridBody>
         </DataGrid>
+      )}
+      {toast && (
+        <div
+          className={styles.toast}
+          style={{ color: toast.intent === 'success' ? '#1B7D3A' : '#C41E3A' }}
+        >
+          {toast.message}
+        </div>
       )}
     </div>
   );

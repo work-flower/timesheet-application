@@ -15,6 +15,8 @@ import {
   BreadcrumbItem,
   BreadcrumbDivider,
   BreadcrumbButton,
+  TabList,
+  Tab,
 } from '@fluentui/react-components';
 import { ReceiptRegular } from '@fluentui/react-icons';
 import { timesheetsApi, projectsApi } from '../../api/index.js';
@@ -29,6 +31,7 @@ import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 import DayTimelineCard from '../../components/cards/DayTimelineCard.jsx';
+import TicketsCard from '../../components/cards/TicketsCard.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -63,7 +66,13 @@ const useStyles = makeStyles({
   timelineCol: {
     flex: 1,
     minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  tabContent: {
     position: 'relative',
+    flex: 1,
+    minHeight: 0,
   },
   timelineInner: {
     position: 'absolute',
@@ -71,6 +80,7 @@ const useStyles = makeStyles({
     left: 0,
     right: 0,
     bottom: 0,
+    overflowY: 'auto',
   },
 });
 
@@ -94,6 +104,7 @@ export default function TimesheetForm() {
   const [success, setSuccess] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [invoicePickerOpen, setInvoicePickerOpen] = useState(false);
+  const [rightTab, setRightTab] = useState('timeline');
 
   // Helper to compute days/amount from project + hours
   const computeDaysAmount = (hours, projectId, projectList) => {
@@ -327,6 +338,9 @@ export default function TimesheetForm() {
 
           <div className={styles.notesRow}>
             <div className={styles.notesCol}>
+              <TabList selectedValue="notes" size="small">
+                <Tab value="notes">Notes</Tab>
+              </TabList>
               <FormField fullWidth changed={changedFields.has('notes')}>
                 <MarkdownEditor
                   name="notes"
@@ -338,16 +352,35 @@ export default function TimesheetForm() {
               </FormField>
             </div>
             <div className={styles.timelineCol}>
-              <div className={styles.timelineInner}>
-                <DayTimelineCard
-                  date={form.date}
-                  onEventClick={(evt) => {
-                    setForm((prev) => ({
-                      ...prev,
-                      notes: prev.notes ? `${prev.notes}\n- ${evt.summary}` : `- ${evt.summary}`,
-                    }));
-                  }}
-                />
+              <TabList selectedValue={rightTab} onTabSelect={(_, d) => setRightTab(d.value)} size="small">
+                <Tab value="timeline">Timeline</Tab>
+                <Tab value="tickets">Tickets</Tab>
+              </TabList>
+              <div className={styles.tabContent}>
+                <div className={styles.timelineInner}>
+                  {rightTab === 'timeline' && (
+                    <DayTimelineCard
+                      date={form.date}
+                      onEventClick={(evt) => {
+                        setForm((prev) => ({
+                          ...prev,
+                          notes: prev.notes ? `${prev.notes}\n- ${evt.summary}` : `- ${evt.summary}`,
+                        }));
+                      }}
+                    />
+                  )}
+                  {rightTab === 'tickets' && (
+                    <TicketsCard
+                      onTicketClick={(ticket) => {
+                        const label = ticket.externalId ? `${ticket.externalId}: ${ticket.title}` : ticket.title;
+                        setForm((prev) => ({
+                          ...prev,
+                          notes: prev.notes ? `${prev.notes}\n- ${label}` : `- ${label}`,
+                        }));
+                      }}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           </div>

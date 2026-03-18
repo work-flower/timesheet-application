@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   makeStyles,
   tokens,
@@ -85,21 +85,6 @@ const useStyles = makeStyles({
   sep: {
     color: tokens.colorNeutralStroke2,
   },
-  toast: {
-    position: 'fixed',
-    bottom: '24px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    padding: '8px 20px',
-    borderRadius: tokens.borderRadiusMedium,
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
-    zIndex: 10000,
-    pointerEvents: 'none',
-    backgroundColor: '#fff',
-    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-  },
 });
 
 function stateBadgeColour(state) {
@@ -144,8 +129,6 @@ export default function TicketsCard({ onTicketClick }) {
   const styles = useStyles();
   const [items, setItems] = useState([]);
   const [stateFilter, setStateFilter] = useState(loadSavedFilter);
-  const [toast, setToast] = useState(null);
-  const toastTimer = useRef(null);
 
   useEffect(() => {
     ticketsApi.getAll({ $top: '50', $orderby: 'updated desc' })
@@ -179,21 +162,9 @@ export default function TicketsCard({ onTicketClick }) {
     saveFilter(new Set());
   }, []);
 
-  const showToast = useCallback((message, intent) => {
-    clearTimeout(toastTimer.current);
-    setToast({ message, intent });
-    toastTimer.current = setTimeout(() => setToast(null), 2000);
-  }, []);
-
-  const handleClick = useCallback(async (ticket) => {
-    if (!onTicketClick) return;
-    try {
-      await onTicketClick(ticket);
-      showToast('Link copied to clipboard', 'success');
-    } catch {
-      showToast('Failed to copy link', 'error');
-    }
-  }, [onTicketClick, showToast]);
+  const handleClick = useCallback((ticket) => {
+    onTicketClick?.(ticket);
+  }, [onTicketClick]);
 
   if (items.length === 0) return null;
 
@@ -259,18 +230,6 @@ export default function TicketsCard({ onTicketClick }) {
           );
         })}
       </div>
-      {toast && (
-        <div
-          className={styles.toast}
-          style={{
-            color: toast.intent === 'success' ? '#1B7D3A' : '#C41E3A',
-            animation: 'fadeInOut 2s ease',
-          }}
-        >
-          {toast.message}
-        </div>
-      )}
-      <style>{`@keyframes fadeInOut { 0% { opacity: 0; } 10% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }`}</style>
     </div>
   );
 }
