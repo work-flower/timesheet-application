@@ -28,6 +28,7 @@ import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
+import DayTimelineCard from '../../components/cards/DayTimelineCard.jsx';
 
 const useStyles = makeStyles({
   page: {},
@@ -46,8 +47,30 @@ const useStyles = makeStyles({
   message: {
     marginBottom: '16px',
   },
-  notes: {
-    marginTop: '16px',
+  daysAmountCell: {
+    display: 'flex',
+    gap: '16px',
+    '& > *': { flex: 1, minWidth: 0 },
+  },
+  notesRow: {
+    display: 'flex',
+    gap: '16px',
+  },
+  notesCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timelineCol: {
+    flex: 1,
+    minWidth: 0,
+    position: 'relative',
+  },
+  timelineInner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });
 
@@ -278,40 +301,56 @@ export default function TimesheetForm() {
                 <Input type="number" name="hours" value={String(form.hours ?? '')} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
               </Field>
             </FormField>
-            <FormField changed={changedFields.has('days')}>
-              <Field label="Days">
-                <Input
-                  name="days"
-                  readOnly
-                  value={form.days != null ? Number(form.days).toFixed(2) : '—'}
-                />
-              </Field>
-            </FormField>
-            <FormField changed={changedFields.has('amount')}>
-              <Field label="Amount">
-                <Input
-                  name="amount"
-                  readOnly
-                  value={form.amount != null
-                    ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(Number(form.amount))
-                    : '—'}
-                />
-              </Field>
-            </FormField>
+            <div className={styles.daysAmountCell}>
+              <FormField changed={changedFields.has('days')}>
+                <Field label="Days">
+                  <Input
+                    name="days"
+                    readOnly
+                    value={form.days != null ? Number(form.days).toFixed(2) : '—'}
+                  />
+                </Field>
+              </FormField>
+              <FormField changed={changedFields.has('amount')}>
+                <Field label="Amount">
+                  <Input
+                    name="amount"
+                    readOnly
+                    value={form.amount != null
+                      ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(Number(form.amount))
+                      : '—'}
+                  />
+                </Field>
+              </FormField>
+            </div>
           </FormSection>
 
-          <FormField fullWidth changed={changedFields.has('notes')}>
-            <div className={styles.notes}>
-              <MarkdownEditor
-                label="Notes"
-                name="notes"
-                value={form.notes}
-                onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
-                placeholder="What did you work on today?"
-                height={200}
-              />
+          <div className={styles.notesRow}>
+            <div className={styles.notesCol}>
+              <FormField fullWidth changed={changedFields.has('notes')}>
+                <MarkdownEditor
+                  name="notes"
+                  value={form.notes}
+                  onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+                  placeholder="What did you work on today?"
+                  height={320}
+                />
+              </FormField>
             </div>
-          </FormField>
+            <div className={styles.timelineCol}>
+              <div className={styles.timelineInner}>
+                <DayTimelineCard
+                  date={form.date}
+                  onEventClick={(evt) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      notes: prev.notes ? `${prev.notes}\n- ${evt.summary}` : `- ${evt.summary}`,
+                    }));
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         </fieldset>
       </div>
       <ConfirmDialog

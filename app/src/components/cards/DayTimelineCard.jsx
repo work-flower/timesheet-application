@@ -245,9 +245,14 @@ function pastel(hex, ratio = 0.12) {
   return `rgb(${pr}, ${pg}, ${pb})`;
 }
 
-export default function DayTimelineCard({ date }) {
+export default function DayTimelineCard({ date, onEventClick }) {
   const styles = useStyles();
   const [timelineDate, setTimelineDate] = useState(() => date || new Date().toISOString().split('T')[0]);
+
+  // Sync with external date prop
+  useEffect(() => {
+    if (date) setTimelineDate(date);
+  }, [date]);
   const [timelineEvents, setTimelineEvents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [nowMinutes, setNowMinutes] = useState(() => {
@@ -398,6 +403,16 @@ export default function DayTimelineCard({ date }) {
     node.scrollTop = Math.max(0, target);
   }, [isToday]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-scroll when date or events change
+  useEffect(() => {
+    const node = scrollNodeRef.current;
+    if (!node) return;
+    requestAnimationFrame(() => {
+      const target = isToday ? (nowMinutes / 30) * SLOT_HEIGHT - node.clientHeight / 2 : 16 * SLOT_HEIGHT;
+      node.scrollTop = Math.max(0, target);
+    });
+  }, [timelineDate, timelineEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Card className={styles.card}>
       <div className={styles.header}>
@@ -442,6 +457,7 @@ export default function DayTimelineCard({ date }) {
               borderLeftColor: evt.sourceColour || '#0078D4',
               backgroundColor: pastel(evt.sourceColour || '#0078D4'),
             }}
+            onClick={() => onEventClick?.(evt)}
           >
             {evt.summary}
           </div>
@@ -494,6 +510,7 @@ export default function DayTimelineCard({ date }) {
                     borderLeftColor: evt.sourceColour || '#0078D4',
                     backgroundColor: pastel(evt.sourceColour || '#0078D4'),
                   }}
+                  onClick={() => onEventClick?.(evt)}
                 >
                   <span className={styles.eventTitle}>{evt.summary}</span>
                   {evt.height >= 40 && (
