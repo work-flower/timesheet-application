@@ -14,7 +14,7 @@ import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync
 import { pipeline } from 'stream/promises';
 import crypto from 'crypto';
 import backupConfig from '../db/backupConfig.js';
-import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions } from '../db/index.js';
+import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks } from '../db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,6 +23,7 @@ function getDocumentsDir() { return join(getDataDir(), 'documents'); }
 function getExpensesDir() { return join(getDataDir(), 'expenses'); }
 function getInvoicesDir() { return join(getDataDir(), 'invoices'); }
 function getUploadsDir() { return join(getDataDir(), 'uploads'); }
+function getNotebooksDir() { return join(getDataDir(), 'notebooks'); }
 
 
 function copyDirSync(src, dest) {
@@ -188,7 +189,7 @@ export async function createBackup() {
     const key = `${prefix}/${folderName}.tar.gz`;
 
     // Export all collections
-    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs] = await Promise.all([
+    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs] = await Promise.all([
       clients.find({}),
       projects.find({}),
       timesheets.find({}),
@@ -199,6 +200,7 @@ export async function createBackup() {
       transactions.find({}),
       importJobs.find({}),
       stagedTransactions.find({}),
+      notebooks.find({}),
     ]);
 
     const metadata = {
@@ -215,6 +217,7 @@ export async function createBackup() {
         transactions: transactionDocs.length,
         importJobs: importJobDocs.length,
         stagedTransactions: stagedTransactionDocs.length,
+        notebooks: notebookDocs.length,
       },
     };
 
@@ -239,6 +242,7 @@ export async function createBackup() {
     archive.append(JSON.stringify(transactionDocs, null, 2), { name: `${folderName}/transactions.json` });
     archive.append(JSON.stringify(importJobDocs, null, 2), { name: `${folderName}/importJobs.json` });
     archive.append(JSON.stringify(stagedTransactionDocs, null, 2), { name: `${folderName}/stagedTransactions.json` });
+    archive.append(JSON.stringify(notebookDocs, null, 2), { name: `${folderName}/notebooks.json` });
 
     // Add file directories (documents, expenses, invoices, uploads)
     const fileDirs = [
@@ -246,6 +250,7 @@ export async function createBackup() {
       { dir: getExpensesDir(), archiveName: 'expenses' },
       { dir: getInvoicesDir(), archiveName: 'invoices' },
       { dir: getUploadsDir(), archiveName: 'uploads' },
+      { dir: getNotebooksDir(), archiveName: 'notebooks' },
     ];
     for (const { dir, archiveName } of fileDirs) {
       if (existsSync(dir)) {
@@ -360,6 +365,7 @@ export async function restoreFromBackup(backupKey) {
       { name: 'transactions', db: transactions },
       { name: 'importJobs', db: importJobs },
       { name: 'stagedTransactions', db: stagedTransactions },
+      { name: 'notebooks', db: notebooks },
     ];
 
     for (const { name, db } of collections) {
@@ -381,6 +387,7 @@ export async function restoreFromBackup(backupKey) {
       { target: getExpensesDir(), restoreSubdir: 'files/expenses' },
       { target: getInvoicesDir(), restoreSubdir: 'files/invoices' },
       { target: getUploadsDir(), restoreSubdir: 'files/uploads' },
+      { target: getNotebooksDir(), restoreSubdir: 'files/notebooks' },
     ];
 
     for (const { target, restoreSubdir } of fileDirs) {

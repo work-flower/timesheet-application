@@ -11,6 +11,24 @@ export default defineConfig({
   plugins: [
     react(),
     {
+      name: 'serve-notebook-media',
+      configureServer(server) {
+        const notebooksDir = join(process.env.DATA_DIR || join(__dirname, 'data'), 'notebooks');
+        server.middlewares.use((req, res, next) => {
+          const match = req.url.match(/^\/notebooks\/([^/]+)\/([^/]+\.\w+)$/);
+          if (!match) return next();
+          const filePath = join(notebooksDir, match[1], match[2]);
+          if (existsSync(filePath)) {
+            const mime = lookup(filePath);
+            if (mime) res.setHeader('Content-Type', mime);
+            createReadStream(filePath).pipe(res);
+          } else {
+            next();
+          }
+        });
+      },
+    },
+    {
       name: 'serve-help-assets',
       configureServer(server) {
         // Serve app/src/help/ assets at /help/ in dev (images etc.)

@@ -32,6 +32,9 @@ import {
   CalculatorRegular,
   DocumentTextRegular,
   LinkMultipleRegular,
+  NoteRegular,
+  DeleteRegular,
+  NotebookRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -236,6 +239,15 @@ const navItems = [
     ],
   },
   {
+    label: 'Notebook',
+    icon: <NotebookRegular />,
+    prefix: '/notebooks',
+    children: [
+      { to: '/notebooks', label: 'All Notebooks', icon: <NoteRegular /> },
+      { to: '/notebooks/bin', label: 'Recycle Bin', icon: <DeleteRegular /> },
+    ],
+  },
+  {
     label: 'Reports',
     icon: <DocumentBulletListRegular />,
     prefix: '/reports',
@@ -301,6 +313,9 @@ export default function AppLayout() {
   const [dataExpanded, setDataExpanded] = useState(
     () => isChildRouteActive(['/import-jobs', '/staged-transactions']),
   );
+  const [notebookExpanded, setNotebookExpanded] = useState(
+    () => isChildRouteActive('/notebooks'),
+  );
 
   if (isEmbedded) return <Outlet />;
 
@@ -309,6 +324,7 @@ export default function AppLayout() {
     Reports: [reportsExpanded, setReportsExpanded],
     Banking: [bankingExpanded, setBankingExpanded],
     'Data Management': [dataExpanded, setDataExpanded],
+    Notebook: [notebookExpanded, setNotebookExpanded],
   };
 
   function isActive(item) {

@@ -3,7 +3,8 @@ import 'dotenv/config';
 import { randomUUID } from 'crypto';
 import express from 'express';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { basename, dirname, join, resolve } from 'path';
+import { existsSync } from 'fs';
 import als from './logging/asyncContext.js';
 import { getLogPayloads } from './logging/logHook.js';
 import clientRoutes from './routes/clients.js';
@@ -28,6 +29,7 @@ import calendarSourceRoutes from './routes/calendarSources.js';
 import calendarEventRoutes from './routes/calendarEvents.js';
 import ticketSourceRoutes from './routes/ticketSources.js';
 import ticketRoutes from './routes/tickets.js';
+import notebookRoutes from './routes/notebooks.js';
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
 import { initScheduler } from './services/backupScheduler.js';
 import { initUploader } from './logging/logUploader.js';
@@ -40,7 +42,7 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // AsyncLocalStorage middleware — enriches all requests with context
 app.use((req, res, next) => {
@@ -127,6 +129,7 @@ app.use('/api/calendar-sources', calendarSourceRoutes);
 app.use('/api/calendar-events', calendarEventRoutes);
 app.use('/api/ticket-sources', ticketSourceRoutes);
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/notebooks', notebookRoutes);
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)
 async function wellKnownHandler(req, res) {
@@ -144,8 +147,11 @@ app.get('/.well-known/oauth-authorization-server', wellKnownHandler);
 app.get('/.well-known/openid-configuration', wellKnownHandler);
 
 // Health check
+import { execFileSync } from 'child_process';
+function checkCmd(cmd) { try { execFileSync(cmd, ['--version'], { stdio: 'ignore' }); return true; } catch { return false; } }
+
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', pandoc: checkCmd('pandoc'), xelatex: checkCmd('xelatex') });
 });
 
 // Serve help topic assets (images etc.) from app/src/help/
@@ -156,6 +162,15 @@ const adminDistPath = join(__dirname, '..', 'dist-admin');
 app.use('/admin', express.static(adminDistPath));
 app.get('/admin/*', (req, res) => {
   res.sendFile(join(adminDistPath, 'index.html'));
+});
+
+// Serve notebook media files (relative image refs from markdown editor)
+const notebooksDataDir = resolve(process.env.DATA_DIR || join(__dirname, '..', 'data'), 'notebooks');
+app.get('/notebooks/:id/:filename', (req, res, next) => {
+  const safe = basename(req.params.filename);
+  const filePath = join(notebooksDataDir, req.params.id, safe);
+  if (existsSync(filePath)) return res.sendFile(filePath);
+  next();
 });
 
 // Serve main app in production

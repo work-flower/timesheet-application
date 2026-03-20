@@ -1,0 +1,33 @@
+% Font: Lato (modern sans-serif)
+\usepackage{fontspec}
+\setmainfont{Lato}
+\setsansfont{Lato}
+\setmonofont{Noto Sans Mono}[Scale=0.85]
+
+% Alternating row shading for tables
+\usepackage{xcolor}
+\usepackage{colortbl}
+\definecolor{rowshade}{HTML}{F2F2F2}
+\rowcolors{2}{white}{rowshade}
+
+% Make tables smaller to fit page
+\usepackage{etoolbox}
+\AtBeginEnvironment{longtable}{\small}
+
+% Code block background and wrapping
+\usepackage{fvextra}
+\definecolor{codebg}{HTML}{F5F5F5}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{
+  breaklines,
+  breakanywhere,
+  commandchars=\\\{\},
+  fontsize=\footnotesize
+}
+\usepackage{framed}
+\definecolor{shadecolor}{HTML}{F5F5F5}
+\newenvironment{Shaded}{\begin{snugshade*}}{\end{snugshade*}}
+
+
+% Prevent tables from floating away
+\usepackage{float}
+\floatplacement{table}{H}

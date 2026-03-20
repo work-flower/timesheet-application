@@ -30,6 +30,10 @@ import HelpTopic from './pages/help/HelpTopic.jsx';
 import ReconciliationDashboard from './pages/dashboards/ReconciliationDashboard.jsx';
 import FinancialDashboard from './pages/dashboards/FinancialDashboard.jsx';
 import TransactionReconciliation from './pages/banking/TransactionReconciliation.jsx';
+import NotebookList from './pages/notebooks/NotebookList.jsx';
+import NotebookNew from './pages/notebooks/NotebookNew.jsx';
+import NotebookForm from './pages/notebooks/NotebookForm.jsx';
+import NotebookBin from './pages/notebooks/NotebookBin.jsx';
 
 export default function App() {
   return (
@@ -70,6 +74,10 @@ export default function App() {
               <Route path="/reports/expenses" element={<ExpenseReportForm />} />
               <Route path="/reports/income-expense" element={<IncomeExpenseReport />} />
               <Route path="/reports/vat" element={<VatReport />} />
+              <Route path="/notebooks" element={<NotebookList />} />
+              <Route path="/notebooks/new" element={<NotebookNew />} />
+              <Route path="/notebooks/bin" element={<NotebookBin />} />
+              <Route path="/notebooks/:id" element={<NotebookForm />} />
               <Route path="/help" element={<HelpIndex />} />
               <Route path="/help/:topicId" element={<HelpTopic />} />
             </Route>

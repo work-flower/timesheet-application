@@ -8,6 +8,7 @@ RUN npm run build
 
 # Stage 2: Production
 FROM node:20-alpine
+RUN apk add --no-cache pandoc texlive texlive-xetex texmf-dist-fontsextra
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev

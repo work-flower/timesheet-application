@@ -32,7 +32,7 @@ If a change spans multiple areas (e.g. adding a new entity end-to-end), load ALL
 2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
 3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
 
-Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`, `notebooks.md`
 
 ### Keeping Wiring Docs Up to Date (MANDATORY)
 
@@ -75,6 +75,7 @@ When the user requests an audit, systematically verify the entity's documentatio
 - **AI:** `@anthropic-ai/sdk` (Claude API for bank statement parsing and expense receipt scanning)
 - **Calendar:** `node-ical` (ICS feed fetching and parsing)
 - **Tickets:** Native `fetch` with Basic auth (Jira REST API v3, Azure DevOps REST API)
+- **Notebook Editor:** `@milkdown/kit` + `@milkdown/react` (WYSIWYG markdown editor for knowledge base, wrapped in swappable `NotebookEditor.jsx`)
 - **Other:** `@uiw/react-md-editor` (markdown notes), `multer` + `sharp` (expense attachments + thumbnails), `@aws-sdk/client-s3` + `archiver` + `tar` + `node-cron` (R2 cloud backup), `dotenv`
 
 ## Configuration
@@ -390,6 +391,26 @@ Cached tickets from ticket sources in canonical shape.
 | url | Direct link to ticket in source system |
 | created, updated | Dates from source system |
 
+### notebooks
+
+Knowledge base / notebook entries. Metadata in DB, content on disk as markdown files.
+
+| Field | Description |
+|-------|-------------|
+| title | Required |
+| summary | Short description for cards + future RAG metadata |
+| tags | Array of strings |
+| isDraft | Boolean marker |
+| status | `active`, `archived`, `deleted` |
+| ragScore | null until future AI scoring (low, low-moderate, moderate, moderate-high, high) |
+| deletedAt | ISO timestamp for recycle bin |
+| thumbnailFilename | Auto-generated from first image in content |
+| relatedProjects | Array of project IDs referenced in content (derived on save) |
+| relatedClients | Array of client IDs referenced in content (derived on save) |
+| relatedTimesheets | Array of timesheet IDs referenced in content (derived on save) |
+
+**Content** stored on disk at `DATA_DIR/notebooks/{notebookId}/content.md` — NOT in DB. Media files stored alongside in the same folder.
+
 ---
 
 ## Business Rules
@@ -453,7 +474,9 @@ Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods
 
 ### OData Query Support
 
-All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startswith, endswith, and), `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`. Without `$count`: plain array response. With `$count=true`: `{ "@odata.count": N, "value": [...] }`.
+All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startswith, endswith, and, or, parentheses), `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`. Without `$count`: plain array response. With `$count=true`: `{ "@odata.count": N, "value": [...] }`.
+
+**Virtual fields in `$filter`:** Services can define virtual field names that are resolved before the DB query. The notebook service supports `tagsAll`, `relatedProjectNamesAll`, `relatedClientNamesAll`, `relatedTimesheetLabelsAll` — these resolve array fields or cross-entity lookups into real NeDB conditions.
 
 **$expand relationships:**
 
@@ -518,6 +541,10 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/transactions` | Transaction list |
 | `/transactions/:id` | Transaction form (read-only details, editable status) |
 | `/banking/transaction-reconciliation` | Transaction Reconciliation (three-panel batch linking) |
+| `/notebooks` | Notebook list (card-based) |
+| `/notebooks/new` | Create new notebook (create-on-open redirect) |
+| `/notebooks/:id` | Notebook edit form (Milkdown editor) |
+| `/notebooks/bin` | Recycle bin (deleted notebooks with restore/purge) |
 | `/help` | Help topics index |
 | `/help/:topicId` | Help topic detail (markdown content with images) |
 

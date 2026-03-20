@@ -345,6 +345,78 @@ export const ticketsApi = {
   refreshAll: () => request('/ticket-sources/refresh-all', { method: 'POST', body: '{}' }),
 };
 
+// Notebooks
+export const notebooksApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/notebooks${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/notebooks/${id}`),
+  create: (data) => request('/notebooks', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/notebooks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/notebooks/${id}`, { method: 'DELETE' }),
+  restore: (id) => request(`/notebooks/${id}/restore`, { method: 'POST', body: '{}' }),
+  archive: (id) => request(`/notebooks/${id}/archive`, { method: 'POST', body: '{}' }),
+  unarchive: (id) => request(`/notebooks/${id}/unarchive`, { method: 'POST', body: '{}' }),
+  purge: (id) => request(`/notebooks/${id}/purge`, { method: 'DELETE' }),
+  getContent: async (id) => {
+    const res = await fetch(`${BASE}/notebooks/${id}/content`, {
+      headers: { 'X-Trace-Id': getTraceId() },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    return res.text();
+  },
+  updateContent: (id, content) => request(`/notebooks/${id}/content`, {
+    method: 'PUT',
+    body: JSON.stringify({ content }),
+  }),
+  getTags: () => request('/notebooks/tags'),
+  uploadMedia: async (id, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE}/notebooks/${id}/media`, {
+      method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
+  getMediaUrl: (id, filename) => `${BASE}/notebooks/${id}/media/${encodeURIComponent(filename)}`,
+  getPdf: async (id) => {
+    const res = await fetch(`${BASE}/notebooks/${id}/pdf`, {
+      headers: { 'X-Trace-Id': getTraceId() },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+    }
+    return res.blob();
+  },
+  importNotebook: async (formData) => {
+    const res = await fetch(`${BASE}/notebooks/import`, {
+      method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Import failed: ${res.status}`);
+    }
+    return res.json();
+  },
+};
+
 // Dashboard
 export const dashboardApi = {
   getOperations: () => request('/dashboard/operations'),

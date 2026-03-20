@@ -2,7 +2,7 @@
  * OData query parameter parser and applier for NeDB collections.
  *
  * Supported operations:
- *   $filter   — field eq 'value', field gt 123, contains(field,'val'), and
+ *   $filter   — field eq 'value', field gt 123, contains(field,'val'), and, or, parentheses
  *   $orderby  — field asc, field2 desc
  *   $top      — integer limit
  *   $skip     — integer offset
@@ -10,136 +10,87 @@
  *   $select   — comma-separated field list
  */
 
+import { parseFilter as parseFilterAst } from 'odata-filter-to-ast';
+
 // ---------------------------------------------------------------------------
-// $filter parsing
+// $filter parsing — AST-based via odata-filter-to-ast
 // ---------------------------------------------------------------------------
+
+const nedbOps = { EqExpr: null, NeExpr: '$ne', GtExpr: '$gt', GeExpr: '$gte', LtExpr: '$lt', LeExpr: '$lte' };
 
 /**
- * Split a $filter string on top-level ` and ` tokens, respecting quoted strings.
+ * Convert an OData AST node to a NeDB query object.
  */
-function splitOnAnd(filterStr) {
-  const parts = [];
-  let current = '';
-  let inQuote = false;
-  let i = 0;
+function astToNedb(node) {
+  if (!node) return {};
 
-  while (i < filterStr.length) {
-    const ch = filterStr[i];
-
-    if (ch === "'" && !inQuote) {
-      inQuote = true;
-      current += ch;
-      i++;
-    } else if (ch === "'" && inQuote) {
-      inQuote = false;
-      current += ch;
-      i++;
-    } else if (
-      !inQuote &&
-      filterStr.slice(i, i + 5).toLowerCase() === ' and '
-    ) {
-      parts.push(current.trim());
-      current = '';
-      i += 5;
-    } else {
-      current += ch;
-      i++;
+  switch (node.type) {
+    case 'AndExpr': {
+      const left = astToNedb(node.left);
+      const right = astToNedb(node.right);
+      // Merge flat objects when possible, otherwise use $and
+      const leftHasLogical = '$or' in left || '$and' in left;
+      const rightHasLogical = '$or' in right || '$and' in right;
+      if (!leftHasLogical && !rightHasLogical) {
+        const overlap = Object.keys(left).some((k) => k in right);
+        if (!overlap) return { ...left, ...right };
+      }
+      return { $and: [left, right] };
     }
+
+    case 'OrExpr':
+      return { $or: [astToNedb(node.left), astToNedb(node.right)] };
+
+    case 'EqExpr': case 'NeExpr': case 'GtExpr': case 'GeExpr': case 'LtExpr': case 'LeExpr': {
+      const field = node.left?.value;
+      const value = node.right?.value ?? node.right;
+      const op = nedbOps[node.type];
+
+      // NeDB null handling: { field: null } only matches explicit null, not missing fields.
+      if (value === null && op === null) {
+        return { $or: [{ [field]: null }, { [field]: { $exists: false } }] };
+      }
+      if (value === null && op === '$ne') {
+        return { [field]: { $exists: true, $ne: null } };
+      }
+      if (op === null) return { [field]: value };
+      return { [field]: { [op]: value } };
+    }
+
+    case 'FunctionExpr': {
+      const fnName = node.name?.toLowerCase();
+      const field = node.arguments?.[0]?.value;
+      const val = node.arguments?.[1]?.value;
+      if (!field || val == null) return {};
+
+      const escaped = String(val).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      let pattern;
+      switch (fnName) {
+        case 'contains': pattern = escaped; break;
+        case 'startswith': pattern = `^${escaped}`; break;
+        case 'endswith': pattern = `${escaped}$`; break;
+        default: return {};
+      }
+      return { [field]: { $regex: new RegExp(pattern, 'i') } };
+    }
+
+    default:
+      return {};
   }
-
-  if (current.trim()) parts.push(current.trim());
-  return parts;
 }
-
-/**
- * Parse a raw value token into its JS type.
- *   'string' → string (quotes stripped)
- *   123 / 123.5 → number
- *   true / false → boolean
- *   null → null
- */
-function parseValue(raw) {
-  if (raw === 'null') return null;
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
-  if (/^'.*'$/.test(raw)) return raw.slice(1, -1);
-  const num = Number(raw);
-  if (!isNaN(num) && raw !== '') return num;
-  return raw;
-}
-
-const comparisonOps = {
-  eq: null,   // direct match
-  ne: '$ne',
-  gt: '$gt',
-  ge: '$gte',
-  lt: '$lt',
-  le: '$lte',
-};
-
-// Regex for string functions: contains(field,'val'), startswith(field,'val'), endswith(field,'val')
-const stringFnRe = /^(contains|startswith|endswith)\(\s*(\w+)\s*,\s*'([^']*)'\s*\)$/i;
-
-// Regex for comparison: field op value
-const comparisonRe = /^(\w+)\s+(eq|ne|gt|ge|lt|le)\s+(.+)$/i;
 
 /**
  * Parse a $filter string into a NeDB query object.
+ * Supports: and, or, parentheses, eq/ne/gt/ge/lt/le, contains/startswith/endswith, null.
  */
 export function parseFilter(filterStr) {
   if (!filterStr) return {};
-
-  const conditions = splitOnAnd(filterStr);
-  const query = {};
-
-  for (const cond of conditions) {
-    // Try string function first
-    const fnMatch = cond.match(stringFnRe);
-    if (fnMatch) {
-      const [, fn, field, val] = fnMatch;
-      const escaped = val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      let pattern;
-      switch (fn.toLowerCase()) {
-        case 'contains':
-          pattern = escaped;
-          break;
-        case 'startswith':
-          pattern = `^${escaped}`;
-          break;
-        case 'endswith':
-          pattern = `${escaped}$`;
-          break;
-      }
-      query[field] = { $regex: new RegExp(pattern, 'i') };
-      continue;
-    }
-
-    // Try comparison
-    const cmpMatch = cond.match(comparisonRe);
-    if (cmpMatch) {
-      const [, field, op, rawVal] = cmpMatch;
-      const value = parseValue(rawVal.trim());
-      const nedbOp = comparisonOps[op.toLowerCase()];
-
-      // NeDB null handling: { field: null } only matches explicit null, not missing fields.
-      // Use $or to match both, or $exists + $ne for ne null.
-      if (value === null && nedbOp === null) {
-        // eq null — match both null and missing
-        if (!query.$and) query.$and = [];
-        query.$and.push({ $or: [{ [field]: null }, { [field]: { $exists: false } }] });
-      } else if (value === null && nedbOp === '$ne') {
-        // ne null — match fields that exist and are not null
-        query[field] = { $exists: true, $ne: null };
-      } else if (nedbOp === null) {
-        // eq — direct match
-        query[field] = value;
-      } else {
-        query[field] = { ...(query[field] || {}), [nedbOp]: value };
-      }
-    }
+  try {
+    const ast = parseFilterAst(filterStr);
+    return astToNedb(ast);
+  } catch {
+    return {};
   }
-
-  return query;
 }
 
 // ---------------------------------------------------------------------------
