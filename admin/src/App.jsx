@@ -13,6 +13,7 @@ import TicketSourcesPage from './pages/system/TicketSourcesPage.jsx';
 import BackupPage from './pages/infra/BackupPage.jsx';
 import LoggingPage from './pages/infra/LoggingPage.jsx';
 import LogViewer from './pages/infra/LogViewer.jsx';
+import ConsolePage from './pages/infra/ConsolePage.jsx';
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
               <Route path="/system/ticket-sources" element={<TicketSourcesPage />} />
               <Route path="/infra/backup" element={<BackupPage />} />
               <Route path="/infra/logging" element={<LoggingPage />} />
+              <Route path="/infra/console" element={<ConsolePage />} />
               <Route path="/reports/logs" element={<LogViewer />} />
             </Route>
           </Routes>

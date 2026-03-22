@@ -30,6 +30,7 @@ import calendarEventRoutes from './routes/calendarEvents.js';
 import ticketSourceRoutes from './routes/ticketSources.js';
 import ticketRoutes from './routes/tickets.js';
 import notebookRoutes from './routes/notebooks.js';
+import consoleRoutes from './routes/console.js';
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
 import { initScheduler } from './services/backupScheduler.js';
 import { initUploader } from './logging/logUploader.js';
@@ -130,6 +131,7 @@ app.use('/api/calendar-events', calendarEventRoutes);
 app.use('/api/ticket-sources', ticketSourceRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/notebooks', notebookRoutes);
+app.use('/api/console', consoleRoutes);
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)
 async function wellKnownHandler(req, res) {
