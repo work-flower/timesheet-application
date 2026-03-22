@@ -3,16 +3,32 @@ import { buildQuery, parseFilter, applySelect, formatResponse } from '../odata.j
 import { parseFilter as parseFilterAst } from 'odata-filter-to-ast';
 import { fileURLToPath } from 'url';
 import { basename, dirname, join } from 'path';
-import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'fs';
+import { mkdirSync, rmSync, renameSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'fs';
 import sharp from 'sharp';
+import * as git from './notebookGitService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 function getDataDir() { return process.env.DATA_DIR || join(__dirname, '..', '..', 'data'); }
 function getNotebooksDir() { return join(getDataDir(), 'notebooks'); }
 
-export function getNotebookDir(id) {
-  return join(getNotebooksDir(), id);
+// Re-export sanitizeTitle for consumers (e.g. multer destination in routes)
+export { sanitizeTitle } from './notebookGitService.js';
+
+/**
+ * Resolve a notebook's folder path from its title (sync — when title is known).
+ */
+function dirFromTitle(title) {
+  return join(getNotebooksDir(), git.sanitizeTitle(title));
+}
+
+/**
+ * Resolve a notebook's folder path from its DB id (async — looks up title).
+ */
+export async function getNotebookDir(id) {
+  const notebook = await notebooks.findOne({ _id: id });
+  if (!notebook) throw new Error('Notebook not found');
+  return dirFromTitle(notebook.title);
 }
 
 // --- Entity reference enrichment ---
@@ -179,6 +195,24 @@ async function resolveAstToNedb(node) {
   }
 }
 
+// --- Git status enrichment ---
+
+function enrichGitStatus(entries) {
+  const dirtyFolders = git.getDirtyFolders();
+  return entries.map((entry) => {
+    const folderName = git.sanitizeTitle(entry.title);
+    const isDraft = dirtyFolders.has(folderName);
+    return { ...entry, isDraft };
+  });
+}
+
+function enrichGitStatusSingle(entry) {
+  const folderName = git.sanitizeTitle(entry.title);
+  const isDraft = git.isDirty(folderName);
+  const canDiscard = isDraft && git.isCommitted(folderName);
+  return { ...entry, isDraft, canDiscard };
+}
+
 // --- CRUD ---
 
 export async function getAll(query = {}) {
@@ -226,7 +260,10 @@ export async function getAll(query = {}) {
   // Enrich with resolved entity names
   const enriched = await enrichEntityNames(withThumbnails);
 
-  const items = applySelect(enriched, query.$select);
+  // Enrich with git draft status
+  const withGitStatus = enrichGitStatus(enriched);
+
+  const items = applySelect(withGitStatus, query.$select);
   return formatResponse(items, totalCount, query.$count === 'true');
 }
 
@@ -242,7 +279,7 @@ export async function getById(id) {
   };
 
   const [enriched] = await enrichEntityNames([withThumbnail]);
-  return enriched;
+  return enrichGitStatusSingle(enriched);
 }
 
 export async function create(data) {
@@ -255,12 +292,27 @@ Summary paragraph here.
 
 #tags`;
   const meta = parseContentMeta(template);
+  const folderName = git.sanitizeTitle(meta.title);
+  const dir = dirFromTitle(meta.title);
 
+  // Create folder — EEXIST = duplicate title
+  try {
+    mkdirSync(dir);
+  } catch (err) {
+    if (err.code === 'EEXIST') {
+      throw new Error(`A notebook with the title "${meta.title}" already exists`);
+    }
+    throw err;
+  }
+
+  // Write template content
+  writeFileSync(join(dir, 'content.md'), template, 'utf-8');
+
+  // Insert DB record (no isDraft — derived from git status)
   const record = await notebooks.insert({
     title: meta.title,
     summary: meta.summary,
     tags: meta.tags,
-    isDraft: data.isDraft ?? true,
     status: 'active',
     ragScore: null,
     deletedAt: null,
@@ -272,11 +324,6 @@ Summary paragraph here.
     updatedAt: now,
   });
 
-  // Create folder structure with template content
-  const dir = getNotebookDir(record._id);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'content.md'), template, 'utf-8');
-
   return record;
 }
 
@@ -285,12 +332,7 @@ export async function update(id, data) {
   if (!existing) return null;
 
   const now = new Date().toISOString();
-  const updateData = {
-    updatedAt: now,
-  };
-
-  // Only allow updating isDraft — title, summary, tags are derived from content
-  if (data.isDraft !== undefined) updateData.isDraft = !!data.isDraft;
+  const updateData = { updatedAt: now };
 
   await notebooks.update({ _id: id }, { $set: updateData });
   return getById(id);
@@ -358,8 +400,15 @@ export async function purge(id) {
     throw new Error('Only deleted notebooks can be permanently purged');
   }
 
-  // Remove folder and all contents
-  const dir = getNotebookDir(id);
+  const folderName = git.sanitizeTitle(existing.title);
+  const dir = dirFromTitle(existing.title);
+
+  // Remove from git if tracked
+  if (git.isTracked(folderName)) {
+    git.rm(folderName);
+  }
+
+  // Remove folder and any untracked leftovers (thumbnails etc.)
   if (existsSync(dir)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -374,7 +423,8 @@ export async function getContent(id) {
   const existing = await notebooks.findOne({ _id: id });
   if (!existing) return null;
 
-  const filePath = join(getNotebookDir(id), 'content.md');
+  const dir = dirFromTitle(existing.title);
+  const filePath = join(dir, 'content.md');
   if (!existsSync(filePath)) return '';
   return readFileSync(filePath, 'utf-8');
 }
@@ -383,18 +433,92 @@ export async function updateContent(id, markdown) {
   const existing = await notebooks.findOne({ _id: id });
   if (!existing) return null;
 
-  const dir = getNotebookDir(id);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'content.md'), markdown || '', 'utf-8');
-
-  // Derive title, summary, tags from content
+  // Derive new title from content
   const meta = parseContentMeta(markdown);
+  const newTitle = meta.title || 'Untitled';
+  const oldFolderName = git.sanitizeTitle(existing.title);
+  const newFolderName = git.sanitizeTitle(newTitle);
+
+  let dir = dirFromTitle(existing.title);
+
+  // Handle title change → folder rename
+  if (oldFolderName !== newFolderName) {
+    const newDir = join(getNotebooksDir(), newFolderName);
+
+    // Check if target folder already exists (duplicate title)
+    if (existsSync(newDir)) {
+      throw new Error(`A notebook with the title "${newTitle}" already exists`);
+    }
+
+    // Use git mv if tracked, otherwise plain rename
+    if (git.isTracked(oldFolderName)) {
+      git.mv(oldFolderName, newFolderName);
+    } else {
+      renameSync(dir, newDir);
+    }
+
+    dir = newDir;
+  }
+
+  // Write content
+  writeFileSync(join(dir, 'content.md'), markdown || '', 'utf-8');
 
   // Extract first image reference and generate thumbnail
   await extractThumbnail(id, dir, markdown || '');
 
   // Extract entity references from markdown links
   const refs = extractEntityReferences(markdown);
+
+  const now = new Date().toISOString();
+  await notebooks.update({ _id: id }, {
+    $set: {
+      title: newTitle,
+      summary: meta.summary,
+      tags: meta.tags,
+      relatedProjects: refs.relatedProjects,
+      relatedClients: refs.relatedClients,
+      relatedTimesheets: refs.relatedTimesheets,
+      updatedAt: now,
+    },
+  });
+
+  return { success: true };
+}
+
+// --- Publish & Discard ---
+
+export async function publish(id, message) {
+  const existing = await notebooks.findOne({ _id: id });
+  if (!existing) return null;
+
+  if (!message || !message.trim()) {
+    throw new Error('Commit message is required');
+  }
+
+  const folderName = git.sanitizeTitle(existing.title);
+  git.publish(folderName, message.trim());
+
+  return getById(id);
+}
+
+export async function discard(id) {
+  const existing = await notebooks.findOne({ _id: id });
+  if (!existing) return null;
+
+  const folderName = git.sanitizeTitle(existing.title);
+
+  if (!git.isCommitted(folderName)) {
+    throw new Error('Notebook has never been published — nothing to revert');
+  }
+
+  // Restore to last committed state
+  git.discard(folderName);
+
+  // Re-read restored content and re-derive DB metadata
+  const dir = dirFromTitle(existing.title);
+  const content = readFileSync(join(dir, 'content.md'), 'utf-8');
+  const meta = parseContentMeta(content);
+  const refs = extractEntityReferences(content);
 
   const now = new Date().toISOString();
   await notebooks.update({ _id: id }, {
@@ -409,13 +533,16 @@ export async function updateContent(id, markdown) {
     },
   });
 
-  return { success: true };
+  // Regenerate thumbnail
+  await extractThumbnail(id, dir, content);
+
+  return getById(id);
 }
 
 // --- Media (images/files in notebook folder) ---
 
-export function listMedia(id) {
-  const dir = getNotebookDir(id);
+export async function listMedia(id) {
+  const dir = await getNotebookDir(id);
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter((f) => f !== 'content.md' && !f.startsWith('thumb_'));
 }
@@ -579,13 +706,25 @@ async function extractThumbnail(id, dir, markdown) {
 
 export async function importNotebook(content, resourceFiles) {
   const meta = parseContentMeta(content);
+  const title = meta.title || 'Untitled';
+  const dir = dirFromTitle(title);
+
+  // Create folder — EEXIST = duplicate title
+  try {
+    mkdirSync(dir);
+  } catch (err) {
+    if (err.code === 'EEXIST') {
+      throw new Error(`A notebook with the title "${title}" already exists`);
+    }
+    throw err;
+  }
+
   const now = new Date().toISOString();
 
   const record = await notebooks.insert({
-    title: meta.title || 'Untitled',
+    title,
     summary: meta.summary,
     tags: meta.tags,
-    isDraft: true,
     status: 'active',
     ragScore: null,
     deletedAt: null,
@@ -593,9 +732,6 @@ export async function importNotebook(content, resourceFiles) {
     createdAt: now,
     updatedAt: now,
   });
-
-  const dir = getNotebookDir(record._id);
-  mkdirSync(dir, { recursive: true });
 
   // Write content markdown
   writeFileSync(join(dir, 'content.md'), content || '', 'utf-8');

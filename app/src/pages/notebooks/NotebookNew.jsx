@@ -12,7 +12,7 @@ export default function NotebookNew() {
 
   useEffect(() => {
     let cancelled = false;
-    notebooksApi.create({ isDraft: true, title: 'Untitled' })
+    notebooksApi.create({})
       .then((record) => {
         if (!cancelled) {
           navigate(`/notebooks/${record._id}/`, { replace: true });

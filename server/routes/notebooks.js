@@ -10,12 +10,16 @@ const router = Router();
 // Multer with memory storage for import (no notebook ID yet)
 const importUpload = multer({ storage: multer.memoryStorage() });
 
-// Multer setup for media uploads — stores in notebook folder
+// Multer setup for media uploads — resolves notebook folder via title
 const storage = multer.diskStorage({
-  destination: (req, _file, cb) => {
-    const dir = notebookService.getNotebookDir(req.params.id);
-    mkdirSync(dir, { recursive: true });
-    cb(null, dir);
+  destination: async (req, _file, cb) => {
+    try {
+      const dir = await notebookService.getNotebookDir(req.params.id);
+      mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    } catch (err) {
+      cb(err);
+    }
   },
   filename: (_req, file, cb) => {
     // Preserve original filename but sanitize
@@ -152,6 +156,34 @@ router.delete('/:id/purge', async (req, res) => {
   }
 });
 
+// --- Publish & Discard ---
+
+router.post('/:id/publish', async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: 'Commit message is required' });
+    }
+    const result = await notebookService.publish(req.params.id, message);
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.json(result);
+  } catch (err) {
+    console.warn('Failed to publish notebook:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/:id/discard', async (req, res) => {
+  try {
+    const result = await notebookService.discard(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.json(result);
+  } catch (err) {
+    console.warn('Failed to discard changes:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // --- PDF ---
 
 router.get('/:id/pdf', async (req, res) => {
@@ -191,8 +223,8 @@ router.put('/:id/content', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.json(result);
   } catch (err) {
-    console.error('Failed to update notebook content:', err);
-    res.status(500).json({ error: err.message });
+    console.warn('Failed to update notebook content:', err);
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -215,7 +247,7 @@ router.post('/:id/media', upload.single('file'), async (req, res) => {
 
 router.get('/:id/media', async (req, res) => {
   try {
-    const files = notebookService.listMedia(req.params.id);
+    const files = await notebookService.listMedia(req.params.id);
     res.json(files);
   } catch (err) {
     console.error('Failed to list media:', err);

@@ -109,9 +109,3 @@ export const logApi = {
   listR2: () => request('/logs/r2'),
 };
 
-// Console
-export const consoleApi = {
-  execute: (command, cwd) => request('/console/execute', { method: 'POST', body: JSON.stringify({ command, cwd }) }),
-  getInfo: () => request('/console/info'),
-  getWelcome: () => request('/console/welcome'),
-};

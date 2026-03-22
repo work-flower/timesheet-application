@@ -30,12 +30,14 @@ import calendarEventRoutes from './routes/calendarEvents.js';
 import ticketSourceRoutes from './routes/ticketSources.js';
 import ticketRoutes from './routes/tickets.js';
 import notebookRoutes from './routes/notebooks.js';
-import consoleRoutes from './routes/console.js';
+
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
 import { initScheduler } from './services/backupScheduler.js';
 import { initUploader } from './logging/logUploader.js';
 import { initCalendarScheduler } from './services/calendarService.js';
 import { initTicketScheduler } from './services/ticketService.js';
+import { ensureRepo, sanitizeTitle } from './services/notebookGitService.js';
+import { notebooks } from './db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -131,7 +133,7 @@ app.use('/api/calendar-events', calendarEventRoutes);
 app.use('/api/ticket-sources', ticketSourceRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/notebooks', notebookRoutes);
-app.use('/api/console', consoleRoutes);
+
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)
 async function wellKnownHandler(req, res) {
@@ -167,12 +169,20 @@ app.get('/admin/*', (req, res) => {
 });
 
 // Serve notebook media files (relative image refs from markdown editor)
+// Resolves notebook ID → sanitized title folder name
 const notebooksDataDir = resolve(process.env.DATA_DIR || join(__dirname, '..', 'data'), 'notebooks');
-app.get('/notebooks/:id/:filename', (req, res, next) => {
-  const safe = basename(req.params.filename);
-  const filePath = join(notebooksDataDir, req.params.id, safe);
-  if (existsSync(filePath)) return res.sendFile(filePath);
-  next();
+app.get('/notebooks/:id/:filename', async (req, res, next) => {
+  try {
+    const notebook = await notebooks.findOne({ _id: req.params.id });
+    if (!notebook) return next();
+    const folderName = sanitizeTitle(notebook.title);
+    const safe = basename(req.params.filename);
+    const filePath = join(notebooksDataDir, folderName, safe);
+    if (existsSync(filePath)) return res.sendFile(filePath);
+    next();
+  } catch {
+    next();
+  }
 });
 
 // Serve main app in production
@@ -181,6 +191,9 @@ app.use(express.static(distPath));
 app.get('*', (req, res) => {
   res.sendFile(join(distPath, 'index.html'));
 });
+
+// Ensure notebooks git repo exists before starting
+ensureRepo();
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

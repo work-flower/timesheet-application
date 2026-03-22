@@ -363,6 +363,8 @@ export const notebooksApi = {
   archive: (id) => request(`/notebooks/${id}/archive`, { method: 'POST', body: '{}' }),
   unarchive: (id) => request(`/notebooks/${id}/unarchive`, { method: 'POST', body: '{}' }),
   purge: (id) => request(`/notebooks/${id}/purge`, { method: 'DELETE' }),
+  publish: (id, message) => request(`/notebooks/${id}/publish`, { method: 'POST', body: JSON.stringify({ message }) }),
+  discard: (id) => request(`/notebooks/${id}/discard`, { method: 'POST', body: '{}' }),
   getContent: async (id) => {
     const res = await fetch(`${BASE}/notebooks/${id}/content`, {
       headers: { 'X-Trace-Id': getTraceId() },

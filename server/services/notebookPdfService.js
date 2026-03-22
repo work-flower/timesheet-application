@@ -15,7 +15,7 @@ const STYLE_PATH = join(__dirname, '..', 'assets', 'notebook-pdf-style.tex');
  * Returns { buffer: Buffer }.
  */
 export async function buildNotebookPdf(notebookId) {
-  const dir = getNotebookDir(notebookId);
+  const dir = await getNotebookDir(notebookId);
   const contentPath = join(dir, 'content.md');
   if (!existsSync(contentPath)) throw new Error('Notebook content not found');
 

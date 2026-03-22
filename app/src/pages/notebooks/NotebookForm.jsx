@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useLocation, Navigate } from 'react-router-dom';
 import {
   makeStyles, tokens, Text, Spinner, MessageBar, MessageBarBody,
-  Badge, Button, Tooltip,
+  Badge, Button, Tooltip, Textarea,
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions,
 } from '@fluentui/react-components';
 import {
   ArrowLeftRegular, DeleteRegular, ArchiveRegular,
   ArrowUndoRegular, ArrowRedoRegular, PrintRegular,
+  ArrowResetRegular, SendRegular,
 } from '@fluentui/react-icons';
 import { notebooksApi } from '../../api/index.js';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -113,9 +114,6 @@ export default function NotebookForm() {
   // Save status: 'idle' | 'saving' | 'saved' | 'error'
   const [saveStatus, setSaveStatus] = useState('idle');
 
-  // Metadata fields
-  const [isDraft, setIsDraft] = useState(true);
-
   // Content
   const [initialContent, setInitialContent] = useState('');
   const contentRef = useRef('');
@@ -124,8 +122,8 @@ export default function NotebookForm() {
   const saveTimerRef = useRef(null);
   const editorRef = useRef(null);
 
-  // Snapshot of last saved state
-  const lastSavedRef = useRef({ isDraft: true, content: '' });
+  // Snapshot of last saved content
+  const lastSavedRef = useRef('');
 
   // Load data
   useEffect(() => {
@@ -137,13 +135,9 @@ export default function NotebookForm() {
           notebooksApi.getContent(id),
         ]);
         setLoadedData(data);
-        setIsDraft(data.isDraft ?? true);
         setInitialContent(md || '');
         contentRef.current = md || '';
-        lastSavedRef.current = {
-          isDraft: data.isDraft ?? true,
-          content: md || '',
-        };
+        lastSavedRef.current = md || '';
       } catch (err) {
         setError(err.message);
       } finally {
@@ -154,31 +148,16 @@ export default function NotebookForm() {
   }, [id]);
 
   // Auto-save function
-  const doSave = useCallback(async (currentIsDraft) => {
+  const doSave = useCallback(async () => {
     const currentContent = contentRef.current;
-    const last = lastSavedRef.current;
 
-    const draftChanged = currentIsDraft !== last.isDraft;
-    const contentChanged = currentContent !== last.content;
-
-    if (!draftChanged && !contentChanged) return;
+    if (currentContent === lastSavedRef.current) return;
 
     setSaveStatus('saving');
     try {
-      const promises = [];
-      if (draftChanged) {
-        promises.push(notebooksApi.update(id, { isDraft: currentIsDraft }));
-      }
-      if (contentChanged) {
-        // Server derives title, summary, tags from content
-        promises.push(notebooksApi.updateContent(id, currentContent));
-      }
-      await Promise.all(promises);
-
-      lastSavedRef.current = {
-        isDraft: currentIsDraft,
-        content: currentContent,
-      };
+      // Server derives title, summary, tags from content
+      await notebooksApi.updateContent(id, currentContent);
+      lastSavedRef.current = currentContent;
 
       // Refresh loaded data for status badges etc.
       const data = await notebooksApi.getById(id);
@@ -192,10 +171,10 @@ export default function NotebookForm() {
   }, [id]);
 
   // Schedule auto-save on any change
-  const scheduleSave = useCallback((currentIsDraft) => {
+  const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      doSave(currentIsDraft);
+      doSave();
     }, AUTO_SAVE_DELAY);
   }, [doSave]);
 
@@ -204,21 +183,15 @@ export default function NotebookForm() {
     return () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
-        doSave(isDraft);
+        doSave();
       }
     };
-  }, [isDraft, doSave]);
+  }, [doSave]);
 
   const handleContentChange = useCallback((md) => {
     contentRef.current = md;
-    scheduleSave(isDraft);
-  }, [isDraft, scheduleSave]);
-
-  const handleDraftToggle = () => {
-    const next = !isDraft;
-    setIsDraft(next);
-    scheduleSave(next);
-  };
+    scheduleSave();
+  }, [scheduleSave]);
 
   // Image upload
   const handleImageUpload = useCallback(async (file) => {
@@ -269,7 +242,7 @@ export default function NotebookForm() {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
-      await doSave(isDraft);
+      await doSave();
     }
 
     setPdfLoading(true);
@@ -285,7 +258,7 @@ export default function NotebookForm() {
     } finally {
       setPdfLoading(false);
     }
-  }, [id, isDraft, doSave]);
+  }, [id, doSave]);
 
   const closePdfDialog = useCallback(() => {
     setPdfDialogOpen(false);
@@ -301,7 +274,7 @@ export default function NotebookForm() {
     try {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
-        await doSave(isDraft);
+        await doSave();
       }
       await notebooksApi.archive(id);
       const data = await notebooksApi.getById(id);
@@ -321,7 +294,59 @@ export default function NotebookForm() {
     }
   };
 
+  // --- Publish dialog ---
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [commitMessage, setCommitMessage] = useState('');
+  const [publishing, setPublishing] = useState(false);
+
+  const handlePublish = async () => {
+    if (!commitMessage.trim()) return;
+    setPublishing(true);
+    try {
+      // Flush pending save first
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        await doSave();
+      }
+      const data = await notebooksApi.publish(id, commitMessage.trim());
+      setLoadedData(data);
+      setPublishOpen(false);
+      setCommitMessage('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  // --- Discard ---
+  const [discardOpen, setDiscardOpen] = useState(false);
+
+  const handleDiscard = async () => {
+    try {
+      // Cancel any pending save
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const data = await notebooksApi.discard(id);
+      setLoadedData(data);
+      setDiscardOpen(false);
+
+      // Reload content from server
+      const md = await notebooksApi.getContent(id);
+      setInitialContent(md || '');
+      contentRef.current = md || '';
+      lastSavedRef.current = md || '';
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const isArchived = loadedData?.status === 'archived';
+  const isDraft = loadedData?.isDraft;
+  const canDiscard = loadedData?.canDiscard;
 
   // Status indicator text
   const statusLabel = saveStatus === 'saving' ? 'Saving...'
@@ -364,6 +389,7 @@ export default function NotebookForm() {
         </div>
         <div className={styles.toolbarRight}>
           {isDraft && <Badge appearance="tint" color="warning" size="small">Draft</Badge>}
+          {!isDraft && <Badge appearance="tint" color="success" size="small">Published</Badge>}
           {loadedData?.ragScore && (
             <Badge appearance="filled" color={ragScoreColors[loadedData.ragScore] || 'informative'} size="small">
               RAG: {loadedData.ragScore}
@@ -371,11 +397,22 @@ export default function NotebookForm() {
           )}
           {isArchived && <Badge appearance="filled" color="subtle" size="small">Archived</Badge>}
           <div className={styles.toolbarDivider} />
-          <Tooltip content={isDraft ? 'Mark as published' : 'Mark as draft'} relationship="label">
-            <Button appearance="subtle" size="small" onClick={handleDraftToggle}>
-              <Text size={200}>{isDraft ? 'Publish' : 'Draft'}</Text>
-            </Button>
-          </Tooltip>
+          {isDraft && (
+            <Tooltip content="Publish (commit changes)" relationship="label">
+              <Button appearance="subtle" size="small" icon={<SendRegular />}
+                onClick={() => setPublishOpen(true)}>
+                <Text size={200}>Publish</Text>
+              </Button>
+            </Tooltip>
+          )}
+          {canDiscard && (
+            <Tooltip content="Discard changes (revert to last published)" relationship="label">
+              <Button appearance="subtle" size="small" icon={<ArrowResetRegular />}
+                onClick={() => setDiscardOpen(true)}>
+                <Text size={200}>Discard</Text>
+              </Button>
+            </Tooltip>
+          )}
           {!isArchived && (
             <Tooltip content="Archive" relationship="label">
               <Button appearance="subtle" size="small" icon={<ArchiveRegular />}
@@ -425,12 +462,50 @@ export default function NotebookForm() {
         onCancel={() => setDeleteOpen(false)}
       />
 
+      <ConfirmDialog
+        open={discardOpen}
+        title="Discard Changes"
+        message="This will discard all changes since the last publish and restore the notebook to its previously published state. This cannot be undone."
+        onConfirm={handleDiscard}
+        onCancel={() => setDiscardOpen(false)}
+      />
+
       <EntitySearchDialog
         open={entitySearchOpen}
         entityType={entitySearchType}
         onSelect={handleEntitySelect}
         onClose={() => setEntitySearchOpen(false)}
       />
+
+      {/* Publish Dialog */}
+      <Dialog open={publishOpen} onOpenChange={(e, data) => { if (!data.open) { setPublishOpen(false); setCommitMessage(''); } }}>
+        <DialogSurface style={{ maxWidth: '500px' }}>
+          <DialogBody>
+            <DialogTitle>Publish Notebook</DialogTitle>
+            <DialogContent>
+              <Text block style={{ marginBottom: 12 }}>
+                Describe the changes you made. This message will be saved as the commit message.
+              </Text>
+              <Textarea
+                placeholder="What changed?"
+                value={commitMessage}
+                onChange={(e, data) => setCommitMessage(data.value)}
+                resize="vertical"
+                style={{ width: '100%', minHeight: '80px' }}
+                autoFocus
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => { setPublishOpen(false); setCommitMessage(''); }}>Cancel</Button>
+              <Button appearance="primary" icon={<SendRegular />}
+                disabled={!commitMessage.trim() || publishing}
+                onClick={handlePublish}>
+                {publishing ? 'Publishing...' : 'Publish'}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       {/* PDF Preview Dialog */}
       <Dialog open={pdfDialogOpen} onOpenChange={(e, data) => { if (!data.open) closePdfDialog(); }}>

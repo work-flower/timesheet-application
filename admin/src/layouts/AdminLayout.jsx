@@ -29,7 +29,6 @@ import {
   ShieldKeyholeRegular,
   ServerRegular,
   DataBarVerticalRegular,
-  WindowConsoleRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -227,7 +226,6 @@ const navItems = [
     children: [
       { to: '/infra/backup', label: 'Backup', icon: <CloudArrowUpRegular /> },
       { to: '/infra/logging', label: 'Logging', icon: <DocumentBulletListRegular /> },
-      { to: '/infra/console', label: 'Console', icon: <WindowConsoleRegular /> },
     ],
   },
   {
