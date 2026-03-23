@@ -274,6 +274,24 @@ export default function TicketForm() {
             >
               <Text className={styles.cardTitle}>{d.title || 'Ticket Details'}</Text>
 
+              {d.url && (
+                <div className={styles.actions}>
+                  <Link href={d.url} target="_blank" inline style={{ fontSize: tokens.fontSizeBase200 }}>
+                    <OpenRegular style={{ marginRight: '3px', fontSize: '13px' }} />
+                    Open in {d.sourceType === 'jira' ? 'Jira' : 'Azure DevOps'}
+                  </Link>
+                  <Tooltip content="Copy link" relationship="label">
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      icon={<CopyRegular style={{ fontSize: '14px' }} />}
+                      style={{ minWidth: 'auto', padding: '2px 4px' }}
+                      onClick={() => navigator.clipboard.writeText(d.url).catch(() => {})}
+                    />
+                  </Tooltip>
+                </div>
+              )}
+
               <div className={styles.row}>
                 <Text className={styles.label}>ID</Text>
                 <Text className={styles.value} style={{ fontFamily: 'monospace', fontWeight: 600 }}>
@@ -333,23 +351,6 @@ export default function TicketForm() {
                 <div className={styles.description}>{d.description}</div>
               )}
 
-              {d.url && (
-                <div className={styles.actions}>
-                  <Link href={d.url} target="_blank" inline style={{ fontSize: tokens.fontSizeBase200 }}>
-                    <OpenRegular style={{ marginRight: '3px', fontSize: '13px' }} />
-                    Open in {d.sourceType === 'jira' ? 'Jira' : 'Azure DevOps'}
-                  </Link>
-                  <Tooltip content="Copy link" relationship="label">
-                    <Button
-                      appearance="subtle"
-                      size="small"
-                      icon={<CopyRegular style={{ fontSize: '14px' }} />}
-                      style={{ minWidth: 'auto', padding: '2px 4px' }}
-                      onClick={() => navigator.clipboard.writeText(d.url).catch(() => {})}
-                    />
-                  </Tooltip>
-                </div>
-              )}
             </Card>
 
             {/* Right — editable comments, height matched to card */}
