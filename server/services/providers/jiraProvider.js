@@ -72,6 +72,20 @@ function mapToCanonical(issue, source) {
   };
 }
 
+export async function fetchTicketById(source, externalId) {
+  const baseUrl = source.baseUrl.replace(/\/+$/, '');
+  const fields = 'summary,description,status,issuetype,assignee,priority,project,sprint,updated,created';
+  const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(externalId)}?fields=${fields}`;
+  const res = await fetch(url, { headers: authHeader(source) });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Jira issue fetch failed (${res.status}): ${body}`);
+  }
+  const issue = await res.json();
+  return mapToCanonical(issue, source);
+}
+
 function extractText(description) {
   if (!description) return '';
   if (typeof description === 'string') return description;

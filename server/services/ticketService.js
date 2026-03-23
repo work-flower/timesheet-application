@@ -86,7 +86,7 @@ export async function remove(id) {
   const existing = await ticketSources.findOne({ _id: id });
   if (!existing) return null;
   clearSchedule(id);
-  await tickets.remove({ sourceId: id }, { multi: true });
+  // Tickets are NOT cascade-deleted — they persist as evidence of work
   return ticketSources.remove({ _id: id });
 }
 
@@ -107,26 +107,91 @@ export async function fetchAndCache(sourceId) {
 
   try {
     const provider = getProvider(source.type);
-    const items = await provider.fetchTickets(source);
-
+    const remoteItems = await provider.fetchTickets(source);
     const cachedAt = new Date().toISOString();
-    const docs = items.map((item) => ({
-      ...item,
-      sourceId,
-      cachedAt,
-    }));
 
-    // Full replace: delete all tickets for this source, then bulk insert
-    await tickets.remove({ sourceId }, { multi: true });
-    if (docs.length > 0) {
-      await tickets.insert(docs);
+    console.log(`Ticket sync started for "${source.name}" (${source.type}) — ${remoteItems.length} remote ticket(s)`);
+
+    // Build a set of remote externalIds for reconciliation
+    const remoteIdSet = new Set(remoteItems.map((item) => item.externalId));
+
+    // Fetch all existing local tickets for this source
+    const localTickets = await tickets.find({ sourceId });
+    const localMap = {};
+    for (const t of localTickets) {
+      localMap[t.externalId] = t;
+    }
+
+    let created = 0;
+    let updated = 0;
+
+    // Upsert: create new or update existing from remote query results
+    for (const item of remoteItems) {
+      const existing = localMap[item.externalId];
+      if (existing) {
+        // Update synced fields but preserve extension data
+        const { extension, _id, ...rest } = existing;
+        await tickets.update({ _id: existing._id }, {
+          $set: { ...item, sourceId, cachedAt },
+        });
+        updated++;
+      } else {
+        await tickets.insert({ ...item, sourceId, cachedAt, extension: { comments: '' } });
+        created++;
+      }
+    }
+
+    // Reconcile: check local tickets not present in the remote query response
+    const missingLocals = localTickets.filter((t) => !remoteIdSet.has(t.externalId));
+    let rechecked = 0;
+    let notFound = 0;
+
+    if (missingLocals.length > 0) {
+      console.log(`Ticket sync "${source.name}": ${missingLocals.length} local ticket(s) not in remote query — re-checking individually`);
+    }
+
+    const recheckResults = await Promise.allSettled(
+      missingLocals.map(async (local) => {
+        try {
+          const fresh = await provider.fetchTicketById(source, local.externalId);
+          if (fresh) {
+            await tickets.update({ _id: local._id }, {
+              $set: { ...fresh, sourceId, cachedAt },
+            });
+            console.log(`Ticket sync "${source.name}": re-checked ${local.externalId} — updated`);
+            return 'updated';
+          } else {
+            // Ticket no longer exists on remote — mark in description
+            const notice = `\n\n⚠️ [${cachedAt.slice(0, 10)}] This ticket could not be found on the remote source.`;
+            const desc = local.description || '';
+            if (!desc.includes('could not be found on the remote source')) {
+              await tickets.update({ _id: local._id }, {
+                $set: { description: desc + notice, cachedAt },
+              });
+            }
+            console.warn(`Ticket sync "${source.name}": ${local.externalId} not found on remote — marked locally`);
+            return 'not_found';
+          }
+        } catch (err) {
+          console.warn(`Ticket sync "${source.name}": re-check failed for ${local.externalId}: ${err.message}`);
+          return 'error';
+        }
+      }),
+    );
+
+    for (const r of recheckResults) {
+      if (r.status === 'fulfilled') {
+        if (r.value === 'updated') rechecked++;
+        if (r.value === 'not_found') notFound++;
+      }
     }
 
     await ticketSources.update({ _id: sourceId }, {
       $set: { lastFetchedAt: new Date().toISOString(), lastError: null },
     });
 
-    return { count: docs.length };
+    console.log(`Ticket sync completed for "${source.name}": ${created} created, ${updated} updated, ${rechecked} re-checked, ${notFound} not found on remote`);
+    return { created, updated, rechecked, notFound };
   } catch (err) {
     await ticketSources.update({ _id: sourceId }, {
       $set: { lastError: err.message },
@@ -147,6 +212,39 @@ export async function fetchAll() {
     }
   }
   return results;
+}
+
+// ── Single ticket + patch ────────────────────────────────────────
+
+export async function getTicketById(id) {
+  const ticket = await tickets.findOne({ _id: id });
+  if (!ticket) return null;
+
+  // Enrich with source info
+  const source = await ticketSources.findOne({ _id: ticket.sourceId });
+  return {
+    ...ticket,
+    sourceName: source?.name || 'Unknown',
+    sourceColour: source?.colour || '#0078D4',
+    sourceType: source?.type || '',
+  };
+}
+
+export async function patchTicket(id, data) {
+  const existing = await tickets.findOne({ _id: id });
+  if (!existing) return null;
+
+  // Deep merge extension: preserve existing extension fields, overlay incoming
+  const mergedExtension = {
+    ...(existing.extension || {}),
+    ...(data.extension || {}),
+  };
+
+  await tickets.update({ _id: id }, {
+    $set: { extension: mergedExtension },
+  });
+
+  return getTicketById(id);
 }
 
 // ── Ticket queries ───────────────────────────────────────────────

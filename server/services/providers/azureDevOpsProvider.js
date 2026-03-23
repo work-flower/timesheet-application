@@ -1,5 +1,12 @@
 const BATCH_SIZE = 200;
 
+const FIELDS = [
+  'System.Title', 'System.Description', 'System.State', 'System.WorkItemType',
+  'System.AssignedTo', 'Microsoft.VSTS.Common.Priority', 'System.AreaPath',
+  'System.IterationPath', 'System.CreatedDate', 'System.ChangedDate',
+  'System.TeamProject', 'System.Rev',
+];
+
 function authHeader(source) {
   const token = Buffer.from(`:${source.pat}`).toString('base64');
   return { Authorization: `Basic ${token}`, 'Content-Type': 'application/json' };
@@ -53,12 +60,7 @@ export async function fetchTickets(source) {
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
     const batchIds = ids.slice(i, i + BATCH_SIZE);
     const idsParam = batchIds.join(',');
-    const fields = [
-      'System.Title', 'System.Description', 'System.State', 'System.WorkItemType',
-      'System.AssignedTo', 'Microsoft.VSTS.Common.Priority', 'System.AreaPath',
-      'System.IterationPath', 'System.CreatedDate', 'System.ChangedDate',
-      'System.TeamProject',
-    ].join(',');
+    const fields = FIELDS.join(',');
     const detailUrl = `${baseUrl}/_apis/wit/workitems?ids=${idsParam}&fields=${fields}&api-version=7.1`;
     const detailRes = await fetch(detailUrl, { headers });
     if (!detailRes.ok) {
@@ -97,9 +99,25 @@ function mapToCanonical(wi, source) {
     priority: priorityLabel(f['Microsoft.VSTS.Common.Priority']),
     project,
     url: `${baseUrl}/${encodeURIComponent(project)}/_workitems/edit/${wi.id}`,
+    rev: f['System.Rev'] || null,
     created: f['System.CreatedDate'] || '',
     updated: f['System.ChangedDate'] || '',
   };
+}
+
+export async function fetchTicketById(source, externalId) {
+  const baseUrl = source.baseUrl.replace(/\/+$/, '');
+  const headers = authHeader(source);
+  const fields = FIELDS.join(',');
+  const url = `${baseUrl}/_apis/wit/workitems/${externalId}?fields=${fields}&api-version=7.1`;
+  const res = await fetch(url, { headers });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Azure DevOps work item fetch failed (${res.status}): ${body}`);
+  }
+  const wi = await res.json();
+  return mapToCanonical(wi, source);
 }
 
 function stripHtml(html) {

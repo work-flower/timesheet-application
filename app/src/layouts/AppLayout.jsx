@@ -35,6 +35,8 @@ import {
   NoteRegular,
   DeleteRegular,
   NotebookRegular,
+  GlobeRegular,
+  TicketHorizontalRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -248,6 +250,14 @@ const navItems = [
     ],
   },
   {
+    label: 'External',
+    icon: <GlobeRegular />,
+    prefix: '/tickets',
+    children: [
+      { to: '/tickets', label: 'Tickets', icon: <TicketHorizontalRegular /> },
+    ],
+  },
+  {
     label: 'Reports',
     icon: <DocumentBulletListRegular />,
     prefix: '/reports',
@@ -316,6 +326,9 @@ export default function AppLayout() {
   const [notebookExpanded, setNotebookExpanded] = useState(
     () => isChildRouteActive('/notebooks'),
   );
+  const [externalExpanded, setExternalExpanded] = useState(
+    () => isChildRouteActive('/tickets'),
+  );
 
   if (isEmbedded) return <Outlet />;
 
@@ -325,6 +338,7 @@ export default function AppLayout() {
     Banking: [bankingExpanded, setBankingExpanded],
     'Data Management': [dataExpanded, setDataExpanded],
     Notebook: [notebookExpanded, setNotebookExpanded],
+    External: [externalExpanded, setExternalExpanded],
   };
 
   function isActive(item) {

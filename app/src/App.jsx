@@ -34,6 +34,8 @@ import NotebookList from './pages/notebooks/NotebookList.jsx';
 import NotebookNew from './pages/notebooks/NotebookNew.jsx';
 import NotebookForm from './pages/notebooks/NotebookForm.jsx';
 import NotebookBin from './pages/notebooks/NotebookBin.jsx';
+import TicketList from './pages/tickets/TicketList.jsx';
+import TicketForm from './pages/tickets/TicketForm.jsx';
 
 export default function App() {
   return (
@@ -78,6 +80,8 @@ export default function App() {
               <Route path="/notebooks/new" element={<NotebookNew />} />
               <Route path="/notebooks/bin" element={<NotebookBin />} />
               <Route path="/notebooks/:id" element={<NotebookForm />} />
+              <Route path="/tickets" element={<TicketList />} />
+              <Route path="/tickets/:id" element={<TicketForm />} />
               <Route path="/help" element={<HelpIndex />} />
               <Route path="/help/:topicId" element={<HelpTopic />} />
             </Route>
