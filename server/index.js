@@ -155,8 +155,9 @@ import { execFileSync } from 'child_process';
 function checkCmd(cmd) { try { execFileSync(cmd, ['--version'], { stdio: 'ignore' }); return true; } catch { return false; } }
 
 import { hasRemote as gitHasRemote } from './services/notebookGitService.js';
+const BUILD_TIME = new Date().toISOString();
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', pandoc: checkCmd('pandoc'), xelatex: checkCmd('xelatex'), notebookGitRemote: gitHasRemote() });
+  res.json({ status: 'ok', buildTime: BUILD_TIME, pandoc: checkCmd('pandoc'), xelatex: checkCmd('xelatex'), notebookGitRemote: gitHasRemote() });
 });
 
 // Serve help topic assets (images etc.) from app/src/help/

@@ -24,9 +24,7 @@ ENV DATA_DIR=/app/data
 ENV LOG_DIR=/app/logs
 ENV LOG_LEVEL=error
 
-RUN mkdir -p /app/logs /app/data && chown -R node:node /app/logs /app/data
-
-USER node
+RUN mkdir -p /app/logs /app/data
 
 EXPOSE ${PORT}
 CMD ["node", "server/index.js"]
