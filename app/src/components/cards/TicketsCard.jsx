@@ -9,8 +9,13 @@ import {
   ToggleButton,
   Tooltip,
   mergeClasses,
+  Dialog,
+  DialogSurface,
+  DialogBody,
+  DialogTitle,
+  DialogContent,
 } from '@fluentui/react-components';
-import { ArrowSyncRegular } from '@fluentui/react-icons';
+import { ArrowSyncRegular, OpenRegular, DismissRegular } from '@fluentui/react-icons';
 import { ticketsApi } from '../../api/index.js';
 
 const STORAGE_KEY = 'dashboard.ticketStateFilter';
@@ -180,6 +185,7 @@ function saveFilter(filterSet) {
 
 export default function TicketsCard({ onTicketClick }) {
   const styles = useStyles();
+  const [popupTicketId, setPopupTicketId] = useState(null);
   const [items, setItems] = useState([]);
   const [stateFilter, setStateFilter] = useState(loadSavedFilter);
   const [refreshing, setRefreshing] = useState(false);
@@ -193,6 +199,21 @@ export default function TicketsCard({ onTicketClick }) {
   []);
 
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
+
+  // Listen for postMessage from embedded ticket form to close the popup
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.entity !== 'tickets') return;
+      const cmd = e.data.command;
+      if (cmd === 'back' || cmd === 'saveAndClose') {
+        setPopupTicketId(null);
+        fetchTickets();
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [fetchTickets]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -290,10 +311,19 @@ export default function TicketsCard({ onTicketClick }) {
                     {ticket.externalId}
                   </Text>
                 )}
+                <Tooltip content="Open ticket" relationship="label">
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    icon={<OpenRegular style={{ fontSize: '12px' }} />}
+                    style={{ minWidth: 'auto', padding: '1px 2px', marginLeft: 'auto' }}
+                    onClick={(e) => { e.stopPropagation(); setPopupTicketId(ticket._id); }}
+                  />
+                </Tooltip>
                 <Badge
                   appearance="filled"
                   size="small"
-                  style={{ backgroundColor: badge.bg, color: badge.color, marginLeft: 'auto' }}
+                  style={{ backgroundColor: badge.bg, color: badge.color }}
                 >
                   {ticket.state}
                 </Badge>
@@ -313,6 +343,36 @@ export default function TicketsCard({ onTicketClick }) {
         })}
       </div>
       {toast && <div className={styles.toast}>{toast}</div>}
+
+      <Dialog
+        open={!!popupTicketId}
+        onOpenChange={(e, data) => { if (!data.open) setPopupTicketId(null); }}
+      >
+        <DialogSurface style={{ maxWidth: '90vw', width: '1100px', maxHeight: '90vh', padding: 0 }}>
+          <DialogBody style={{ padding: 0 }}>
+            <DialogTitle
+              action={
+                <Button
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  onClick={() => setPopupTicketId(null)}
+                />
+              }
+              style={{ padding: '8px 12px' }}
+            >
+              Ticket
+            </DialogTitle>
+            <DialogContent style={{ padding: 0, overflow: 'hidden' }}>
+              {popupTicketId && (
+                <iframe
+                  src={`/tickets/${popupTicketId}?embedded=true`}
+                  style={{ width: '100%', height: '70vh', border: 'none' }}
+                />
+              )}
+            </DialogContent>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }

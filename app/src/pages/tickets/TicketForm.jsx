@@ -203,6 +203,11 @@ export default function TicketForm() {
     }
   };
 
+  const handleBack = () => {
+    notifyParent('back', base, form);
+    goBack('/tickets');
+  };
+
   useEffect(() => {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
@@ -229,7 +234,7 @@ export default function TicketForm() {
       {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
       <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
         <FormCommandBar
-          onBack={() => goBack('/tickets')}
+          onBack={handleBack}
           onSave={handleSave}
           onSaveAndClose={handleSaveAndClose}
           saving={saving}
@@ -238,7 +243,7 @@ export default function TicketForm() {
           <div className={styles.header}>
             <Breadcrumb>
               <BreadcrumbItem>
-                <BreadcrumbButton onClick={() => goBack('/tickets')}>Tickets</BreadcrumbButton>
+                <BreadcrumbButton onClick={handleBack}>Tickets</BreadcrumbButton>
               </BreadcrumbItem>
               <BreadcrumbDivider />
               <BreadcrumbItem>
@@ -352,7 +357,7 @@ export default function TicketForm() {
               <MarkdownEditor
                 name="comments"
                 value={form.comments ?? ''}
-                onChange={handleChange('comments')}
+                onChange={(val) => setForm((prev) => ({ ...prev, comments: val }))}
                 height={editorHeight}
               />
             </div>
