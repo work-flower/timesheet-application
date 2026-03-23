@@ -748,6 +748,243 @@ export async function importNotebook(content, resourceFiles) {
   return getById(record._id);
 }
 
+// --- Git Config ---
+
+export function getGitConfig() {
+  return git.getConfig();
+}
+
+export function setGitConfig(data) {
+  git.setConfig(data);
+  return git.getConfig();
+}
+
+export function testGitConnection() {
+  return git.testConnection();
+}
+
+export function hasGitRemote() {
+  return git.hasRemote();
+}
+
+export function listGitBranches() {
+  return git.listBranches();
+}
+
+// --- History ---
+
+export async function getHistory(id) {
+  const existing = await notebooks.findOne({ _id: id });
+  if (!existing) return null;
+  const folderName = git.sanitizeTitle(existing.title);
+  return git.log(folderName);
+}
+
+export function getCommitDiff(hash, id) {
+  // If id provided, scope to that notebook's folder
+  return notebooks.findOne({ _id: id }).then((entry) => {
+    const folderName = entry ? git.sanitizeTitle(entry.title) : null;
+    return git.show(hash, folderName);
+  });
+}
+
+export function getCompareDiff(fromHash, toHash, id) {
+  return notebooks.findOne({ _id: id }).then((entry) => {
+    const folderName = entry ? git.sanitizeTitle(entry.title) : null;
+    return git.diff(fromHash, toHash, folderName);
+  });
+}
+
+// --- Push / Pull ---
+
+/**
+ * Prepare push: fetch, then return unpushed info + conflict check.
+ */
+export async function preparePush() {
+  const fetchResult = git.fetchOrigin();
+  if (!fetchResult.ok) return { ok: false, error: fetchResult.error };
+
+  const unpushed = git.getUnpushedInfo();
+  const conflicts = git.checkConflicts();
+
+  // Resolve folder names to notebook titles
+  const allNotebooks = await notebooks.find({ status: { $ne: 'deleted' } });
+  const folderToTitle = new Map(allNotebooks.map((n) => [git.sanitizeTitle(n.title), n.title]));
+
+  const affectedNotebooks = unpushed.folders.map((f) => folderToTitle.get(f) || f);
+  const conflictingNotebooks = conflicts.conflictingFolders.map((f) => folderToTitle.get(f) || f);
+
+  return {
+    ok: true,
+    commits: unpushed.commits,
+    affectedNotebooks,
+    isFirstPush: unpushed.isFirstPush || false,
+    hasConflicts: conflicts.hasConflicts,
+    conflictingNotebooks,
+  };
+}
+
+/**
+ * Execute push (fires in background).
+ */
+export function executePush(force = false) {
+  return git.push(force);
+}
+
+/**
+ * Get current background operation status.
+ */
+export function getOperationStatus() {
+  return git.getOperationStatus();
+}
+
+/**
+ * Clear completed/errored operation.
+ */
+export function clearOperation() {
+  git.clearOperation();
+}
+
+/**
+ * Prepare pull: fetch, then return incoming info + conflict check + DB sync preview.
+ */
+export async function preparePull() {
+  const fetchResult = git.fetchOrigin();
+  if (!fetchResult.ok) return { ok: false, error: fetchResult.error };
+
+  const incoming = git.getIncomingInfo();
+  const conflicts = git.checkConflicts();
+  const dirtyFolders = git.getDirtyFolders();
+
+  // Resolve folder names to notebook titles
+  const allNotebooks = await notebooks.find({ status: { $ne: 'deleted' } });
+  const folderToTitle = new Map(allNotebooks.map((n) => [git.sanitizeTitle(n.title), n.title]));
+
+  const affectedNotebooks = incoming.folders.map((f) => folderToTitle.get(f) || f);
+  const conflictingNotebooks = conflicts.conflictingFolders.map((f) => folderToTitle.get(f) || f);
+
+  // Preview DB sync: what will happen after pull
+  let newFolders = [];
+  let orphanNotebooks = [];
+
+  // Preview: which folders will appear/disappear after pull
+  const currentDiskFolders = new Set(git.listFolders());
+  const dbFolders = new Set(allNotebooks.map((n) => git.sanitizeTitle(n.title)));
+
+  // New folders coming from remote (in incoming changed folders, not in DB)
+  for (const f of incoming.folders) {
+    if (!dbFolders.has(f) && !currentDiskFolders.has(f)) {
+      newFolders.push(f);
+    }
+  }
+
+  // Check for orphan DB records (folder doesn't exist on disk)
+  const diskFolders = new Set(git.listFolders());
+  for (const n of allNotebooks) {
+    const folder = git.sanitizeTitle(n.title);
+    if (!diskFolders.has(folder)) {
+      orphanNotebooks.push({ id: n._id, title: n.title });
+    }
+  }
+
+  // Drafts that conflict with incoming changes
+  const draftsAtRisk = [];
+  for (const f of incoming.folders) {
+    if (dirtyFolders.has(f)) {
+      draftsAtRisk.push(folderToTitle.get(f) || f);
+    }
+  }
+
+  return {
+    ok: true,
+    commits: incoming.commits,
+    affectedNotebooks,
+    hasConflicts: conflicts.hasConflicts,
+    conflictingNotebooks,
+    draftsAtRisk,
+    dbSync: {
+      newFolders,
+      orphanNotebooks,
+    },
+  };
+}
+
+/**
+ * Execute pull (fires in background), then sync DB with disk when done.
+ */
+export function executePull(force = false) {
+  const pullPromise = git.pull(force);
+
+  // If it failed synchronously (e.g. another op running), return that
+  if (pullPromise && typeof pullPromise.then === 'function') {
+    pullPromise.then(async (result) => {
+      if (result.ok) {
+        await syncDbWithDisk();
+      }
+    }).catch(() => {});
+  }
+
+  // Return immediately — operation runs in background
+  const status = git.getOperationStatus();
+  if (status?.status === 'running') return { ok: true, started: true };
+  return pullPromise;
+}
+
+/**
+ * Sync DB with disk after pull: create records for new folders, remove orphan records.
+ */
+async function syncDbWithDisk() {
+  const diskFolders = new Set(git.listFolders());
+  const allNotebooks = await notebooks.find({ status: { $ne: 'deleted' } });
+  const dbFolderMap = new Map(allNotebooks.map((n) => [git.sanitizeTitle(n.title), n]));
+
+  const imported = [];
+  const removed = [];
+
+  // New folders on disk → create DB records (import)
+  for (const folderName of diskFolders) {
+    if (!dbFolderMap.has(folderName)) {
+      const dir = join(getNotebooksDir(), folderName);
+      const contentPath = join(dir, 'content.md');
+      if (!existsSync(contentPath)) continue;
+
+      const content = readFileSync(contentPath, 'utf-8');
+      const meta = parseContentMeta(content);
+      const refs = extractEntityReferences(content);
+      const now = new Date().toISOString();
+
+      const record = await notebooks.insert({
+        title: meta.title || folderName,
+        summary: meta.summary,
+        tags: meta.tags,
+        status: 'active',
+        ragScore: null,
+        deletedAt: null,
+        thumbnailFilename: null,
+        relatedProjects: refs.relatedProjects,
+        relatedClients: refs.relatedClients,
+        relatedTimesheets: refs.relatedTimesheets,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Generate thumbnail
+      await extractThumbnail(record._id, dir, content);
+      imported.push({ id: record._id, title: meta.title || folderName });
+    }
+  }
+
+  // Orphan DB records → remove
+  for (const [folderName, record] of dbFolderMap) {
+    if (!diskFolders.has(folderName)) {
+      await notebooks.remove({ _id: record._id });
+      removed.push({ id: record._id, title: record.title });
+    }
+  }
+
+  return { imported, removed };
+}
+
 // --- Tags autocomplete ---
 
 export async function getAllTags() {

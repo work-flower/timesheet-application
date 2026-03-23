@@ -405,6 +405,34 @@ export const notebooksApi = {
     }
     return res.blob();
   },
+  getHistory: (id) => request(`/notebooks/${id}/history`),
+  getCommitDiff: async (id, hash) => {
+    const res = await fetch(`${BASE}/notebooks/${id}/history/${hash}`, {
+      headers: { 'X-Trace-Id': getTraceId() },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    return res.text();
+  },
+  getCompareDiff: async (id, from, to) => {
+    const res = await fetch(`${BASE}/notebooks/${id}/compare/${from}/${to}`, {
+      headers: { 'X-Trace-Id': getTraceId() },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    return res.text();
+  },
+  hasRemote: () => request('/notebooks/git/has-remote'),
+  preparePush: () => request('/notebooks/git/push/prepare', { method: 'POST', body: '{}' }),
+  executePush: (force = false) => request('/notebooks/git/push/execute', { method: 'POST', body: JSON.stringify({ force }) }),
+  preparePull: () => request('/notebooks/git/pull/prepare', { method: 'POST', body: '{}' }),
+  executePull: (force = false) => request('/notebooks/git/pull/execute', { method: 'POST', body: JSON.stringify({ force }) }),
+  getOperation: () => request('/notebooks/git/operation'),
+  clearOperation: () => request('/notebooks/git/operation/clear', { method: 'POST', body: '{}' }),
   importNotebook: async (formData) => {
     const res = await fetch(`${BASE}/notebooks/import`, {
       method: 'POST',

@@ -18,6 +18,7 @@ import {
   KeyRegular,
   CalendarMonthRegular,
   TicketDiagonalRegular,
+  BranchRegular,
   CloudArrowUpRegular,
   DocumentBulletListRegular,
   TextBulletListSquareRegular,
@@ -217,6 +218,7 @@ const navItems = [
       { to: '/system/mcp-auth', label: 'M2M API Auth', icon: <KeyRegular /> },
       { to: '/system/calendars', label: 'Calendars', icon: <CalendarMonthRegular /> },
       { to: '/system/ticket-sources', label: 'Ticket Sources', icon: <TicketDiagonalRegular /> },
+      { to: '/system/notebook-git', label: 'Notebook Git', icon: <BranchRegular /> },
     ],
   },
   {

@@ -81,6 +81,14 @@ export const ticketSourcesApi = {
   test: (id) => request(`/ticket-sources/${id}/test`, { method: 'POST', body: '{}' }),
 };
 
+// Notebook Git Config
+export const notebookGitApi = {
+  getConfig: () => request('/notebooks/git/config'),
+  updateConfig: (data) => request('/notebooks/git/config', { method: 'PUT', body: JSON.stringify(data) }),
+  testConnection: () => request('/notebooks/git/test-connection', { method: 'POST', body: '{}' }),
+  listBranches: () => request('/notebooks/git/branches'),
+};
+
 // Logs
 export const logApi = {
   getConfig: () => request('/logs/config'),

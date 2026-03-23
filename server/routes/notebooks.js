@@ -156,6 +156,150 @@ router.delete('/:id/purge', async (req, res) => {
   }
 });
 
+// --- Git Config ---
+
+router.get('/git/config', async (_req, res) => {
+  try {
+    const config = notebookService.getGitConfig();
+    res.json(config);
+  } catch (err) {
+    console.error('Failed to get git config:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/git/config', async (req, res) => {
+  try {
+    const config = notebookService.setGitConfig(req.body);
+    res.json(config);
+  } catch (err) {
+    console.warn('Failed to set git config:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/git/test-connection', async (_req, res) => {
+  try {
+    const result = notebookService.testGitConnection();
+    res.json(result);
+  } catch (err) {
+    console.error('Failed to test git connection:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/git/branches', async (_req, res) => {
+  try {
+    const branches = notebookService.listGitBranches();
+    res.json(branches);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/git/has-remote', async (_req, res) => {
+  try {
+    res.json({ hasRemote: notebookService.hasGitRemote() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- History ---
+
+router.get('/:id/history', async (req, res) => {
+  try {
+    const history = await notebookService.getHistory(req.params.id);
+    if (history === null) return res.status(404).json({ error: 'Not found' });
+    res.json(history);
+  } catch (err) {
+    console.error('Failed to get notebook history:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/history/:hash', async (req, res) => {
+  try {
+    const diff = await notebookService.getCommitDiff(req.params.hash, req.params.id);
+    res.type('text/plain').send(diff);
+  } catch (err) {
+    console.error('Failed to get commit diff:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/compare/:from/:to', async (req, res) => {
+  try {
+    const diff = await notebookService.getCompareDiff(req.params.from, req.params.to, req.params.id);
+    res.type('text/plain').send(diff);
+  } catch (err) {
+    console.error('Failed to get compare diff:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Push / Pull ---
+
+router.post('/git/push/prepare', async (_req, res) => {
+  try {
+    const result = await notebookService.preparePush();
+    res.json(result);
+  } catch (err) {
+    console.error('Failed to prepare push:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/git/push/execute', async (req, res) => {
+  try {
+    const { force } = req.body;
+    const result = notebookService.executePush(force === true);
+    res.json(result);
+  } catch (err) {
+    console.error('Failed to push:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/git/pull/prepare', async (_req, res) => {
+  try {
+    const result = await notebookService.preparePull();
+    res.json(result);
+  } catch (err) {
+    console.error('Failed to prepare pull:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/git/pull/execute', async (req, res) => {
+  try {
+    const { force } = req.body;
+    const result = await notebookService.executePull(force === true);
+    res.json(result);
+  } catch (err) {
+    console.error('Failed to pull:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/git/operation', async (_req, res) => {
+  try {
+    const status = notebookService.getOperationStatus();
+    res.json(status || { status: 'idle' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/git/operation/clear', async (_req, res) => {
+  try {
+    notebookService.clearOperation();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Publish & Discard ---
 
 router.post('/:id/publish', async (req, res) => {

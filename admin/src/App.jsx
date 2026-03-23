@@ -10,6 +10,7 @@ import AiConfigPage from './pages/system/AiConfigPage.jsx';
 import McpAuthPage from './pages/system/McpAuthPage.jsx';
 import CalendarSourcesPage from './pages/system/CalendarSourcesPage.jsx';
 import TicketSourcesPage from './pages/system/TicketSourcesPage.jsx';
+import NotebookGitPage from './pages/system/NotebookGitPage.jsx';
 import BackupPage from './pages/infra/BackupPage.jsx';
 import LoggingPage from './pages/infra/LoggingPage.jsx';
 import LogViewer from './pages/infra/LogViewer.jsx';
@@ -29,6 +30,7 @@ export default function App() {
               <Route path="/system/mcp-auth" element={<McpAuthPage />} />
               <Route path="/system/calendars" element={<CalendarSourcesPage />} />
               <Route path="/system/ticket-sources" element={<TicketSourcesPage />} />
+              <Route path="/system/notebook-git" element={<NotebookGitPage />} />
               <Route path="/infra/backup" element={<BackupPage />} />
               <Route path="/infra/logging" element={<LoggingPage />} />
 

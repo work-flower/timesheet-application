@@ -154,8 +154,9 @@ app.get('/.well-known/openid-configuration', wellKnownHandler);
 import { execFileSync } from 'child_process';
 function checkCmd(cmd) { try { execFileSync(cmd, ['--version'], { stdio: 'ignore' }); return true; } catch { return false; } }
 
+import { hasRemote as gitHasRemote } from './services/notebookGitService.js';
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', pandoc: checkCmd('pandoc'), xelatex: checkCmd('xelatex') });
+  res.json({ status: 'ok', pandoc: checkCmd('pandoc'), xelatex: checkCmd('xelatex'), notebookGitRemote: gitHasRemote() });
 });
 
 // Serve help topic assets (images etc.) from app/src/help/

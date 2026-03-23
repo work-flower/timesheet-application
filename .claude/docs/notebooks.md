@@ -9,7 +9,8 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 | Layer | File | Notes |
 |-------|------|-------|
 | **DB** | `server/db/index.js` | `notebooks` wrapped collection + `DATA_DIR/notebooks/` dir |
-| **Service** | `server/services/notebookService.js` | CRUD, soft delete, content file I/O, media, thumbnail |
+| **Git Service** | `server/services/notebookGitService.js` | Git operations: publish, discard, history, push, pull, remote config |
+| **Service** | `server/services/notebookService.js` | CRUD, soft delete, content file I/O, media, thumbnail, git wrappers |
 | **Routes** | `server/routes/notebooks.js` | REST endpoints, multer for media upload |
 | **Server mount** | `server/index.js` | `app.use('/api/notebooks', notebookRoutes)` |
 | **API client** | `app/src/api/index.js` | `notebooksApi` export |
@@ -17,14 +18,20 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 | **Create redirect** | `app/src/pages/notebooks/NotebookNew.jsx` | Create-on-open pattern |
 | **List** | `app/src/pages/notebooks/NotebookList.jsx` | Card-based list view |
 | **Recycle Bin** | `app/src/pages/notebooks/NotebookBin.jsx` | Deleted notebooks with restore/purge |
+| **Git Wizards** | `app/src/pages/notebooks/NotebookGitWizards.jsx` | Push/Pull wizard dialogs (used by NotebookList) |
+| **Diff Viewer** | `app/src/components/DiffViewer.jsx` | Unified diff renderer (red/green lines, no library) |
 | **Editor** | `app/src/components/editors/NotebookEditor.jsx` | Milkdown wrapper (swappable), slash menu entity linking |
 | **Entity Search Dialog** | `app/src/components/editors/EntitySearchDialog.jsx` | Fluent UI search dialog for entity linking |
 | **PDF Service** | `server/services/notebookPdfService.js` | Shells out to pandoc + xelatex for PDF generation |
-| **PDF Style** | `server/assets/notebook-pdf-style.tex` | LaTeX style header (Lato font, alternating row tables, code wrapping) |
+| **PDF Style** | `server/assets/notebook-pdf-style.tex` | LaTeX style header (Noto Sans font, alternating row tables, code wrapping) |
 | **Routes reg** | `app/src/App.jsx` | `/notebooks`, `/notebooks/new`, `/notebooks/bin`, `/notebooks/:id` (trailing slash enforced) |
 | **Media serving** | `server/index.js`, `vite.config.js` | `GET /notebooks/:id/:filename` — serves media from data dir (both Express and Vite) |
 | **Sidebar** | `app/src/layouts/AppLayout.jsx` | "Notebook" expandable group |
 | **Backup** | `server/services/backupService.js` | Collection + files dir included |
+| **Admin Git Page** | `admin/src/pages/system/NotebookGitPage.jsx` | Git remote URL + author identity config |
+| **Admin API client** | `admin/src/api/index.js` | `notebookGitApi` export |
+| **Admin routing** | `admin/src/App.jsx` | `/system/notebook-git` route |
+| **Admin sidebar** | `admin/src/layouts/AdminLayout.jsx` | System Config → Notebook Git item |
 
 ## Data Model (DB record — metadata only)
 
@@ -33,7 +40,7 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 | title | string | Derived from content on save (first heading or first sentence) |
 | summary | string | Derived from content on save (first paragraph after title) |
 | tags | string[] | Derived from content on save (hashtag line after summary) |
-| isDraft | boolean | Draft marker |
+| isDraft | boolean | Computed from git status (not stored — dirty folder = draft) |
 | status | string | `active`, `archived`, `deleted` |
 | ragScore | string\|null | Future AI scoring: low, low-moderate, moderate, moderate-high, high |
 | deletedAt | string\|null | ISO timestamp for recycle bin |
@@ -78,6 +85,19 @@ DATA_DIR/notebooks/{notebookId}/
 | `/api/notebooks/:id/media` | POST | Upload file (multipart) |
 | `/api/notebooks/:id/media` | GET | List media files |
 | `/api/notebooks/import` | POST | Import notebook from files (multipart: content, files[]) |
+| `/api/notebooks/:id/publish` | POST | Publish (git commit folder with message) |
+| `/api/notebooks/:id/discard` | POST | Discard uncommitted changes (git checkout + clean) |
+| `/api/notebooks/:id/history` | GET | Commit log for notebook folder |
+| `/api/notebooks/:id/history/:hash` | GET | Show diff for a single commit (text/plain) |
+| `/api/notebooks/:id/compare/:from/:to` | GET | Diff between two commits (text/plain) |
+| `/api/notebooks/git/config` | GET | Git remote URL + author identity |
+| `/api/notebooks/git/config` | PUT | Set git remote + identity (stored in .git/config) |
+| `/api/notebooks/git/test-connection` | POST | Test remote connectivity (git ls-remote) |
+| `/api/notebooks/git/has-remote` | GET | Check if origin remote is configured |
+| `/api/notebooks/git/push/prepare` | POST | Fetch + return unpushed commits, affected notebooks, conflicts |
+| `/api/notebooks/git/push/execute` | POST | Push to origin (optional force) |
+| `/api/notebooks/git/pull/prepare` | POST | Fetch + return incoming commits, DB sync preview, conflicts |
+| `/api/notebooks/git/pull/execute` | POST | Pull from origin (optional force) + sync DB |
 | `/notebooks/:id/:filename` | GET | Serve media file (Express + Vite, non-API route) |
 
 ## Cross-Entity Consumers
@@ -102,6 +122,12 @@ DATA_DIR/notebooks/{notebookId}/
 - **PDF link stripping:** `notebookPdfService.js` strips any markdown link with a `/`-prefixed URL to plain text before passing to pandoc. External links (http/https) are preserved
 - **Virtual field search:** `getAll` supports virtual fields in OData `$filter`: `tagsAll` (searches `tags` array), `relatedProjectNamesAll` (resolves project names → IDs → filters `relatedProjects`), `relatedClientNamesAll`, `relatedTimesheetLabelsAll`. Uses `odata-filter-to-ast` to parse the AST, detect virtual fields, resolve them to NeDB conditions, then passes the resolved query as `baseFilter` to `buildQuery` with `$filter` cleared. Supports `or` grouping for cross-field search.
 - **Import:** Multipart upload of files → largest `.md`/`.markdown` becomes `content.md`, rest stored as media resources. Metadata derived from content via same `parseContentMeta()`. Uses memory storage multer (separate from per-notebook disk storage multer)
+- **Git versioning:** Local git repo at `DATA_DIR/notebooks/`. Each notebook is a folder named by sanitized title. `notebookGitService.js` handles all git operations. isDraft computed from git status (dirty folder = draft). Publish = git add + commit with user message. Discard = git checkout + clean to last commit.
+- **Git remote:** Configured via admin page (`/admin/system/notebook-git`). Remote URL with embedded token stored in `.git/config`. Push/Pull wizards on notebook list.
+- **Push flow:** Prepare (fetch + list unpushed commits + check conflicts) → Review (wizard shows commits, affected notebooks, conflict warnings) → Execute (git push, optional force). Conflicts = remote diverged; resolved with --force.
+- **Pull flow:** Prepare (fetch + list incoming commits + check conflicts + preview DB sync) → Review (wizard shows incoming, DB imports/removals, draft conflicts) → Execute (git pull or reset --hard, then sync DB). DB sync creates records for new folders, removes orphan records.
+- **History:** Per-notebook commit log via `git log -- folder/`. Diff viewer shows unified diff (git show or git diff between commits). Compare mode: select two commits to diff between them.
+- **Discard (revert):** Folder-level only. Restores all files in notebook folder to last committed state. Only available when notebook has been published at least once (isCommitted check).
 
 ## Blast Radius
 
@@ -113,9 +139,15 @@ DATA_DIR/notebooks/{notebookId}/
 | Add new status | Update list filters, bin logic, service validation |
 | Rename/delete projects/clients/timesheets | Enrichment handles missing records gracefully (skips) |
 | Add new entity type to linking | Update `extractEntityReferences` regex, `enrichEntityNames`, `EntitySearchDialog` config, `NotebookEditor` slash items |
+| Change git remote config | Update NotebookGitPage (admin), notebookGitService |
+| Change push/pull flow | Update NotebookGitWizards, notebookService (preparePush/Pull, executePush/Pull) |
+| Change history/diff UI | Update NotebookForm (history dialog), DiffViewer |
 
 ## Lessons Learned
 
 - **Trailing slash on form URL:** Notebook form enforces trailing slash (`/notebooks/:id/`) so that relative image refs in markdown (e.g. `image.png`) resolve to `/notebooks/:id/image.png`. Both Express and Vite serve media files at this path from `DATA_DIR/notebooks/:id/`. Without the trailing slash, relative refs lose the notebook ID in the resolved URL.
 - **PDF generation uses pandoc + xelatex, not Milkdown DOM or pdfmake:** Milkdown's rendered HTML is unsuitable for print/PDF (font issues, viewport clipping). pdfmake's declarative model couldn't handle links and complex markdown reliably. Instead, the server shells out to `pandoc` with `--pdf-engine=xelatex` and a LaTeX style header (`server/assets/notebook-pdf-style.tex`). Pandoc handles all markdown features natively. Requires `pandoc` + `texlive-xetex` + `texmf-dist-fontsextra` as system dependencies (installed in Dockerfile).
 - **Import file sanitization:** Imported resource files must NOT have filenames sanitized (only `basename()` for path traversal safety), otherwise markdown image references break. The old `replace(/[^a-zA-Z0-9._-]/g, '_')` pattern was removed for this reason.
+- **Git hooks security:** The notebook git repo may contain user-writable `.git/hooks/`. During security testing, a pre-commit hook was created that curled an external URL on every publish. Always check for unexpected hooks if behaviour is anomalous. The console feature that enabled this was removed.
+- **Git timeout:** All git commands in `notebookGitService.js` have a 10-second timeout via `execSync`. Push/pull to slow remotes may need this increased.
+- **DB sync after pull:** `syncDbWithDisk()` compares disk folders against DB records. New folders → import (create DB record + thumbnail). Missing folders → remove orphan DB records. This runs automatically after every successful pull.

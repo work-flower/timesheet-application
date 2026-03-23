@@ -1,17 +1,18 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  makeStyles, tokens, Text, Card, Badge, Input, Spinner, Button, ToggleButton,
+  makeStyles, tokens, Text, Card, Badge, Input, Spinner, Button, ToggleButton, Tooltip,
   Breadcrumb, BreadcrumbItem,
 } from '@fluentui/react-components';
 import {
   SearchRegular, AddRegular, DocumentTextRegular, ArrowImportRegular, ArchiveRegular,
+  ArrowUploadRegular, ArrowDownloadRegular,
 } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
-import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import { useODataList } from '../../hooks/useODataList.js';
 import { notebooksApi } from '../../api/index.js';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { PushWizard, PullWizard, useGitOperation } from './NotebookGitWizards.jsx';
 
 const useStyles = makeStyles({
   page: {
@@ -251,6 +252,19 @@ export default function NotebookList() {
     return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
+  // --- Remote status & wizards ---
+  const [hasRemote, setHasRemote] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
+  const [pullOpen, setPullOpen] = useState(false);
+  const gitOp = useGitOperation();
+
+  useEffect(() => {
+    notebooksApi.hasRemote().then((r) => setHasRemote(r.hasRemote)).catch(() => {});
+  }, []);
+
+  const isOpRunning = gitOp.op?.status === 'running';
+  const opFinished = gitOp.op && gitOp.op.status !== 'running';
+
   return (
     <div className={styles.page}>
       <div className={styles.header}>
@@ -261,6 +275,42 @@ export default function NotebookList() {
         onNew={() => navigate('/notebooks/new')}
         newLabel="New Notebook"
       >
+        <Tooltip content={hasRemote ? 'Pull from remote' : 'Configure git upstream in Admin to enable'} relationship="label">
+          <Button
+            appearance="subtle"
+            icon={<ArrowDownloadRegular />}
+            size="small"
+            disabled={!hasRemote}
+            onClick={() => setPullOpen(true)}
+            style={{ position: 'relative' }}
+          >
+            Pull
+            {(isOpRunning && gitOp.op?.type === 'pull') && (
+              <span style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', backgroundColor: tokens.colorPaletteRedBackground3 }} />
+            )}
+            {(opFinished && gitOp.op?.type === 'pull') && (
+              <span style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', backgroundColor: gitOp.op.status === 'done' ? tokens.colorPaletteGreenBackground3 : tokens.colorPaletteRedBackground3 }} />
+            )}
+          </Button>
+        </Tooltip>
+        <Tooltip content={hasRemote ? 'Push to remote' : 'Configure git upstream in Admin to enable'} relationship="label">
+          <Button
+            appearance="subtle"
+            icon={<ArrowUploadRegular />}
+            size="small"
+            disabled={!hasRemote}
+            onClick={() => setPushOpen(true)}
+            style={{ position: 'relative' }}
+          >
+            Push
+            {(isOpRunning && gitOp.op?.type === 'push') && (
+              <span style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', backgroundColor: tokens.colorPaletteRedBackground3 }} />
+            )}
+            {(opFinished && gitOp.op?.type === 'push') && (
+              <span style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', backgroundColor: gitOp.op.status === 'done' ? tokens.colorPaletteGreenBackground3 : tokens.colorPaletteRedBackground3 }} />
+            )}
+          </Button>
+        </Tooltip>
         <Button
           appearance="subtle"
           icon={<ArrowImportRegular />}
@@ -387,6 +437,9 @@ export default function NotebookList() {
         page={page} pageSize={pageSize} totalItems={totalCount}
         totalPages={totalPages} onPageChange={setPage} onPageSizeChange={setPageSize}
       />
+
+      <PushWizard open={pushOpen} onClose={() => setPushOpen(false)} onDone={refresh} gitOp={gitOp} />
+      <PullWizard open={pullOpen} onClose={() => setPullOpen(false)} onDone={refresh} gitOp={gitOp} />
     </div>
   );
 }

@@ -8,13 +8,14 @@ import {
 import {
   ArrowLeftRegular, DeleteRegular, ArchiveRegular,
   ArrowUndoRegular, ArrowRedoRegular, PrintRegular,
-  ArrowResetRegular, SendRegular,
+  ArrowResetRegular, SendRegular, HistoryRegular,
 } from '@fluentui/react-icons';
 import { notebooksApi } from '../../api/index.js';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import NotebookEditor from '../../components/editors/NotebookEditor.jsx';
 import EntitySearchDialog from '../../components/editors/EntitySearchDialog.jsx';
+import DiffViewer from '../../components/DiffViewer.jsx';
 
 const AUTO_SAVE_DELAY = 1500; // ms after last change
 
@@ -344,6 +345,60 @@ export default function NotebookForm() {
     }
   };
 
+  // --- History dialog ---
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyList, setHistoryList] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedCommit, setSelectedCommit] = useState(null);
+  const [diffContent, setDiffContent] = useState('');
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [compareFrom, setCompareFrom] = useState(null);
+
+  const openHistory = useCallback(async () => {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    setSelectedCommit(null);
+    setDiffContent('');
+    setCompareFrom(null);
+    try {
+      const list = await notebooksApi.getHistory(id);
+      setHistoryList(list || []);
+    } catch {
+      setHistoryList([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [id]);
+
+  const viewCommitDiff = useCallback(async (hash) => {
+    if (compareFrom) {
+      // Compare mode: show diff between compareFrom and hash
+      setDiffLoading(true);
+      setSelectedCommit(hash);
+      try {
+        const diff = await notebooksApi.getCompareDiff(id, compareFrom, hash);
+        setDiffContent(diff);
+      } catch {
+        setDiffContent('Failed to load diff');
+      } finally {
+        setDiffLoading(false);
+        setCompareFrom(null);
+      }
+    } else {
+      // Single commit diff
+      setDiffLoading(true);
+      setSelectedCommit(hash);
+      try {
+        const diff = await notebooksApi.getCommitDiff(id, hash);
+        setDiffContent(diff);
+      } catch {
+        setDiffContent('Failed to load diff');
+      } finally {
+        setDiffLoading(false);
+      }
+    }
+  }, [id, compareFrom]);
+
   const isArchived = loadedData?.status === 'archived';
   const isDraft = loadedData?.isDraft;
   const canDiscard = loadedData?.canDiscard;
@@ -380,6 +435,10 @@ export default function NotebookForm() {
           <Tooltip content="Export as PDF" relationship="label">
             <Button appearance="subtle" size="small" icon={<PrintRegular />}
               onClick={handlePrint} />
+          </Tooltip>
+          <Tooltip content="Version history" relationship="label">
+            <Button appearance="subtle" size="small" icon={<HistoryRegular />}
+              onClick={openHistory} />
           </Tooltip>
           {statusLabel && (
             <Text className={styles.statusText} style={saveStatus === 'error' ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
@@ -533,6 +592,78 @@ export default function NotebookForm() {
             </DialogContent>
             <DialogActions>
               <Button appearance="secondary" onClick={closePdfDialog}>Close</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* History Dialog */}
+      <Dialog open={historyOpen} onOpenChange={(e, data) => { if (!data.open) setHistoryOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '900px', width: '90vw', maxHeight: '90vh' }}>
+          <DialogBody style={{ display: 'flex', flexDirection: 'column', height: '80vh' }}>
+            <DialogTitle>Version History</DialogTitle>
+            <DialogContent style={{ flex: 1, display: 'flex', overflow: 'hidden', gap: 16 }}>
+              {/* Commit list */}
+              <div style={{ width: 300, flexShrink: 0, overflow: 'auto', borderRight: `1px solid ${tokens.colorNeutralStroke3}`, paddingRight: 12 }}>
+                {historyLoading ? (
+                  <Spinner label="Loading history..." />
+                ) : historyList.length === 0 ? (
+                  <Text style={{ color: tokens.colorNeutralForeground3 }}>No commits yet — publish to create the first version.</Text>
+                ) : (
+                  <>
+                    {compareFrom && (
+                      <MessageBar intent="info" style={{ marginBottom: 8 }}>
+                        <MessageBarBody>
+                          Select a second commit to compare.
+                          <Button appearance="transparent" size="small" onClick={() => setCompareFrom(null)}>Cancel</Button>
+                        </MessageBarBody>
+                      </MessageBar>
+                    )}
+                    {historyList.map((commit) => (
+                      <div
+                        key={commit.hash}
+                        onClick={() => viewCommitDiff(commit.hash)}
+                        style={{
+                          padding: '8px',
+                          cursor: 'pointer',
+                          borderRadius: 4,
+                          marginBottom: 4,
+                          backgroundColor: selectedCommit === commit.hash ? tokens.colorBrandBackground2 : undefined,
+                          borderLeft: compareFrom === commit.hash ? `3px solid ${tokens.colorBrandForeground1}` : '3px solid transparent',
+                        }}
+                      >
+                        <Text block size={200} weight="semibold">{commit.message}</Text>
+                        <Text block size={100} style={{ color: tokens.colorNeutralForeground3 }}>
+                          {new Date(commit.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                        <Button
+                          appearance="transparent"
+                          size="small"
+                          style={{ marginTop: 2, padding: 0 }}
+                          onClick={(e) => { e.stopPropagation(); setCompareFrom(commit.hash); }}
+                        >
+                          Compare from here
+                        </Button>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+              {/* Diff viewer */}
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                {diffLoading ? (
+                  <Spinner label="Loading diff..." />
+                ) : selectedCommit ? (
+                  <DiffViewer diff={diffContent} />
+                ) : (
+                  <Text style={{ color: tokens.colorNeutralForeground3, padding: 24 }}>
+                    Select a commit to view its changes.
+                  </Text>
+                )}
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setHistoryOpen(false)}>Close</Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
