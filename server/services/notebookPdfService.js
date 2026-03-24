@@ -9,6 +9,7 @@ import { getNotebookDir, getContent } from './notebookService.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const STYLE_PATH = join(__dirname, '..', 'assets', 'notebook-pdf-style.tex');
+const FONTS_DIR = join(__dirname, '..', 'assets', 'fonts');
 
 /**
  * Build a notebook PDF buffer from its markdown content using pandoc + LaTeX.
@@ -39,8 +40,12 @@ export async function buildNotebookPdf(notebookId) {
     '--resource-path', dir,
   ];
 
+  let tempStylePath = null;
   if (existsSync(STYLE_PATH)) {
-    args.push('--include-in-header', STYLE_PATH);
+    const styleTex = readFileSync(STYLE_PATH, 'utf-8').replace(/FONTSDIR/g, FONTS_DIR);
+    tempStylePath = join(tmpdir(), `notebook-style-${randomBytes(8).toString('hex')}.tex`);
+    writeFileSync(tempStylePath, styleTex, 'utf-8');
+    args.push('--include-in-header', tempStylePath);
   }
 
   await new Promise((resolve, reject) => {
@@ -64,5 +69,6 @@ export async function buildNotebookPdf(notebookId) {
   const buffer = readFileSync(outPath);
   unlinkSync(outPath);
   unlinkSync(tempContentPath);
+  if (tempStylePath) unlinkSync(tempStylePath);
   return { buffer };
 }

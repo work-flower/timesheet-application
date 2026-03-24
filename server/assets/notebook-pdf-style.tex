@@ -1,8 +1,27 @@
-% Font: Noto Sans (available on Alpine via font-noto)
+% Font: Noto Sans (bundled in server/assets/fonts/, path injected at runtime)
 \usepackage{fontspec}
-\setmainfont{Noto Sans}
-\setsansfont{Noto Sans}
-\setmonofont{Noto Sans Mono}[Scale=0.85]
+\setmainfont{NotoSans}[
+  Path = FONTSDIR/,
+  Extension = .ttf,
+  UprightFont = *-Regular,
+  BoldFont = *-Bold,
+  ItalicFont = *-Italic,
+  BoldItalicFont = *-BoldItalic,
+]
+\setsansfont{NotoSans}[
+  Path = FONTSDIR/,
+  Extension = .ttf,
+  UprightFont = *-Regular,
+  BoldFont = *-Bold,
+  ItalicFont = *-Italic,
+  BoldItalicFont = *-BoldItalic,
+]
+\setmonofont{NotoSansMono}[
+  Path = FONTSDIR/,
+  Extension = .ttf,
+  UprightFont = *-Regular,
+  Scale = 0.85,
+]
 
 % Alternating row shading for tables
 \usepackage{xcolor}
