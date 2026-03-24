@@ -116,12 +116,12 @@ export function isTracked(folderName) {
 }
 
 /**
- * Check if the folder exists in the last commit (safe to discard).
+ * Check if the folder has ever been committed (safe to discard).
  */
 export function isCommitted(folderName) {
   try {
-    git(`cat-file -e HEAD:"${folderName}/content.md"`);
-    return true;
+    const output = git(`log --oneline -1 -- "${folderName}/"`);
+    return output.trim().length > 0;
   } catch {
     return false;
   }
@@ -139,6 +139,35 @@ export function mv(from, to) {
  */
 export function rm(folderName) {
   git(`rm -rf "${folderName}"`);
+}
+
+/**
+ * git add -A — stage all changes in a folder.
+ */
+export function addAll(folderName) {
+  git(`add -A "${folderName}/"`);
+}
+
+/**
+ * git add — stage a specific file path (relative to notebooks root).
+ */
+export function add(filePath) {
+  git(`add "${filePath}"`);
+}
+
+/**
+ * git rm — remove a single tracked file.
+ */
+export function rmFile(filePath) {
+  git(`rm -f "${filePath}"`);
+}
+
+/**
+ * Commit currently staged changes with the given message.
+ */
+export function commit(message) {
+  const escaped = message.replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
+  git(`commit -m "${escaped}"`);
 }
 
 /**

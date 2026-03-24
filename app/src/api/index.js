@@ -397,6 +397,36 @@ export const notebooksApi = {
     return res.json();
   },
   getMediaUrl: (id, filename) => `${BASE}/notebooks/${id}/media/${encodeURIComponent(filename)}`,
+  listArtifacts: (id) => request(`/notebooks/${id}/artifacts`),
+  uploadArtifact: async (id, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE}/notebooks/${id}/artifacts`, {
+      method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
+  readArtifact: async (id, filename) => {
+    const res = await fetch(`${BASE}/notebooks/${id}/artifacts/${encodeURIComponent(filename)}/content`, {
+      headers: { 'X-Trace-Id': getTraceId() },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Read failed: ${res.status}`);
+    }
+    return res.text();
+  },
+  deleteArtifact: (id, filename) => request(`/notebooks/${id}/artifacts/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+  renameArtifact: (id, filename, newName) => request(`/notebooks/${id}/artifacts/${encodeURIComponent(filename)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ newName }),
+  }),
   getPdf: async (id) => {
     const res = await fetch(`${BASE}/notebooks/${id}/pdf`, {
       headers: { 'X-Trace-Id': getTraceId() },

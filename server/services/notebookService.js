@@ -2,10 +2,31 @@ import { notebooks, projects, clients, timesheets } from '../db/index.js';
 import { buildQuery, parseFilter, applySelect, formatResponse } from '../odata.js';
 import { parseFilter as parseFilterAst } from 'odata-filter-to-ast';
 import { fileURLToPath } from 'url';
-import { basename, dirname, join } from 'path';
-import { mkdirSync, rmSync, renameSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'fs';
+import { basename, dirname, join, extname } from 'path';
+import { mkdirSync, rmSync, renameSync, existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
 import sharp from 'sharp';
 import * as git from './notebookGitService.js';
+
+const CONTENTS_DIR = '.contents';
+
+function guessMimeType(filename) {
+  const ext = extname(filename).toLowerCase();
+  const map = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+    '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp',
+    '.pdf': 'application/pdf', '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.txt': 'text/plain', '.csv': 'text/csv', '.json': 'application/json',
+    '.html': 'text/html', '.md': 'text/markdown', '.xml': 'application/xml',
+    '.zip': 'application/zip', '.tar': 'application/x-tar', '.gz': 'application/gzip',
+    '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+  };
+  return map[ext] || 'application/octet-stream';
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -253,7 +274,7 @@ export async function getAll(query = {}) {
   const withThumbnails = results.map((entry) => ({
     ...entry,
     thumbnailUrl: entry.thumbnailFilename
-      ? `/notebooks/${entry._id}/${entry.thumbnailFilename}`
+      ? `/notebooks/${entry._id}/.contents/${entry.thumbnailFilename}`
       : null,
   }));
 
@@ -274,7 +295,7 @@ export async function getById(id) {
   const withThumbnail = {
     ...entry,
     thumbnailUrl: entry.thumbnailFilename
-      ? `/notebooks/${entry._id}/${entry.thumbnailFilename}`
+      ? `/notebooks/${entry._id}/.contents/${entry.thumbnailFilename}`
       : null,
   };
 
@@ -305,8 +326,11 @@ Summary paragraph here.
     throw err;
   }
 
+  // Create .contents subfolder for system files
+  mkdirSync(join(dir, CONTENTS_DIR));
+
   // Write template content
-  writeFileSync(join(dir, 'content.md'), template, 'utf-8');
+  writeFileSync(join(dir, CONTENTS_DIR, 'content.md'), template, 'utf-8');
 
   // Insert DB record (no isDraft — derived from git status)
   const record = await notebooks.insert({
@@ -323,6 +347,9 @@ Summary paragraph here.
     createdAt: now,
     updatedAt: now,
   });
+
+  // Stage new folder in git index
+  git.addAll(folderName);
 
   return record;
 }
@@ -403,9 +430,10 @@ export async function purge(id) {
   const folderName = git.sanitizeTitle(existing.title);
   const dir = dirFromTitle(existing.title);
 
-  // Remove from git if tracked
+  // Remove from git if tracked — stage removal and commit
   if (git.isTracked(folderName)) {
     git.rm(folderName);
+    git.commit(`Delete notebook: ${existing.title}`);
   }
 
   // Remove folder and any untracked leftovers (thumbnails etc.)
@@ -419,12 +447,21 @@ export async function purge(id) {
 
 // --- Content (markdown file) ---
 
+function getContentPath(dir) {
+  const newPath = join(dir, CONTENTS_DIR, 'content.md');
+  if (existsSync(newPath)) return newPath;
+  // Fallback for legacy notebooks without .contents/
+  const legacyPath = join(dir, 'content.md');
+  if (existsSync(legacyPath)) return legacyPath;
+  return newPath; // default to new location
+}
+
 export async function getContent(id) {
   const existing = await notebooks.findOne({ _id: id });
   if (!existing) return null;
 
   const dir = dirFromTitle(existing.title);
-  const filePath = join(dir, 'content.md');
+  const filePath = getContentPath(dir);
   if (!existsSync(filePath)) return '';
   return readFileSync(filePath, 'utf-8');
 }
@@ -460,8 +497,12 @@ export async function updateContent(id, markdown) {
     dir = newDir;
   }
 
+  // Ensure .contents dir exists
+  const contentsDir = join(dir, CONTENTS_DIR);
+  mkdirSync(contentsDir, { recursive: true });
+
   // Write content
-  writeFileSync(join(dir, 'content.md'), markdown || '', 'utf-8');
+  writeFileSync(join(contentsDir, 'content.md'), markdown || '', 'utf-8');
 
   // Extract first image reference and generate thumbnail
   await extractThumbnail(id, dir, markdown || '');
@@ -481,6 +522,10 @@ export async function updateContent(id, markdown) {
       updatedAt: now,
     },
   });
+
+  // Stage entire folder so all changes are in the git index
+  const folderName = git.sanitizeTitle(newTitle);
+  git.addAll(folderName);
 
   return { success: true };
 }
@@ -516,7 +561,7 @@ export async function discard(id) {
 
   // Re-read restored content and re-derive DB metadata
   const dir = dirFromTitle(existing.title);
-  const content = readFileSync(join(dir, 'content.md'), 'utf-8');
+  const content = readFileSync(getContentPath(dir), 'utf-8');
   const meta = parseContentMeta(content);
   const refs = extractEntityReferences(content);
 
@@ -544,7 +589,9 @@ export async function discard(id) {
 export async function listMedia(id) {
   const dir = await getNotebookDir(id);
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((f) => f !== 'content.md' && !f.startsWith('thumb_'));
+  return readdirSync(dir).filter((f) =>
+    f !== 'content.md' && !f.startsWith('thumb_') && f !== CONTENTS_DIR
+  );
 }
 
 // --- Entity reference extraction ---
@@ -690,7 +737,9 @@ async function extractThumbnail(id, dir, markdown) {
     }
 
     const thumbName = (isDataUri || isExternal) ? 'thumb_embedded.jpg' : `thumb_${imageRef}`;
-    const thumbPath = join(dir, thumbName);
+    const thumbDir = join(dir, CONTENTS_DIR);
+    mkdirSync(thumbDir, { recursive: true });
+    const thumbPath = join(thumbDir, thumbName);
     await sharp(imageBuffer)
       .resize(400, 250, { fit: 'cover' })
       .jpeg()
@@ -733,10 +782,12 @@ export async function importNotebook(content, resourceFiles) {
     updatedAt: now,
   });
 
-  // Write content markdown
-  writeFileSync(join(dir, 'content.md'), content || '', 'utf-8');
+  // Create .contents subfolder and write content markdown
+  const contentsDir = join(dir, CONTENTS_DIR);
+  mkdirSync(contentsDir);
+  writeFileSync(join(contentsDir, 'content.md'), content || '', 'utf-8');
 
-  // Write resource files preserving sanitized original names
+  // Write resource files preserving sanitized original names (artifacts go to root)
   for (const file of resourceFiles) {
     const safe = basename(file.originalname);
     writeFileSync(join(dir, safe), file.buffer);
@@ -744,6 +795,10 @@ export async function importNotebook(content, resourceFiles) {
 
   // Extract thumbnail from content
   await extractThumbnail(record._id, dir, content || '');
+
+  // Stage imported folder in git index
+  const importFolderName = git.sanitizeTitle(title);
+  git.addAll(importFolderName);
 
   return getById(record._id);
 }
@@ -945,7 +1000,7 @@ async function syncDbWithDisk() {
   for (const folderName of diskFolders) {
     if (!dbFolderMap.has(folderName)) {
       const dir = join(getNotebooksDir(), folderName);
-      const contentPath = join(dir, 'content.md');
+      const contentPath = getContentPath(dir);
       if (!existsSync(contentPath)) continue;
 
       const content = readFileSync(contentPath, 'utf-8');
@@ -983,6 +1038,98 @@ async function syncDbWithDisk() {
   }
 
   return { imported, removed };
+}
+
+// --- Artifacts (files in notebook root, excluding .contents/) ---
+
+export async function listArtifacts(id) {
+  const dir = await getNotebookDir(id);
+  if (!existsSync(dir)) return [];
+
+  return readdirSync(dir)
+    .filter((f) => f !== CONTENTS_DIR && !f.startsWith('.'))
+    .map((filename) => {
+      const filePath = join(dir, filename);
+      const stat = statSync(filePath);
+      if (stat.isDirectory()) return null;
+      return {
+        filename,
+        size: stat.size,
+        mimeType: guessMimeType(filename),
+        lastModified: stat.mtime.toISOString(),
+      };
+    })
+    .filter(Boolean);
+}
+
+export async function stageArtifact(id) {
+  const existing = await notebooks.findOne({ _id: id });
+  if (!existing) throw new Error('Notebook not found');
+  git.addAll(git.sanitizeTitle(existing.title));
+}
+
+export async function deleteArtifact(id, filename) {
+  const existing = await notebooks.findOne({ _id: id });
+  if (!existing) throw new Error('Notebook not found');
+  const dir = dirFromTitle(existing.title);
+  const safe = basename(filename);
+  if (safe === CONTENTS_DIR || safe.startsWith('.')) {
+    throw new Error('Cannot delete system files');
+  }
+  const filePath = join(dir, safe);
+  if (!existsSync(filePath)) throw new Error('File not found');
+
+  rmSync(filePath);
+  git.addAll(git.sanitizeTitle(existing.title));
+  return { success: true };
+}
+
+export async function renameArtifact(id, oldName, newName) {
+  const existing = await notebooks.findOne({ _id: id });
+  if (!existing) throw new Error('Notebook not found');
+  const dir = dirFromTitle(existing.title);
+  const safeOld = basename(oldName);
+  const safeNew = basename(newName);
+
+  if (safeOld === CONTENTS_DIR || safeOld.startsWith('.')) {
+    throw new Error('Cannot rename system files');
+  }
+  if (safeNew === CONTENTS_DIR || safeNew.startsWith('.')) {
+    throw new Error('Invalid filename');
+  }
+  if (!safeNew || safeNew.length === 0) {
+    throw new Error('Filename is required');
+  }
+
+  const oldPath = join(dir, safeOld);
+  const newPath = join(dir, safeNew);
+
+  if (!existsSync(oldPath)) throw new Error('File not found');
+  if (existsSync(newPath)) throw new Error('A file with that name already exists');
+
+  renameSync(oldPath, newPath);
+
+  // Update markdown references if the file is referenced in content
+  const contentPath = getContentPath(dir);
+  if (existsSync(contentPath)) {
+    const content = readFileSync(contentPath, 'utf-8');
+    if (content.includes(safeOld)) {
+      const updated = content.split(safeOld).join(safeNew);
+      writeFileSync(contentPath, updated, 'utf-8');
+    }
+  }
+
+  // Stage all changes (rename + possible content update)
+  git.addAll(git.sanitizeTitle(existing.title));
+  return { success: true, filename: safeNew };
+}
+
+export async function readArtifact(id, filename) {
+  const dir = await getNotebookDir(id);
+  const safe = basename(filename);
+  const filePath = join(dir, safe);
+  if (!existsSync(filePath)) throw new Error('File not found');
+  return readFileSync(filePath, 'utf-8');
 }
 
 // --- Tags autocomplete ---

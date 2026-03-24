@@ -173,12 +173,27 @@ app.get('/admin/*', (req, res) => {
 // Serve notebook media files (relative image refs from markdown editor)
 // Resolves notebook ID → sanitized title folder name
 const notebooksDataDir = resolve(process.env.DATA_DIR || join(__dirname, '..', 'data'), 'notebooks');
+app.get('/notebooks/:id/.contents/:filename', async (req, res, next) => {
+  try {
+    const notebook = await notebooks.findOne({ _id: req.params.id });
+    if (!notebook) return next();
+    const folderName = sanitizeTitle(notebook.title);
+    const safe = basename(req.params.filename);
+    const filePath = join(notebooksDataDir, folderName, '.contents', safe);
+    if (existsSync(filePath)) return res.sendFile(filePath);
+    next();
+  } catch {
+    next();
+  }
+});
 app.get('/notebooks/:id/:filename', async (req, res, next) => {
   try {
     const notebook = await notebooks.findOne({ _id: req.params.id });
     if (!notebook) return next();
     const folderName = sanitizeTitle(notebook.title);
     const safe = basename(req.params.filename);
+    // Block access to .contents via this route
+    if (safe === '.contents') return next();
     const filePath = join(notebooksDataDir, folderName, safe);
     if (existsSync(filePath)) return res.sendFile(filePath);
     next();

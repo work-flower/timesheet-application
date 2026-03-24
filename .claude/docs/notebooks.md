@@ -15,6 +15,7 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 | **Server mount** | `server/index.js` | `app.use('/api/notebooks', notebookRoutes)` |
 | **API client** | `app/src/api/index.js` | `notebooksApi` export |
 | **Form** | `app/src/pages/notebooks/NotebookForm.jsx` | Edit form with Milkdown editor |
+| **Artifacts Panel** | `app/src/pages/notebooks/NotebookArtifactsPanel.jsx` | Toggled drawer for file management (upload, preview, rename, delete) |
 | **Create redirect** | `app/src/pages/notebooks/NotebookNew.jsx` | Create-on-open pattern |
 | **List** | `app/src/pages/notebooks/NotebookList.jsx` | Card-based list view |
 | **Recycle Bin** | `app/src/pages/notebooks/NotebookBin.jsx` | Deleted notebooks with restore/purge |
@@ -59,11 +60,15 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 
 ```
 DATA_DIR/notebooks/{notebookId}/
-  ├── content.md         ← markdown file
-  ├── image1.png         ← uploaded media
-  ├── thumb_image1.png   ← auto-generated thumbnail (400x250, cover)
+  ├── .contents/
+  │   ├── content.md       ← markdown file (system-managed)
+  │   └── thumb_*.png      ← auto-generated thumbnails (400x250, cover)
+  ├── image1.png           ← editor media upload (referenced in markdown)
+  ├── report.pdf           ← user artifact
   └── ...
 ```
+
+System files (`content.md`, thumbnails) live in `.contents/`. All other files in root are user artifacts and editor media. Legacy notebooks without `.contents/` are supported via fallback reads (content path checks `.contents/content.md` first, then root `content.md`).
 
 ## API Endpoints
 
@@ -84,6 +89,10 @@ DATA_DIR/notebooks/{notebookId}/
 | `/api/notebooks/:id/content` | PUT | Save markdown (derives title, summary, tags from content) |
 | `/api/notebooks/:id/media` | POST | Upload file (multipart) |
 | `/api/notebooks/:id/media` | GET | List media files |
+| `/api/notebooks/:id/artifacts` | GET | List artifact files (name, size, mimeType, lastModified) |
+| `/api/notebooks/:id/artifacts` | POST | Upload artifact file (multipart) |
+| `/api/notebooks/:id/artifacts/:filename` | DELETE | Delete artifact |
+| `/api/notebooks/:id/artifacts/:filename` | PUT | Rename artifact (body: `{ newName }`) |
 | `/api/notebooks/import` | POST | Import notebook from files (multipart: content, files[]) |
 | `/api/notebooks/:id/publish` | POST | Publish (git commit folder with message) |
 | `/api/notebooks/:id/discard` | POST | Discard uncommitted changes (git checkout + clean) |
@@ -109,10 +118,24 @@ DATA_DIR/notebooks/{notebookId}/
 | `clientService.js` | read by notebook enrichment | Resolve relatedClients → names |
 | `timesheetService.js` | read by notebook enrichment | Resolve relatedTimesheets → dates |
 
+## Golden Rule — Git Awareness
+
+**Every notebook-related file/folder change MUST be git-aware.** Any addition, removal, or rename of files in a notebook folder must be staged in the git index. This includes content, media, artifacts, thumbnails — everything.
+
+- **Upload** (media or artifact) → `git add` the new file
+- **Delete** (artifact) → `git rm` the file (fallback to plain delete if untracked)
+- **Rename** (artifact) → `git mv` (fallback to rename + `git add` if untracked)
+- **Content save** → file is written; staged on next publish via `git add -A`
+- **Publish** → `git add -A` the entire folder + `git commit` (captures all staged changes)
+- **Discard** → `git checkout` + `git clean` (reverts all changes including artifacts)
+- **Purge** → `git rm` folder + `git commit` (must commit, not just stage, so deletion can be pushed)
+
 ## Key Business Logic
 
 - **Create-on-open:** `/notebooks/new` route immediately creates a draft record + folder with template content, redirects to form
 - **Content-derived metadata:** On every content save, `parseContentMeta()` extracts title (first heading or first sentence ≤200 chars), summary (first paragraph after title ≤500 chars), and tags (hashtag line after summary, e.g. `#azure #migration`). These are persisted to the DB record. Form has no separate title/summary/tags fields — only the editor
+- **`.contents/` folder:** System-managed files (`content.md`, `thumb_*`) stored in `.contents/` subfolder. User artifacts and editor media live in root. `getContentPath()` falls back to root `content.md` for legacy notebooks
+- **Artifacts panel:** Toggled drawer in NotebookForm (`NotebookArtifactsPanel.jsx`) listing all root-level files. Supports upload, browser-native preview (images/PDFs), download, rename (auto-updates markdown refs), and delete
 - **Template:** New notebooks start with `# Title\n\nSummary paragraph here.\n\n#tags` to guide structure
 - **Soft delete:** `DELETE /api/notebooks/:id` sets `status: 'deleted'` + `deletedAt`
 - **Purge:** `DELETE /api/notebooks/:id/purge` permanently removes record + folder (only for deleted status)
@@ -142,6 +165,7 @@ DATA_DIR/notebooks/{notebookId}/
 | Change git remote config | Update NotebookGitPage (admin), notebookGitService |
 | Change push/pull flow | Update NotebookGitWizards, notebookService (preparePush/Pull, executePush/Pull) |
 | Change history/diff UI | Update NotebookForm (history dialog), DiffViewer |
+| Change artifact management | Update NotebookArtifactsPanel, notebookService (artifact methods), notebooks routes |
 
 ## Lessons Learned
 

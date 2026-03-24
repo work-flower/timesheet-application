@@ -399,4 +399,65 @@ router.get('/:id/media', async (req, res) => {
   }
 });
 
+// --- Artifacts ---
+
+router.get('/:id/artifacts', async (req, res) => {
+  try {
+    const artifacts = await notebookService.listArtifacts(req.params.id);
+    res.json(artifacts);
+  } catch (err) {
+    console.error('Failed to list artifacts:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/artifacts', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    // Stage the folder in git
+    await notebookService.stageArtifact(req.params.id);
+    res.status(201).json({
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    });
+  } catch (err) {
+    console.error('Failed to upload artifact:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/artifacts/:filename/content', async (req, res) => {
+  try {
+    const content = await notebookService.readArtifact(req.params.id, req.params.filename);
+    res.type('text/plain').send(content);
+  } catch (err) {
+    console.warn('Failed to read artifact:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/artifacts/:filename', async (req, res) => {
+  try {
+    const result = await notebookService.deleteArtifact(req.params.id, req.params.filename);
+    res.json(result);
+  } catch (err) {
+    console.warn('Failed to delete artifact:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/:id/artifacts/:filename', async (req, res) => {
+  try {
+    const { newName } = req.body;
+    if (!newName) return res.status(400).json({ error: 'newName is required' });
+    const result = await notebookService.renameArtifact(req.params.id, req.params.filename, newName);
+    res.json(result);
+  } catch (err) {
+    console.warn('Failed to rename artifact:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 export default router;

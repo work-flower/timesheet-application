@@ -9,14 +9,14 @@
  *   readOnly      — boolean
  *   onImageUpload — async (file: File) => string (returns filename)
  *   onEntitySearch — (entityType: 'project'|'client'|'timesheet') => void
- *   ref           — exposes { undo(), redo(), insertEntityLink(href, displayName) }
+ *   ref           — exposes { undo(), redo(), insertEntityLink(href, displayName), insertImage(src, alt), insertCodeBlock(code, language, sourceFilename) }
  */
 import { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
 import { Crepe, CrepeFeature } from '@milkdown/crepe';
 import { callCommand } from '@milkdown/kit/utils';
 import { undoCommand, redoCommand } from '@milkdown/kit/plugin/history';
-import { linkSchema, clearTextInCurrentBlockCommand } from '@milkdown/kit/preset/commonmark';
+import { linkSchema, imageSchema, insertImageCommand, codeBlockSchema, paragraphSchema, clearTextInCurrentBlockCommand } from '@milkdown/kit/preset/commonmark';
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core';
 import { makeStyles, tokens } from '@fluentui/react-components';
 
@@ -141,6 +141,44 @@ const InnerEditor = forwardRef(function InnerEditor({ defaultValue, onChange, re
         const tr = view.state.tr.insertText(displayName, from);
         const mark = linkSchema.type(ctx).create({ href });
         tr.addMark(from, from + displayName.length, mark);
+        view.dispatch(tr);
+      });
+    },
+    insertImage: (src, alt) => {
+      if (!crepeRef.current?.editor) return;
+      crepeRef.current.editor.action(callCommand(insertImageCommand.key, { src, alt: alt || src }));
+    },
+    insertCodeBlock: (code, language, sourceFilename) => {
+      if (!crepeRef.current?.editor) return;
+      crepeRef.current.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const { from } = view.state.selection;
+        const schema = view.state.schema;
+
+        // Build code block node
+        const codeType = codeBlockSchema.type(ctx);
+        const textNode = code ? schema.text(code) : null;
+        const codeNode = codeType.create({ language: language || '' }, textNode);
+
+        // Build source link paragraph: "Source: filename"
+        const nodes = [codeNode];
+        if (sourceFilename) {
+          const paraType = paragraphSchema.type(ctx);
+          const linkMark = linkSchema.type(ctx).create({ href: sourceFilename });
+          const sourceText = schema.text('Source: ');
+          const linkText = schema.text(sourceFilename, [linkMark]);
+          const emMark = schema.marks.emphasis?.create();
+          const para = paraType.create(null, [
+            ...(emMark ? [sourceText.mark([emMark]), linkText.mark([emMark, linkMark])] : [sourceText, linkText]),
+          ]);
+          nodes.push(para);
+        }
+
+        const fragment = view.state.schema.nodes.doc ? nodes : nodes;
+        let tr = view.state.tr;
+        for (let i = nodes.length - 1; i >= 0; i--) {
+          tr = tr.insert(from, nodes[i]);
+        }
         view.dispatch(tr);
       });
     },

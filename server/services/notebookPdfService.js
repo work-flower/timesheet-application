@@ -4,7 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
-import { getNotebookDir } from './notebookService.js';
+import { getNotebookDir, getContent } from './notebookService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -16,11 +16,10 @@ const STYLE_PATH = join(__dirname, '..', 'assets', 'notebook-pdf-style.tex');
  */
 export async function buildNotebookPdf(notebookId) {
   const dir = await getNotebookDir(notebookId);
-  const contentPath = join(dir, 'content.md');
-  if (!existsSync(contentPath)) throw new Error('Notebook content not found');
+  const rawContent = await getContent(notebookId);
+  if (rawContent === null || rawContent === '') throw new Error('Notebook content not found');
 
   // Strip internal links (URLs starting with /) to plain text for PDF output
-  const rawContent = readFileSync(contentPath, 'utf-8');
   const strippedContent = rawContent.replace(/\[([^\]]+)\]\(\/[^)]*\)/g, '$1');
   const tempContentPath = join(tmpdir(), `notebook-content-${randomBytes(8).toString('hex')}.md`);
   writeFileSync(tempContentPath, strippedContent, 'utf-8');
