@@ -1,4 +1,4 @@
-import { notebooks, projects, clients, timesheets } from '../db/index.js';
+import { notebooks, projects, clients, timesheets, tickets } from '../db/index.js';
 import { buildQuery, parseFilter, applySelect, formatResponse } from '../odata.js';
 import { parseFilter as parseFilterAst } from 'odata-filter-to-ast';
 import { fileURLToPath } from 'url';
@@ -59,30 +59,35 @@ async function enrichEntityNames(entries) {
   const projectIds = new Set();
   const clientIds = new Set();
   const timesheetIds = new Set();
+  const ticketIds = new Set();
 
   for (const entry of entries) {
     (entry.relatedProjects || []).forEach((id) => projectIds.add(id));
     (entry.relatedClients || []).forEach((id) => clientIds.add(id));
     (entry.relatedTimesheets || []).forEach((id) => timesheetIds.add(id));
+    (entry.relatedTickets || []).forEach((id) => ticketIds.add(id));
   }
 
   // Batch-fetch referenced entities
-  const [projectDocs, clientDocs, timesheetDocs] = await Promise.all([
+  const [projectDocs, clientDocs, timesheetDocs, ticketDocs] = await Promise.all([
     projectIds.size > 0 ? projects.find({ _id: { $in: [...projectIds] } }) : [],
     clientIds.size > 0 ? clients.find({ _id: { $in: [...clientIds] } }) : [],
     timesheetIds.size > 0 ? timesheets.find({ _id: { $in: [...timesheetIds] } }) : [],
+    ticketIds.size > 0 ? tickets.find({ _id: { $in: [...ticketIds] } }) : [],
   ]);
 
   // Build lookup maps
   const projectMap = new Map(projectDocs.map((p) => [p._id, p.name]));
   const clientMap = new Map(clientDocs.map((c) => [c._id, c.companyName]));
   const timesheetMap = new Map(timesheetDocs.map((t) => [t._id, t.date]));
+  const ticketMap = new Map(ticketDocs.map((t) => [t._id, t.externalId || t.title]));
 
   return entries.map((entry) => ({
     ...entry,
     relatedProjectNames: (entry.relatedProjects || []).map((id) => projectMap.get(id)).filter(Boolean),
     relatedClientNames: (entry.relatedClients || []).map((id) => clientMap.get(id)).filter(Boolean),
     relatedTimesheetLabels: (entry.relatedTimesheets || []).map((id) => timesheetMap.get(id)).filter(Boolean),
+    relatedTicketLabels: (entry.relatedTickets || []).map((id) => ticketMap.get(id)).filter(Boolean),
   }));
 }
 
@@ -90,7 +95,7 @@ async function enrichEntityNames(entries) {
 
 const VIRTUAL_FIELDS = new Set([
   'relatedProjectNamesAll', 'relatedClientNamesAll',
-  'relatedTimesheetLabelsAll', 'tagsAll',
+  'relatedTimesheetLabelsAll', 'relatedTicketLabelsAll', 'tagsAll',
 ]);
 
 /**
@@ -138,6 +143,14 @@ async function resolveVirtualContains(field, keyword) {
       return ids.length > 0
         ? { relatedTimesheets: { $in: ids } }
         : { relatedTimesheets: '__no_match__' };
+    }
+
+    case 'relatedTicketLabelsAll': {
+      const matches = await tickets.find({ $or: [{ externalId: regex }, { title: regex }] });
+      const ids = matches.map((t) => t._id);
+      return ids.length > 0
+        ? { relatedTickets: { $in: ids } }
+        : { relatedTickets: '__no_match__' };
     }
 
     default:
@@ -344,6 +357,7 @@ Summary paragraph here.
     relatedProjects: [],
     relatedClients: [],
     relatedTimesheets: [],
+    relatedTickets: [],
     createdAt: now,
     updatedAt: now,
   });
@@ -519,6 +533,7 @@ export async function updateContent(id, markdown) {
       relatedProjects: refs.relatedProjects,
       relatedClients: refs.relatedClients,
       relatedTimesheets: refs.relatedTimesheets,
+      relatedTickets: refs.relatedTickets,
       updatedAt: now,
     },
   });
@@ -574,6 +589,7 @@ export async function discard(id) {
       relatedProjects: refs.relatedProjects,
       relatedClients: refs.relatedClients,
       relatedTimesheets: refs.relatedTimesheets,
+      relatedTickets: refs.relatedTickets,
       updatedAt: now,
     },
   });
@@ -600,20 +616,23 @@ function extractEntityReferences(markdown) {
   const relatedProjects = new Set();
   const relatedClients = new Set();
   const relatedTimesheets = new Set();
+  const relatedTickets = new Set();
 
-  const regex = /\[([^\]]*)\]\(\/(projects|clients|timesheets)\/([a-zA-Z0-9_-]+)\)/g;
+  const regex = /\[([^\]]*)\]\(\/(projects|clients|timesheets|tickets)\/([a-zA-Z0-9_-]+)\)/g;
   let match;
   while ((match = regex.exec(markdown || '')) !== null) {
     const [, , entityType, entityId] = match;
     if (entityType === 'projects') relatedProjects.add(entityId);
     else if (entityType === 'clients') relatedClients.add(entityId);
     else if (entityType === 'timesheets') relatedTimesheets.add(entityId);
+    else if (entityType === 'tickets') relatedTickets.add(entityId);
   }
 
   return {
     relatedProjects: [...relatedProjects],
     relatedClients: [...relatedClients],
     relatedTimesheets: [...relatedTimesheets],
+    relatedTickets: [...relatedTickets],
   };
 }
 
@@ -1019,6 +1038,7 @@ async function syncDbWithDisk() {
         relatedProjects: refs.relatedProjects,
         relatedClients: refs.relatedClients,
         relatedTimesheets: refs.relatedTimesheets,
+        relatedTickets: refs.relatedTickets,
         createdAt: now,
         updatedAt: now,
       });

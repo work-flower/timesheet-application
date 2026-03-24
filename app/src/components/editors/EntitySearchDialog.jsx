@@ -4,7 +4,7 @@ import {
   Input, Spinner, Text, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { SearchRegular, DismissRegular } from '@fluentui/react-icons';
-import { projectsApi, clientsApi, timesheetsApi } from '../../api/index.js';
+import { projectsApi, clientsApi, timesheetsApi, ticketsApi } from '../../api/index.js';
 
 const DEBOUNCE_MS = 300;
 
@@ -40,6 +40,21 @@ const ENTITY_CONFIG = {
     display: (r) => {
       const parts = [r.date];
       if (r.projectName) parts.push(r.projectName);
+      return parts.join(' — ');
+    },
+  },
+  ticket: {
+    title: 'Link Ticket',
+    placeholder: 'Search tickets by title or ID...',
+    fetch: (q) => {
+      const params = { $top: '20', $orderby: 'updated desc' };
+      if (q) params.$filter = `contains(title,'${q}') or contains(externalId,'${q}')`;
+      return ticketsApi.getAll(params);
+    },
+    display: (r) => {
+      const parts = [];
+      if (r.externalId) parts.push(r.externalId);
+      if (r.title) parts.push(r.title);
       return parts.join(' — ');
     },
   },

@@ -155,7 +155,7 @@ export default function NotebookList() {
 
   const SEARCH_FIELDS = [
     'title', 'thumbnailFilename', 'createdAt', 'updatedAt',
-    'tagsAll', 'relatedProjectNamesAll', 'relatedClientNamesAll', 'relatedTimesheetLabelsAll',
+    'tagsAll', 'relatedProjectNamesAll', 'relatedClientNamesAll', 'relatedTimesheetLabelsAll', 'relatedTicketLabelsAll',
   ];
 
   const buildSearchClause = useCallback((keyword) => {
@@ -410,7 +410,7 @@ export default function NotebookList() {
                       )}
                     </div>
                   </div>
-                  {((notebook.relatedProjectNames?.length > 0) || (notebook.relatedClientNames?.length > 0) || (notebook.relatedTimesheetLabels?.length > 0)) && (
+                  {((notebook.relatedProjectNames?.length > 0) || (notebook.relatedClientNames?.length > 0) || (notebook.relatedTimesheetLabels?.length > 0) || (notebook.relatedTicketLabels?.length > 0)) && (
                     <div className={styles.tags} style={{ marginTop: '6px' }}>
                       {(notebook.relatedProjectNames || []).map((name) => (
                         <Badge key={`p-${name}`} appearance="tint" size="small" color="informative">{name}</Badge>
@@ -420,6 +420,9 @@ export default function NotebookList() {
                       ))}
                       {(notebook.relatedTimesheetLabels || []).map((label) => (
                         <Badge key={`t-${label}`} appearance="tint" size="small" color="subtle">{label}</Badge>
+                      ))}
+                      {(notebook.relatedTicketLabels || []).map((label) => (
+                        <Badge key={`tk-${label}`} appearance="tint" size="small" color="important">{label}</Badge>
                       ))}
                     </div>
                   )}

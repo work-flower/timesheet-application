@@ -228,11 +228,12 @@ export default function NotebookForm() {
 
   const handleEntitySelect = useCallback((record) => {
     setEntitySearchOpen(false);
-    const urlMap = { project: 'projects', client: 'clients', timesheet: 'timesheets' };
+    const urlMap = { project: 'projects', client: 'clients', timesheet: 'timesheets', ticket: 'tickets' };
     const href = `/${urlMap[entitySearchType]}/${record._id}`;
     let displayName;
     if (entitySearchType === 'project') displayName = record.name;
     else if (entitySearchType === 'client') displayName = record.companyName;
+    else if (entitySearchType === 'ticket') displayName = record.externalId ? `${record.externalId} — ${record.title}` : record.title;
     else displayName = record.projectName ? `${record.date} — ${record.projectName}` : record.date;
     editorRef.current?.insertEntityLink(href, displayName);
   }, [entitySearchType]);
