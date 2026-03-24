@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   makeStyles,
   tokens,
@@ -6,7 +6,11 @@ import {
   Select,
   Badge,
   Spinner,
+  Button,
+  MessageBar,
+  MessageBarBody,
 } from '@fluentui/react-components';
+import { ArrowUploadRegular } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import CardView, { CardMetaItem } from '../../components/CardView.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
@@ -94,7 +98,7 @@ export default function TicketList() {
 
   const {
     getFilterValue, setFilterValues,
-    items, totalCount, loading,
+    items, totalCount, loading, refresh,
     page, pageSize, totalPages, setPage, setPageSize,
   } = useODataList({
     key: 'tickets',
@@ -136,6 +140,26 @@ export default function TicketList() {
   }, []);
 
   const [search, setSearch] = useState('');
+  const [message, setMessage] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handleImport = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const arr = Array.isArray(data) ? data : [data];
+      const result = await ticketsApi.bulkImport(arr);
+      setMessage({ intent: 'success', text: `Imported: ${result.created} created, ${result.updated} updated.` });
+      setTimeout(() => setMessage(null), 4000);
+      refresh();
+    } catch (err) {
+      setMessage({ intent: 'error', text: `Import failed: ${err.message}` });
+    } finally {
+      e.target.value = '';
+    }
+  }, [refresh]);
 
   const filtered = useMemo(() => {
     if (!search) return items;
@@ -157,7 +181,29 @@ export default function TicketList() {
       <CommandBar
         searchValue={search}
         onSearchChange={setSearch}
-      />
+      >
+        <Button
+          appearance="subtle"
+          icon={<ArrowUploadRegular />}
+          size="small"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          Import
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          style={{ display: 'none' }}
+          onChange={handleImport}
+        />
+      </CommandBar>
+
+      {message && (
+        <MessageBar intent={message.intent} style={{ margin: '0 16px' }}>
+          <MessageBarBody>{message.text}</MessageBarBody>
+        </MessageBar>
+      )}
 
       <div className={styles.filters}>
         <Select

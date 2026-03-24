@@ -14,6 +14,17 @@ router.get('/', async (req, res) => {
   }
 });
 
+// POST /api/tickets — bulk import canonical tickets
+router.post('/', async (req, res) => {
+  try {
+    const result = await ticketService.bulkImport(req.body);
+    res.status(201).json(result);
+  } catch (err) {
+    console.warn(err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // GET /api/tickets/:id
 router.get('/:id', async (req, res) => {
   try {

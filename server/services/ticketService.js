@@ -215,6 +215,41 @@ export async function fetchAll() {
   return results;
 }
 
+// ── Bulk import (canonical shape) ─────────────────────────────────
+
+export async function bulkImport(items) {
+  if (!Array.isArray(items)) items = [items];
+
+  const cachedAt = new Date().toISOString();
+  let created = 0;
+  let updated = 0;
+
+  for (const item of items) {
+    if (!item.externalId || !item.sourceId) continue;
+
+    const existing = await tickets.findOne({ sourceId: item.sourceId, externalId: item.externalId });
+    const { _id, sourceName, sourceColour, sourceType, ...ticketData } = item;
+
+    if (existing) {
+      await tickets.update({ _id: existing._id }, {
+        $set: { ...ticketData, cachedAt },
+      });
+      updated++;
+    } else {
+      await tickets.insert({
+        ...ticketData,
+        cachedAt,
+        extension: item.extension || { comments: '' },
+      });
+      created++;
+    }
+  }
+
+  const count = created + updated;
+  console.log(`Ticket bulk import: ${created} created, ${updated} updated`);
+  return { count, created, updated };
+}
+
 // ── Single ticket + patch ────────────────────────────────────────
 
 export async function getTicketById(id) {

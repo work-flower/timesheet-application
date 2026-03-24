@@ -292,3 +292,7 @@ export const entityApi = {
 - Required fields: throw `new Error('Field is required')`
 - Numeric fields: coerce via `Number(data.field)` before storing
 - Empty string to null: for optional override fields (e.g., `rate`, `workingHoursPerDay`)
+
+## Known Bugs
+
+- **OData `$filter` silently ignores invalid syntax:** When `$filter` contains invalid expressions (e.g. double quotes `"` instead of single quotes `'` for string values), `buildQuery` fails to parse and applies no filter — returning all records instead of a 400 error or empty result. Affects all entities. Location: `server/odata.js`.
