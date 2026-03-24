@@ -23,9 +23,8 @@ function orgAndProject(baseUrl) {
 
 export async function testConnection(source) {
   const baseUrl = source.baseUrl.replace(/\/+$/, '');
-  const { org } = orgAndProject(baseUrl);
-  const url = `https://dev.azure.com/${org}/_apis/projects?api-version=7.1&$top=1`;
-  const res = await fetch(url, { headers: authHeader(source) });
+  const apiVer = source.apiVersion || '7.1';
+  const res = await fetch(`${baseUrl}/_apis/projects?$top=1&api-version=${apiVer}`, { headers: authHeader(source) });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Azure DevOps connection failed (${res.status}): ${body}`);
@@ -35,12 +34,13 @@ export async function testConnection(source) {
 
 export async function fetchTickets(source) {
   const baseUrl = source.baseUrl.replace(/\/+$/, '');
+  const apiVer = source.apiVersion || '7.1';
   const headers = authHeader(source);
 
   // Step 1: Run WIQL query to get work item IDs
   const wiql = source.preQuery || `SELECT [System.Id] FROM WorkItems WHERE [System.ChangedDate] >= @Today - 30 ORDER BY [System.ChangedDate] DESC`;
 
-  const wiqlUrl = `${baseUrl}/_apis/wit/wiql?api-version=7.1`;
+  const wiqlUrl = `${baseUrl}/_apis/wit/wiql?api-version=${apiVer}`;
   const wiqlRes = await fetch(wiqlUrl, {
     method: 'POST',
     headers,
@@ -61,7 +61,7 @@ export async function fetchTickets(source) {
     const batchIds = ids.slice(i, i + BATCH_SIZE);
     const idsParam = batchIds.join(',');
     const fields = FIELDS.join(',');
-    const detailUrl = `${baseUrl}/_apis/wit/workitems?ids=${idsParam}&fields=${fields}&api-version=7.1`;
+    const detailUrl = `${baseUrl}/_apis/wit/workitems?ids=${idsParam}&fields=${fields}&api-version=${apiVer}`;
     const detailRes = await fetch(detailUrl, { headers });
     if (!detailRes.ok) {
       const body = await detailRes.text();
@@ -93,7 +93,9 @@ function mapToCanonical(wi, source) {
     description: truncate(stripHtml(f['System.Description'] || ''), 500),
     state: f['System.State'] || '',
     type: f['System.WorkItemType'] || '',
-    assignedTo: f['System.AssignedTo']?.displayName || '',
+    assignedTo: typeof f['System.AssignedTo'] === 'string'
+      ? f['System.AssignedTo'].replace(/<[^>]*>/, '').trim()
+      : f['System.AssignedTo']?.displayName || '',
     sprint: sprintName || null,
     areaPath: f['System.AreaPath'] || '',
     priority: priorityLabel(f['Microsoft.VSTS.Common.Priority']),
@@ -107,9 +109,10 @@ function mapToCanonical(wi, source) {
 
 export async function fetchTicketById(source, externalId) {
   const baseUrl = source.baseUrl.replace(/\/+$/, '');
+  const apiVer = source.apiVersion || '7.1';
   const headers = authHeader(source);
   const fields = FIELDS.join(',');
-  const url = `${baseUrl}/_apis/wit/workitems/${externalId}?fields=${fields}&api-version=7.1`;
+  const url = `${baseUrl}/_apis/wit/workitems/${externalId}?fields=${fields}&api-version=${apiVer}`;
   const res = await fetch(url, { headers });
   if (res.status === 404) return null;
   if (!res.ok) {

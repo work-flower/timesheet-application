@@ -190,8 +190,9 @@ export async function fetchAndCache(sourceId) {
       $set: { lastFetchedAt: new Date().toISOString(), lastError: null },
     });
 
+    const count = created + updated + rechecked;
     console.log(`Ticket sync completed for "${source.name}": ${created} created, ${updated} updated, ${rechecked} re-checked, ${notFound} not found on remote`);
-    return { created, updated, rechecked, notFound };
+    return { count, created, updated, rechecked, notFound };
   } catch (err) {
     await ticketSources.update({ _id: sourceId }, {
       $set: { lastError: err.message },

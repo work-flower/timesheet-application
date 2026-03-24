@@ -157,7 +157,7 @@ const useStyles = makeStyles({
 });
 
 const JIRA_DEFAULTS = { name: '', baseUrl: '', email: '', apiToken: '', preQuery: '', colour: '#0078D4', enabled: true, refreshIntervalMinutes: '' };
-const ADO_DEFAULTS = { name: '', baseUrl: '', pat: '', preQuery: '', colour: '#0078D4', enabled: true, refreshIntervalMinutes: '' };
+const ADO_DEFAULTS = { name: '', baseUrl: '', pat: '', apiVersion: '7.1', preQuery: '', colour: '#0078D4', enabled: true, refreshIntervalMinutes: '' };
 
 function truncateUrl(url) {
   if (!url) return '';
@@ -230,6 +230,7 @@ export default function TicketSourcesPage() {
         name: source.name,
         baseUrl: source.baseUrl,
         pat: source.pat || '',
+        apiVersion: source.apiVersion || '7.1',
         preQuery: source.preQuery || '',
         colour: source.colour || '#0078D4',
         enabled: source.enabled !== false,
@@ -514,16 +515,30 @@ export default function TicketSourcesPage() {
                     </div>
                   </>
                 ) : (
-                  <div className={styles.fullWidth}>
-                    <Field label="Personal Access Token" required>
-                      <Input
-                        value={formData.pat}
-                        onChange={(e, d) => setFormData((prev) => ({ ...prev, pat: d.value }))}
-                        placeholder="Azure DevOps PAT"
-                        type="password"
-                      />
-                    </Field>
-                  </div>
+                  <>
+                    <div>
+                      <Field label="Personal Access Token" required>
+                        <Input
+                          value={formData.pat}
+                          onChange={(e, d) => setFormData((prev) => ({ ...prev, pat: d.value }))}
+                          placeholder="Azure DevOps PAT"
+                          type="password"
+                        />
+                      </Field>
+                    </div>
+                    <div>
+                      <Field label="API Version">
+                        <Input
+                          value={formData.apiVersion}
+                          onChange={(e, d) => setFormData((prev) => ({ ...prev, apiVersion: d.value }))}
+                          placeholder="7.1"
+                        />
+                      </Field>
+                      <div className={styles.hint}>
+                        Use 2.0 for on-prem TFS, 7.1 for Azure DevOps cloud.
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 <div className={styles.fullWidth}>
