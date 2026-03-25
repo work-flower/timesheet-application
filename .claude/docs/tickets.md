@@ -88,7 +88,18 @@ Ticket integration from Jira and Azure DevOps. Users register ticket sources (wi
 | created | Created date |
 | updated | Last updated date |
 | cachedAt | When this record was last synced |
+| comments | Array of remote comments synced from source (see below) |
 | extension | Object — user's local extension data (see below) |
+
+### comments array (synced from source)
+
+| Field | Description |
+|-------|-------------|
+| id | Comment ID from source system (Jira comment ID or ADO comment ID) |
+| author | Display name of comment author |
+| body | Comment content — stored in original format from source |
+| format | `text` (Jira, extracted from ADF), `markdown` or `html` (ADO) |
+| created | ISO timestamp from source |
 
 ### extension object
 
@@ -114,24 +125,26 @@ Ticket integration from Jira and Azure DevOps. Users register ticket sources (wi
 
 ## Key Business Logic
 
-- **Provider pattern:** `getProvider(type)` returns the Jira or ADO provider. Each implements `testConnection(source)`, `fetchTickets(source)`, and `fetchTicketById(source, externalId)`.
-- **Jira auth:** Basic auth with `email:apiToken`. Uses REST API v3 `/rest/api/3/search/jql` with JQL. Single issue: `/rest/api/3/issue/{key}`.
-- **ADO auth:** Basic auth with `:pat`. Uses WIQL query then batch work item detail fetch. Single item: `_apis/wit/workitems/{id}`. Fetches `System.Rev` for revision tracking.
+- **Provider pattern:** `getProvider(type)` returns the Jira or ADO provider. Each implements `testConnection(source)`, `fetchTickets(source)`, `fetchTicketById(source, externalId)`, and `fetchComments(source, externalId)`.
+- **Jira auth:** Basic auth with `email:apiToken`. Uses REST API v3 `/rest/api/3/search/jql` with JQL (includes `comment` field for inline comments). Single issue: `/rest/api/3/issue/{key}`. Comments: `/rest/api/3/issue/{key}/comment`.
+- **ADO auth:** Basic auth with `:pat`. Uses WIQL query then batch work item detail fetch. Single item: `_apis/wit/workitems/{id}`. Comments: `_apis/wit/workitems/{id}/comments`. Fetches `System.Rev` for revision tracking.
 - **Default pre-query:** When empty, fetches items updated in the last 30 days.
+- **Comment sync:** Comments are fetched in parallel during sync. Jira search includes inline comments (last ~5); if a ticket has more, a dedicated call fetches the full set. ADO always requires a per-ticket call. Comments are stored as-is in source format (text for Jira/ADF-extracted, markdown or html for ADO). The full `comments` array is replaced on each sync (idempotent by comment ID).
 - **Incremental sync (fetchAndCache):**
   1. Fetch remote tickets via provider query
-  2. For each remote ticket: upsert by `sourceId` + `externalId` (create if new with empty extension, update if existing — preserving extension data)
-  3. For local tickets NOT in remote response: re-check individually via `fetchTicketById`
-  4. If individual re-check returns 404/null: append warning notice to description (once only)
-  5. Tickets are NEVER deleted during sync
-  6. Detailed logging throughout: counts of created, updated, re-checked, not-found
+  2. Fetch comments in parallel for all remote tickets via `fetchCommentsParallel`
+  3. For each remote ticket: upsert by `sourceId` + `externalId` (create if new with empty extension, update if existing — preserving extension data). Comments array fully replaced.
+  4. For local tickets NOT in remote response: re-check individually via `fetchTicketById` + `fetchComments`
+  5. If individual re-check returns 404/null: append warning notice to description (once only)
+  6. Tickets are NEVER deleted during sync
+  7. Detailed logging throughout: counts of created, updated, re-checked, not-found
 - **No ticket deletion:** Synced tickets persist as evidence of work. Source deletion does NOT cascade to tickets.
 - **Extension data:** Each ticket has an `extension` object for user-local data. Currently supports `comments` (markdown). PATCH endpoint deep-merges into existing extension.
 - **Credential masking:** `apiToken` and `pat` masked on read. Masked values retained on update.
 - **Scheduler:** Sources with `refreshIntervalMinutes` get auto-refresh via `setInterval`. Managed by `initTicketScheduler()` on server startup.
 - **Dashboard display:** Card grid showing title (with source colour), state badge, assigned to, sprint, area path. Click copies ticket URL to clipboard.
 - **Ticket list:** DataGrid with source/state/type dropdown filters, client-side search, server-side pagination via `useODataList`. Row click navigates to ticket form.
-- **Ticket form:** Read-only source fields (disabled fieldset), editable extension comments via MarkdownEditor. Link to open ticket in source system.
+- **Ticket form:** Tabbed layout — "Details" tab (read-only source fields + editable extension comments via MarkdownEditor), "Ticket Comments" tab (chronological list of synced remote comments rendered by format: html, markdown via MarkdownEditor preview mode, or plain text). Link to open ticket in source system.
 
 ## Cross-Entity Consumers
 
@@ -161,3 +174,8 @@ Changes to ticket sources/tickets affect:
 - Incremental sync replaces the earlier full-purge strategy to preserve extension data and prevent data loss
 - ADO `System.Rev` field enables revision tracking; Jira has no equivalent (uses `updated` timestamp)
 - `Promise.allSettled` used for individual re-checks to isolate failures per ticket without breaking the sync
+- Jira comments are ADF (Atlassian Document Format) in API v3 — extracted to plain text via `extractText()` rather than storing raw ADF JSON
+- ADO comments have a `format` field (`markdown` or `html`) — stored as-is to preserve original formatting
+- Jira search includes inline comments (last ~5 per ticket) — avoids extra API calls for most tickets. Only tickets with `total > returned` need a dedicated fetch
+- ADO has no expand/batch option for comments — one API call per ticket required, fetched in parallel via `Promise.allSettled`
+- MarkdownEditor component supports `preview` prop for read-only markdown rendering (uses `MDEditor.Markdown`)

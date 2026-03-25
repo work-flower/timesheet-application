@@ -123,6 +123,30 @@ export async function fetchTicketById(source, externalId) {
   return mapToCanonical(wi, source);
 }
 
+export async function fetchComments(source, externalId, project) {
+  const baseUrl = source.baseUrl.replace(/\/+$/, '');
+  const apiVer = source.apiVersion || '7.1';
+  const headers = authHeader(source);
+  // Comments endpoint requires the project segment in the URL path
+  // Request renderedText to resolve identity GUIDs in markdown mentions to display names
+  const projectSegment = project ? `/${encodeURIComponent(project)}` : '';
+  const url = `${baseUrl}${projectSegment}/_apis/wit/workitems/${externalId}/comments?$expand=renderedText&api-version=${apiVer}-preview.4`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Azure DevOps comments fetch failed (${res.status}): ${body}`);
+  }
+  const data = await res.json();
+  return (data.comments || []).map((c) => ({
+    id: String(c.id),
+    author: c.createdBy?.displayName || '',
+    // Prefer renderedText (HTML with resolved mentions) over raw text
+    body: c.renderedText || c.text || '',
+    format: c.renderedText ? 'html' : (c.format || 'text'),
+    created: c.createdDate || '',
+  }));
+}
+
 function stripHtml(html) {
   if (!html) return '';
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();

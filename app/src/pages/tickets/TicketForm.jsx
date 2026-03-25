@@ -16,8 +16,10 @@ import {
   Card,
   Button,
   Tooltip,
+  TabList,
+  Tab,
 } from '@fluentui/react-components';
-import { OpenRegular, CopyRegular } from '@fluentui/react-icons';
+import { OpenRegular, CopyRegular, CommentRegular } from '@fluentui/react-icons';
 import { ticketsApi } from '../../api/index.js';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
@@ -101,6 +103,42 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: '8px',
   },
+  tabs: { marginBottom: '16px' },
+  commentList: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  commentCard: {
+    padding: '12px 16px',
+    borderLeft: '3px solid ' + tokens.colorBrandStroke1,
+  },
+  commentHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '6px',
+  },
+  commentAuthor: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase200,
+  },
+  commentDate: {
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground3,
+  },
+  commentBody: {
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase300,
+    '& p': { margin: '0 0 4px 0' },
+  },
+  htmlBody: {
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase300,
+    '& p': { margin: '0 0 4px 0' },
+    '& img': { maxWidth: '100%' },
+  },
+  emptyComments: {
+    textAlign: 'center',
+    padding: '48px 24px',
+    color: tokens.colorNeutralForeground3,
+  },
 });
 
 function stateBadgeColour(state) {
@@ -138,6 +176,7 @@ export default function TicketForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
   const cardRef = useRef(null);
   const [editorHeight, setEditorHeight] = useState(400);
 
@@ -265,106 +304,171 @@ export default function TicketForm() {
             </MessageBar>
           )}
 
-          <div className={styles.twoCol}>
-            {/* Left — ticket summary card */}
-            <Card
-              ref={cardRef}
-              className={styles.card}
-              style={{ backgroundColor: pastel.bg, borderLeftColor: colour }}
-            >
-              <Text className={styles.cardTitle}>{d.title || 'Ticket Details'}</Text>
+          <TabList
+            className={styles.tabs}
+            selectedValue={activeTab}
+            onTabSelect={(_, data) => setActiveTab(data.value)}
+          >
+            <Tab value="details">Details</Tab>
+            <Tab value="comments" icon={<CommentRegular />}>
+              Ticket Comments{(d.comments?.length > 0) ? ` (${d.comments.length})` : ''}
+            </Tab>
+          </TabList>
 
-              {d.url && (
-                <div className={styles.actions}>
-                  <Link href={d.url} target="_blank" inline style={{ fontSize: tokens.fontSizeBase200 }}>
-                    <OpenRegular style={{ marginRight: '3px', fontSize: '13px' }} />
-                    Open in {d.sourceType === 'jira' ? 'Jira' : 'Azure DevOps'}
-                  </Link>
-                  <Tooltip content="Copy link" relationship="label">
-                    <Button
-                      appearance="subtle"
-                      size="small"
-                      icon={<CopyRegular style={{ fontSize: '14px' }} />}
-                      style={{ minWidth: 'auto', padding: '2px 4px' }}
-                      onClick={() => navigator.clipboard.writeText(d.url).catch(() => {})}
-                    />
-                  </Tooltip>
+          {activeTab === 'details' && (
+            <div className={styles.twoCol}>
+              {/* Left — ticket summary card */}
+              <Card
+                ref={cardRef}
+                className={styles.card}
+                style={{ backgroundColor: pastel.bg, borderLeftColor: colour }}
+              >
+                <Text className={styles.cardTitle}>{d.title || 'Ticket Details'}</Text>
+
+                {d.url && (
+                  <div className={styles.actions}>
+                    <Link href={d.url} target="_blank" inline style={{ fontSize: tokens.fontSizeBase200 }}>
+                      <OpenRegular style={{ marginRight: '3px', fontSize: '13px' }} />
+                      Open in {d.sourceType === 'jira' ? 'Jira' : 'Azure DevOps'}
+                    </Link>
+                    <Tooltip content="Copy link" relationship="label">
+                      <Button
+                        appearance="subtle"
+                        size="small"
+                        icon={<CopyRegular style={{ fontSize: '14px' }} />}
+                        style={{ minWidth: 'auto', padding: '2px 4px' }}
+                        onClick={() => navigator.clipboard.writeText(d.url).catch(() => {})}
+                      />
+                    </Tooltip>
+                  </div>
+                )}
+
+                <div className={styles.row}>
+                  <Text className={styles.label}>ID</Text>
+                  <Text className={styles.value} style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                    {d.externalId || '\u2014'}
+                  </Text>
                 </div>
-              )}
+                <div className={styles.row}>
+                  <Text className={styles.label}>State</Text>
+                  <Badge appearance="filled" size="small" style={{ backgroundColor: badge.bg, color: badge.color }}>
+                    {d.state || '\u2014'}
+                  </Badge>
+                </div>
+                <div className={styles.row}>
+                  <Text className={styles.label}>Type</Text>
+                  <Text className={styles.value}>{d.type || '\u2014'}</Text>
+                </div>
+                <div className={styles.row}>
+                  <Text className={styles.label}>Priority</Text>
+                  <Text className={styles.value}>{d.priority || '\u2014'}</Text>
+                </div>
+                <div className={styles.row}>
+                  <Text className={styles.label}>Assigned To</Text>
+                  <Text className={styles.value}>{d.assignedTo || '\u2014'}</Text>
+                </div>
+                <div className={styles.divider} />
+                <div className={styles.row}>
+                  <Text className={styles.label}>Sprint</Text>
+                  <Text className={styles.value}>{d.sprint || '\u2014'}</Text>
+                </div>
+                <div className={styles.row}>
+                  <Text className={styles.label}>Project</Text>
+                  <Text className={styles.value}>{d.project || '\u2014'}</Text>
+                </div>
+                <div className={styles.row}>
+                  <Text className={styles.label}>Area Path</Text>
+                  <Text className={styles.value}>{d.areaPath || '\u2014'}</Text>
+                </div>
+                <div className={styles.row}>
+                  <Text className={styles.label}>Source</Text>
+                  <Text className={styles.value}>{d.sourceName || '\u2014'}</Text>
+                </div>
+                <div className={styles.divider} />
+                <div className={styles.row}>
+                  <Text className={styles.label}>Created</Text>
+                  <Text className={styles.value}>
+                    {d.created ? new Date(d.created).toLocaleDateString() : '\u2014'}
+                  </Text>
+                </div>
+                <div className={styles.row}>
+                  <Text className={styles.label}>Updated</Text>
+                  <Text className={styles.value}>
+                    {d.updated ? new Date(d.updated).toLocaleDateString() : '\u2014'}
+                  </Text>
+                </div>
 
-              <div className={styles.row}>
-                <Text className={styles.label}>ID</Text>
-                <Text className={styles.value} style={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                  {d.externalId || '\u2014'}
-                </Text>
-              </div>
-              <div className={styles.row}>
-                <Text className={styles.label}>State</Text>
-                <Badge appearance="filled" size="small" style={{ backgroundColor: badge.bg, color: badge.color }}>
-                  {d.state || '\u2014'}
-                </Badge>
-              </div>
-              <div className={styles.row}>
-                <Text className={styles.label}>Type</Text>
-                <Text className={styles.value}>{d.type || '\u2014'}</Text>
-              </div>
-              <div className={styles.row}>
-                <Text className={styles.label}>Priority</Text>
-                <Text className={styles.value}>{d.priority || '\u2014'}</Text>
-              </div>
-              <div className={styles.row}>
-                <Text className={styles.label}>Assigned To</Text>
-                <Text className={styles.value}>{d.assignedTo || '\u2014'}</Text>
-              </div>
-              <div className={styles.divider} />
-              <div className={styles.row}>
-                <Text className={styles.label}>Sprint</Text>
-                <Text className={styles.value}>{d.sprint || '\u2014'}</Text>
-              </div>
-              <div className={styles.row}>
-                <Text className={styles.label}>Project</Text>
-                <Text className={styles.value}>{d.project || '\u2014'}</Text>
-              </div>
-              <div className={styles.row}>
-                <Text className={styles.label}>Area Path</Text>
-                <Text className={styles.value}>{d.areaPath || '\u2014'}</Text>
-              </div>
-              <div className={styles.row}>
-                <Text className={styles.label}>Source</Text>
-                <Text className={styles.value}>{d.sourceName || '\u2014'}</Text>
-              </div>
-              <div className={styles.divider} />
-              <div className={styles.row}>
-                <Text className={styles.label}>Created</Text>
-                <Text className={styles.value}>
-                  {d.created ? new Date(d.created).toLocaleDateString() : '\u2014'}
-                </Text>
-              </div>
-              <div className={styles.row}>
-                <Text className={styles.label}>Updated</Text>
-                <Text className={styles.value}>
-                  {d.updated ? new Date(d.updated).toLocaleDateString() : '\u2014'}
-                </Text>
-              </div>
+                {d.description && (
+                  <div className={styles.description}>{d.description}</div>
+                )}
 
-              {d.description && (
-                <div className={styles.description}>{d.description}</div>
-              )}
+              </Card>
 
-            </Card>
-
-            {/* Right — editable comments, height matched to card */}
-            <div>
-              <MarkdownEditor
-                name="comments"
-                value={form.comments ?? ''}
-                onChange={(val) => setForm((prev) => ({ ...prev, comments: val }))}
-                height={editorHeight}
-              />
+              {/* Right — editable comments, height matched to card */}
+              <div>
+                <MarkdownEditor
+                  name="comments"
+                  value={form.comments ?? ''}
+                  onChange={(val) => setForm((prev) => ({ ...prev, comments: val }))}
+                  height={editorHeight}
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {activeTab === 'comments' && (
+            <TicketComments comments={d.comments || []} styles={styles} />
+          )}
         </div>
       </div>
     </>
+  );
+}
+
+function TicketComments({ comments, styles }) {
+  if (!comments.length) {
+    return (
+      <div className={styles.emptyComments}>
+        <CommentRegular style={{ fontSize: '32px', display: 'block', margin: '0 auto 8px' }} />
+        <Text>No comments on this ticket.</Text>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.commentList}>
+      {comments.map((c) => (
+        <Card key={c.id} className={styles.commentCard}>
+          <div className={styles.commentHeader}>
+            <Text className={styles.commentAuthor}>{c.author || 'Unknown'}</Text>
+            <Text className={styles.commentDate}>
+              {c.created ? new Date(c.created).toLocaleString() : ''}
+            </Text>
+          </div>
+          <CommentBody body={c.body} format={c.format} styles={styles} />
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function CommentBody({ body, format, styles }) {
+  if (!body) return null;
+
+  if (format === 'html') {
+    return <div className={styles.htmlBody} dangerouslySetInnerHTML={{ __html: body }} />;
+  }
+
+  if (format === 'markdown') {
+    return (
+      <div className={styles.commentBody}>
+        <MarkdownEditor value={body} preview />
+      </div>
+    );
+  }
+
+  // Plain text
+  return (
+    <Text className={styles.commentBody} style={{ whiteSpace: 'pre-wrap' }}>{body}</Text>
   );
 }

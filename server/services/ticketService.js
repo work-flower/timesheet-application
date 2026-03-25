@@ -112,6 +112,9 @@ export async function fetchAndCache(sourceId) {
 
     console.log(`Ticket sync started for "${source.name}" (${source.type}) — ${remoteItems.length} remote ticket(s)`);
 
+    // Fetch comments in parallel for all remote tickets
+    const commentResults = await fetchCommentsParallel(provider, source, remoteItems);
+
     // Build a set of remote externalIds for reconciliation
     const remoteIdSet = new Set(remoteItems.map((item) => item.externalId));
 
@@ -128,15 +131,18 @@ export async function fetchAndCache(sourceId) {
     // Upsert: create new or update existing from remote query results
     for (const item of remoteItems) {
       const existing = localMap[item.externalId];
+      const comments = commentResults.get(item.externalId) || [];
+      // Strip transient fields used for inline comment optimisation
+      const { _comments, _hasMoreComments, ...ticketData } = item;
+
       if (existing) {
         // Update synced fields but preserve extension data
-        const { extension, _id, ...rest } = existing;
         await tickets.update({ _id: existing._id }, {
-          $set: { ...item, sourceId, cachedAt },
+          $set: { ...ticketData, comments, sourceId, cachedAt },
         });
         updated++;
       } else {
-        await tickets.insert({ ...item, sourceId, cachedAt, extension: { comments: '' } });
+        await tickets.insert({ ...ticketData, comments, sourceId, cachedAt, extension: { comments: '' } });
         created++;
       }
     }
@@ -155,8 +161,16 @@ export async function fetchAndCache(sourceId) {
         try {
           const fresh = await provider.fetchTicketById(source, local.externalId);
           if (fresh) {
+            // Also fetch comments for re-checked ticket
+            let comments = [];
+            try {
+              comments = await provider.fetchComments(source, local.externalId, fresh.project);
+            } catch (err) {
+              console.warn(`Ticket sync "${source.name}": comment fetch failed for re-checked ${local.externalId}: ${err.message}`);
+            }
+            const { _comments, _hasMoreComments, ...ticketData } = fresh;
             await tickets.update({ _id: local._id }, {
-              $set: { ...fresh, sourceId, cachedAt },
+              $set: { ...ticketData, comments, sourceId, cachedAt },
             });
             console.log(`Ticket sync "${source.name}": re-checked ${local.externalId} — updated`);
             return 'updated';
@@ -199,6 +213,40 @@ export async function fetchAndCache(sourceId) {
     });
     throw err;
   }
+}
+
+async function fetchCommentsParallel(provider, source, remoteItems) {
+  const commentMap = new Map();
+
+  // For Jira: use inline comments from search where complete, fetch full set only when truncated
+  // For ADO: always fetch via separate endpoint (no inline comments)
+  const needsFetch = remoteItems.filter((item) => {
+    if (item._comments && !item._hasMoreComments) {
+      // Jira inline comments are complete — use them directly
+      commentMap.set(item.externalId, item._comments);
+      return false;
+    }
+    return true;
+  });
+
+  if (needsFetch.length > 0 && provider.fetchComments) {
+    const results = await Promise.allSettled(
+      needsFetch.map(async (item) => {
+        const comments = await provider.fetchComments(source, item.externalId, item.project);
+        return { externalId: item.externalId, comments };
+      }),
+    );
+
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        commentMap.set(r.value.externalId, r.value.comments);
+      } else {
+        console.warn(`Comment fetch failed for ticket in "${source.name}": ${r.reason?.message || r.reason}`);
+      }
+    }
+  }
+
+  return commentMap;
 }
 
 export async function fetchAll() {

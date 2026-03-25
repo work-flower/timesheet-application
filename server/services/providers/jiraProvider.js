@@ -18,7 +18,7 @@ export async function testConnection(source) {
 export async function fetchTickets(source) {
   const baseUrl = source.baseUrl.replace(/\/+$/, '');
   const jql = source.preQuery || 'updated >= -30d ORDER BY updated DESC';
-  const fields = 'summary,description,status,issuetype,assignee,priority,project,sprint,updated,created';
+  const fields = 'summary,description,status,issuetype,assignee,priority,project,sprint,updated,created,comment';
 
   let allIssues = [];
   let nextPageToken = null;
@@ -27,6 +27,7 @@ export async function fetchTickets(source) {
     const body = {
       jql,
       fields: fields.split(','),
+      expand: ['renderedFields'],
       maxResults: MAX_RESULTS_PER_PAGE,
     };
     if (nextPageToken) body.nextPageToken = nextPageToken;
@@ -52,8 +53,23 @@ export async function fetchTickets(source) {
 
 function mapToCanonical(issue, source) {
   const fields = issue.fields || {};
+  const rendered = issue.renderedFields || {};
   const sprint = fields.sprint;
   const sprintName = sprint?.name || null;
+
+  // Extract inline comments — prefer rendered HTML from renderedFields
+  const commentField = fields.comment || {};
+  const renderedCommentField = rendered.comment || {};
+  const renderedComments = renderedCommentField.comments || [];
+  const rawComments = commentField.comments || [];
+  const inlineComments = rawComments.map((c, i) => ({
+    id: c.id,
+    author: c.author?.displayName || c.updateAuthor?.displayName || '',
+    body: renderedComments[i]?.body || extractText(c.body),
+    format: renderedComments[i]?.body ? 'html' : 'text',
+    created: c.created || '',
+  }));
+  const hasMoreComments = (commentField.total || 0) > inlineComments.length;
 
   return {
     externalId: issue.key,
@@ -69,6 +85,8 @@ function mapToCanonical(issue, source) {
     url: `${source.baseUrl.replace(/\/+$/, '')}/browse/${issue.key}`,
     created: fields.created || '',
     updated: fields.updated || '',
+    _comments: inlineComments,
+    _hasMoreComments: hasMoreComments,
   };
 }
 
@@ -84,6 +102,35 @@ export async function fetchTicketById(source, externalId) {
   }
   const issue = await res.json();
   return mapToCanonical(issue, source);
+}
+
+export async function fetchComments(source, externalId) {
+  const baseUrl = source.baseUrl.replace(/\/+$/, '');
+  const allComments = [];
+  let startAt = 0;
+  const maxResults = 50;
+
+  while (true) {
+    const url = `${baseUrl}/rest/api/3/issue/${encodeURIComponent(externalId)}/comment?startAt=${startAt}&maxResults=${maxResults}&expand=renderedBody`;
+    const res = await fetch(url, { headers: authHeader(source) });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Jira comments fetch failed (${res.status}): ${body}`);
+    }
+    const data = await res.json();
+    const comments = data.comments || [];
+    allComments.push(...comments);
+    if (startAt + comments.length >= (data.total || 0)) break;
+    startAt += comments.length;
+  }
+
+  return allComments.map((c) => ({
+    id: c.id,
+    author: c.author?.displayName || c.updateAuthor?.displayName || '',
+    body: c.renderedBody || extractText(c.body),
+    format: c.renderedBody ? 'html' : 'text',
+    created: c.created || '',
+  }));
 }
 
 function extractText(description) {

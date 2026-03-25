@@ -68,8 +68,17 @@ const extraToolbarCommands = [
   commands.codePreview,
 ];
 
-export default function MarkdownEditor({ value, onChange, label, name, placeholder, height = 200 }) {
+export default function MarkdownEditor({ value, onChange, label, name, placeholder, height = 200, preview = false }) {
   const styles = useStyles();
+
+  if (preview) {
+    return (
+      <div className={styles.wrapper} data-color-mode="light">
+        {label && <label className={styles.label}>{label}</label>}
+        <MDEditor.Markdown source={value || ''} />
+      </div>
+    );
+  }
 
   return (
     <div className={styles.wrapper} data-color-mode="light">
