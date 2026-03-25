@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogContent,
 } from '@fluentui/react-components';
-import { ArrowSyncRegular, OpenRegular, DismissRegular } from '@fluentui/react-icons';
+import { ArrowSyncRegular, OpenRegular, DismissRegular, NewsRegular } from '@fluentui/react-icons';
 import { ticketsApi } from '../../api/index.js';
 
 const STORAGE_KEY = 'dashboard.ticketStateFilter';
@@ -67,10 +67,80 @@ const useStyles = makeStyles({
     marginBottom: '12px',
     flexWrap: 'wrap',
   },
+  splitLayout: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, 200px)',
     gap: '6px',
+    alignContent: 'start',
+    flex: 1,
+    minWidth: 0,
+  },
+  newsPanel: {
+    paddingLeft: '12px',
+    flexShrink: 0,
+    width: '300px',
+  },
+  newsScroller: {
+    overflow: 'auto',
+    // ~1.5 comments minimum height (each item ~60px)
+    minHeight: '90px',
+  },
+  newsPanelHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    marginBottom: '8px',
+    marginTop: '5px',
+  },
+  newsPanelTitle: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorBrandForeground1,
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
+  },
+  newsItem: {
+    padding: '6px 8px',
+    marginBottom: '4px',
+    borderLeft: '3px solid transparent',
+    borderRadius: tokens.borderRadiusMedium,
+  },
+  newsItemHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    marginBottom: '2px',
+  },
+  newsTicketId: {
+    fontSize: tokens.fontSizeBase100,
+    fontWeight: tokens.fontWeightSemibold,
+    fontFamily: 'monospace',
+    color: tokens.colorBrandForeground1,
+  },
+  newsAuthor: {
+    fontSize: tokens.fontSizeBase100,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground1,
+  },
+  newsTime: {
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground3,
+    marginLeft: 'auto',
+  },
+  newsBody: {
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground2,
+    lineHeight: '1.3',
+    overflow: 'hidden',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
   },
   card: {
     width: '200px',
@@ -183,7 +253,28 @@ function saveFilter(filterSet) {
   } catch { /* ignore */ }
 }
 
-export default function TicketsCard({ onTicketClick }) {
+function stripHtml(html) {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function getTodayComments(items) {
+  const today = new Date().toISOString().slice(0, 10);
+  const result = [];
+  for (const ticket of items) {
+    if (!ticket.comments?.length) continue;
+    for (const c of ticket.comments) {
+      if (c.created && c.created.slice(0, 10) === today) {
+        result.push({ ...c, ticketId: ticket._id, externalId: ticket.externalId, sourceColour: ticket.sourceColour });
+      }
+    }
+  }
+  // Most recent first
+  result.sort((a, b) => (b.created || '').localeCompare(a.created || ''));
+  return result;
+}
+
+export default function TicketsCard({ onTicketClick, showTodayComments = false }) {
   const styles = useStyles();
   const [popupTicketId, setPopupTicketId] = useState(null);
   const [items, setItems] = useState([]);
@@ -191,6 +282,8 @@ export default function TicketsCard({ onTicketClick }) {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+  const gridRef = useRef(null);
+  const [scrollerMax, setScrollerMax] = useState(undefined);
 
   const fetchTickets = useCallback(() =>
     ticketsApi.getAll({ $top: '50', $orderby: 'updated desc' })
@@ -258,7 +351,71 @@ export default function TicketsCard({ onTicketClick }) {
     onTicketClick?.(ticket);
   }, [onTicketClick]);
 
+  const todayComments = useMemo(() => {
+    if (!showTodayComments) return [];
+    return getTodayComments(items);
+  }, [items, showTodayComments]);
+
+  useEffect(() => {
+    if (showTodayComments && gridRef.current) {
+      // Cap scroller at grid height minus the panel header (~30px)
+      setScrollerMax(gridRef.current.offsetHeight - 30);
+    }
+  }, [filtered, showTodayComments]);
+
   if (items.length === 0) return null;
+
+  const cardGrid = (
+    <div ref={gridRef} className={styles.grid}>
+      {filtered.slice(0, 12).map((ticket) => {
+        const colour = ticket.sourceColour || '#0078D4';
+        const pastel = hexToPastel(colour);
+        const badge = stateBadgeColour(ticket.state);
+        return (
+          <Card
+            key={ticket._id}
+            className={styles.card}
+            style={{ backgroundColor: pastel.bg, borderLeftColor: colour }}
+            onClick={() => handleClick(ticket)}
+          >
+            <div className={styles.cardHeader}>
+              {ticket.externalId && (
+                <Text className={styles.id} style={{ color: pastel.text }}>
+                  {ticket.externalId}
+                </Text>
+              )}
+              <Tooltip content="Open ticket" relationship="label">
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<OpenRegular style={{ fontSize: '12px' }} />}
+                  style={{ minWidth: 'auto', padding: '1px 2px', marginLeft: 'auto' }}
+                  onClick={(e) => { e.stopPropagation(); setPopupTicketId(ticket._id); }}
+                />
+              </Tooltip>
+              <Badge
+                appearance="filled"
+                size="small"
+                style={{ backgroundColor: badge.bg, color: badge.color }}
+              >
+                {ticket.state}
+              </Badge>
+            </div>
+            <Text className={styles.cardTitle}>{ticket.title}</Text>
+            <div className={styles.footer}>
+              {ticket.assignedTo && <span>{ticket.assignedTo}</span>}
+              {ticket.assignedTo && (ticket.sprint || ticket.areaPath || ticket.sourceName) && <span className={styles.sep}>·</span>}
+              {ticket.sprint && <span>{ticket.sprint}</span>}
+              {ticket.sprint && (ticket.areaPath || ticket.sourceName) && <span className={styles.sep}>·</span>}
+              {ticket.areaPath && <span>{ticket.areaPath}</span>}
+              {ticket.areaPath && ticket.sourceName && <span className={styles.sep}>·</span>}
+              {ticket.sourceName && <span>{ticket.sourceName}</span>}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className={styles.wrapper}>
@@ -293,55 +450,54 @@ export default function TicketsCard({ onTicketClick }) {
           )}
         </div>
       )}
-      <div className={styles.grid}>
-        {filtered.slice(0, 12).map((ticket) => {
-          const colour = ticket.sourceColour || '#0078D4';
-          const pastel = hexToPastel(colour);
-          const badge = stateBadgeColour(ticket.state);
-          return (
-            <Card
-              key={ticket._id}
-              className={styles.card}
-              style={{ backgroundColor: pastel.bg, borderLeftColor: colour }}
-              onClick={() => handleClick(ticket)}
-            >
-              <div className={styles.cardHeader}>
-                {ticket.externalId && (
-                  <Text className={styles.id} style={{ color: pastel.text }}>
-                    {ticket.externalId}
-                  </Text>
-                )}
-                <Tooltip content="Open ticket" relationship="label">
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    icon={<OpenRegular style={{ fontSize: '12px' }} />}
-                    style={{ minWidth: 'auto', padding: '1px 2px', marginLeft: 'auto' }}
-                    onClick={(e) => { e.stopPropagation(); setPopupTicketId(ticket._id); }}
-                  />
-                </Tooltip>
-                <Badge
-                  appearance="filled"
-                  size="small"
-                  style={{ backgroundColor: badge.bg, color: badge.color }}
-                >
-                  {ticket.state}
-                </Badge>
-              </div>
-              <Text className={styles.cardTitle}>{ticket.title}</Text>
-              <div className={styles.footer}>
-                {ticket.assignedTo && <span>{ticket.assignedTo}</span>}
-                {ticket.assignedTo && (ticket.sprint || ticket.areaPath || ticket.sourceName) && <span className={styles.sep}>·</span>}
-                {ticket.sprint && <span>{ticket.sprint}</span>}
-                {ticket.sprint && (ticket.areaPath || ticket.sourceName) && <span className={styles.sep}>·</span>}
-                {ticket.areaPath && <span>{ticket.areaPath}</span>}
-                {ticket.areaPath && ticket.sourceName && <span className={styles.sep}>·</span>}
-                {ticket.sourceName && <span>{ticket.sourceName}</span>}
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+
+      {showTodayComments ? (
+        <div className={styles.splitLayout}>
+          {cardGrid}
+          <div className={styles.newsPanel}>
+            <div className={styles.newsPanelHeader}>
+              <NewsRegular style={{ fontSize: '14px', color: tokens.colorBrandForeground1 }} />
+              <Text className={styles.newsPanelTitle}>Today's Comments</Text>
+            </div>
+            <div className={styles.newsScroller} style={scrollerMax > 0 ? { maxHeight: scrollerMax } : undefined}>
+              {todayComments.length === 0 ? (
+                <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3 }}>
+                  No comments today.
+                </Text>
+              ) : todayComments.map((c) => {
+                const colour = c.sourceColour || '#0078D4';
+                const pastel = hexToPastel(colour);
+                return (
+                  <div
+                    key={`${c.ticketId}-${c.id}`}
+                    className={styles.newsItem}
+                    style={{ borderLeftColor: colour, backgroundColor: pastel.bg }}
+                  >
+                    <div className={styles.newsItemHeader}>
+                      <Text className={styles.newsTicketId} style={{ color: pastel.text }}>{c.externalId}</Text>
+                      <Text className={styles.newsAuthor}>{c.author}</Text>
+                      <Text className={styles.newsTime}>
+                        {c.created ? new Date(c.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                      </Text>
+                      <Tooltip content="Open ticket" relationship="label">
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          icon={<OpenRegular style={{ fontSize: '11px' }} />}
+                          style={{ minWidth: 'auto', padding: '1px 2px' }}
+                          onClick={() => setPopupTicketId(c.ticketId)}
+                        />
+                      </Tooltip>
+                    </div>
+                    <Text className={styles.newsBody}>{stripHtml(c.body)}</Text>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : cardGrid}
+
       {toast && <div className={styles.toast}>{toast}</div>}
 
       <Dialog

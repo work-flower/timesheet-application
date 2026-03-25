@@ -795,7 +795,7 @@ export default function Dashboard() {
       </div>
       </div>
 
-      <TicketsCard onTicketClick={async (ticket) => {
+      <TicketsCard showTodayComments onTicketClick={async (ticket) => {
         try {
           if (ticket.url) await navigator.clipboard.writeText(ticket.url);
           showToast('Link copied to clipboard', 'success');
