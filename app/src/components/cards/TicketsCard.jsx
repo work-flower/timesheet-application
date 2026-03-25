@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogContent,
 } from '@fluentui/react-components';
-import { ArrowSyncRegular, OpenRegular, DismissRegular, NewsRegular } from '@fluentui/react-icons';
+import { ArrowSyncRegular, OpenRegular, DismissRegular, NewsRegular, ChevronLeftRegular, ChevronRightRegular } from '@fluentui/react-icons';
 import { ticketsApi } from '../../api/index.js';
 
 const STORAGE_KEY = 'dashboard.ticketStateFilter';
@@ -94,7 +94,7 @@ const useStyles = makeStyles({
   newsPanelHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
+    gap: '4px',
     marginBottom: '8px',
     marginTop: '5px',
   },
@@ -104,6 +104,26 @@ const useStyles = makeStyles({
     color: tokens.colorBrandForeground1,
     textTransform: 'uppercase',
     letterSpacing: '0.4px',
+    flex: 1,
+  },
+  newsDateLabel: {
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground3,
+    minWidth: '60px',
+    textAlign: 'center',
+  },
+  newsNavArrow: {
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: tokens.colorNeutralForeground3,
+    display: 'flex',
+    alignItems: 'center',
+    padding: '2px',
+    borderRadius: '4px',
+    '&:hover': {
+      color: tokens.colorNeutralForeground1,
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
   },
   newsItem: {
     padding: '6px 8px',
@@ -258,13 +278,12 @@ function stripHtml(html) {
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function getTodayComments(items) {
-  const today = new Date().toISOString().slice(0, 10);
+function getCommentsForDate(items, dateStr) {
   const result = [];
   for (const ticket of items) {
     if (!ticket.comments?.length) continue;
     for (const c of ticket.comments) {
-      if (c.created && c.created.slice(0, 10) === today) {
+      if (c.created && c.created.slice(0, 10) === dateStr) {
         result.push({ ...c, ticketId: ticket._id, externalId: ticket.externalId, sourceColour: ticket.sourceColour });
       }
     }
@@ -272,6 +291,23 @@ function getTodayComments(items) {
   // Most recent first
   result.sort((a, b) => (b.created || '').localeCompare(a.created || ''));
   return result;
+}
+
+function formatNewsDate(dateStr) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(dateStr + 'T00:00:00');
+  const diff = Math.round((target - today) / 86400000);
+  if (diff === 0) return "Today's Comments";
+  if (diff === -1) return "Yesterday's Comments";
+  if (diff === 1) return "Tomorrow's Comments";
+  return target.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' Comments';
+}
+
+function shiftDateStr(dateStr, delta) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  return d.toISOString().split('T')[0];
 }
 
 export default function TicketsCard({ onTicketClick, showTodayComments = false }) {
@@ -284,6 +320,7 @@ export default function TicketsCard({ onTicketClick, showTodayComments = false }
   const toastTimer = useRef(null);
   const gridRef = useRef(null);
   const [scrollerMax, setScrollerMax] = useState(undefined);
+  const [newsDate, setNewsDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   const fetchTickets = useCallback(() =>
     ticketsApi.getAll({ $top: '50', $orderby: 'updated desc' })
@@ -353,8 +390,8 @@ export default function TicketsCard({ onTicketClick, showTodayComments = false }
 
   const todayComments = useMemo(() => {
     if (!showTodayComments) return [];
-    return getTodayComments(items);
-  }, [items, showTodayComments]);
+    return getCommentsForDate(items, newsDate);
+  }, [items, showTodayComments, newsDate]);
 
   useEffect(() => {
     if (showTodayComments && gridRef.current) {
@@ -457,7 +494,13 @@ export default function TicketsCard({ onTicketClick, showTodayComments = false }
           <div className={styles.newsPanel}>
             <div className={styles.newsPanelHeader}>
               <NewsRegular style={{ fontSize: '14px', color: tokens.colorBrandForeground1 }} />
-              <Text className={styles.newsPanelTitle}>Today's Comments</Text>
+              <Text className={styles.newsPanelTitle}>{formatNewsDate(newsDate)}</Text>
+              <span className={styles.newsNavArrow} onClick={() => setNewsDate((d) => shiftDateStr(d, -1))}>
+                <ChevronLeftRegular />
+              </span>
+              <span className={styles.newsNavArrow} onClick={() => setNewsDate((d) => shiftDateStr(d, 1))}>
+                <ChevronRightRegular />
+              </span>
             </div>
             <div className={styles.newsScroller} style={scrollerMax > 0 ? { maxHeight: scrollerMax } : undefined}>
               {todayComments.length === 0 ? (
