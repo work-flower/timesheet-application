@@ -18,7 +18,7 @@ export async function testConnection(source) {
 export async function fetchTickets(source) {
   const baseUrl = source.baseUrl.replace(/\/+$/, '');
   const jql = source.preQuery || 'updated >= -30d ORDER BY updated DESC';
-  const fields = 'summary,description,status,issuetype,assignee,priority,project,sprint,updated,created,comment';
+  const fields = 'summary,description,status,issuetype,assignee,priority,project,sprint,updated,created';
 
   let allIssues = [];
   let nextPageToken = null;
@@ -27,7 +27,6 @@ export async function fetchTickets(source) {
     const body = {
       jql,
       fields: fields.split(','),
-      expand: ['renderedFields'],
       maxResults: MAX_RESULTS_PER_PAGE,
     };
     if (nextPageToken) body.nextPageToken = nextPageToken;
@@ -53,23 +52,8 @@ export async function fetchTickets(source) {
 
 function mapToCanonical(issue, source) {
   const fields = issue.fields || {};
-  const rendered = issue.renderedFields || {};
   const sprint = fields.sprint;
   const sprintName = sprint?.name || null;
-
-  // Extract inline comments — prefer rendered HTML from renderedFields
-  const commentField = fields.comment || {};
-  const renderedCommentField = rendered.comment || {};
-  const renderedComments = renderedCommentField.comments || [];
-  const rawComments = commentField.comments || [];
-  const inlineComments = rawComments.map((c, i) => ({
-    id: c.id,
-    author: c.author?.displayName || c.updateAuthor?.displayName || '',
-    body: renderedComments[i]?.body || extractText(c.body),
-    format: renderedComments[i]?.body ? 'html' : 'text',
-    created: c.created || '',
-  }));
-  const hasMoreComments = (commentField.total || 0) > inlineComments.length;
 
   return {
     externalId: issue.key,
@@ -85,8 +69,6 @@ function mapToCanonical(issue, source) {
     url: `${source.baseUrl.replace(/\/+$/, '')}/browse/${issue.key}`,
     created: fields.created || '',
     updated: fields.updated || '',
-    _comments: inlineComments,
-    _hasMoreComments: hasMoreComments,
   };
 }
 
