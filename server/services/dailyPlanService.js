@@ -1,4 +1,4 @@
-import { dailyPlans, timesheets, todos } from '../db/index.js';
+import { dailyPlans, timesheets, todos, projects, clients } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -63,15 +63,26 @@ export async function getById(id) {
     ? await todos.find({ _id: { $in: plan.todos } })
     : [];
 
-  // Enrich with timesheet data
-  const linkedTimesheets = plan.timesheetIds && plan.timesheetIds.length > 0
-    ? await timesheets.find({ _id: { $in: plan.timesheetIds } })
-    : [];
+  // Enrich with timesheets for this date (by date, not just linked IDs)
+  const dateTimesheets = await timesheets.find({ date: id });
+  const allProjects = dateTimesheets.length > 0 ? await projects.find({}) : [];
+  const allClients = allProjects.length > 0 ? await clients.find({}) : [];
+  const projectMap = Object.fromEntries(allProjects.map(p => [p._id, p]));
+  const clientMap = Object.fromEntries(allClients.map(c => [c._id, c]));
+  const enrichedTimesheets = dateTimesheets.map(ts => {
+    const project = projectMap[ts.projectId];
+    const client = project ? clientMap[project.clientId] : null;
+    return {
+      ...ts,
+      projectName: project?.name || 'Unknown',
+      clientName: client?.companyName || 'Unknown',
+    };
+  });
 
   return {
     ...plan,
     todosData: planTodos,
-    timesheetsData: linkedTimesheets,
+    timesheetsData: enrichedTimesheets,
   };
 }
 

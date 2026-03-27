@@ -15,6 +15,7 @@ import {
 import { notebooksApi } from '../../api/index.js';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import NotebookEditor from '../../components/editors/NotebookEditor.jsx';
 import EntitySearchDialog from '../../components/editors/EntitySearchDialog.jsx';
 import DiffViewer from '../../components/DiffViewer.jsx';
@@ -105,6 +106,7 @@ export default function NotebookForm() {
   const { id } = useParams();
   const location = useLocation();
   const { navigate, goBack } = useAppNavigate();
+  const notifyParent = useNotifyParent();
 
   // Trailing slash ensures relative image refs resolve to /notebooks/:id/filename
   if (!location.pathname.endsWith('/')) {
@@ -450,7 +452,7 @@ export default function NotebookForm() {
         <div className={styles.toolbarLeft}>
           <Tooltip content="Back" relationship="label">
             <Button appearance="subtle" size="small" icon={<ArrowLeftRegular />}
-              onClick={() => goBack('/notebooks')} />
+              onClick={() => { notifyParent('back', {}, {}); goBack('/notebooks'); }} />
           </Tooltip>
           <div className={styles.toolbarDivider} />
           <Tooltip content="Undo (Ctrl+Z)" relationship="label">

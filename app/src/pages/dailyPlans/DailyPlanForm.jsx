@@ -1,11 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   makeStyles, tokens, Text, Input, Checkbox, Spinner, MessageBar, MessageBarBody,
   Breadcrumb, BreadcrumbItem, BreadcrumbDivider, BreadcrumbButton,
   Badge, Button, Tooltip,
-} from '@fluentui/react-components';
-import {
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent,
 } from '@fluentui/react-components';
 import {
@@ -13,9 +11,15 @@ import {
 } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
-import { dailyPlansApi, todosApi } from '../../api/index.js';
+import NotebookEditor from '../../components/editors/NotebookEditor.jsx';
+import EntitySearchDialog from '../../components/editors/EntitySearchDialog.jsx';
+import MDEditor from '@uiw/react-md-editor';
+import { dailyPlansApi, todosApi, notebooksApi } from '../../api/index.js';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import DayTimelineCard from '../../components/cards/DayTimelineCard.jsx';
+import TicketsListCard from '../../components/cards/TicketsListCard.jsx';
+
+const AUTO_SAVE_DELAY = 1500;
 
 const useStyles = makeStyles({
   page: {},
@@ -45,33 +49,27 @@ const useStyles = makeStyles({
     ':hover': { opacity: 0.8 },
   },
 
-  // Two-column layout
-  topRow: {
-    display: 'flex',
+  // Two-column grid layout
+  mainGrid: {
+    display: 'grid',
+    gridTemplateColumns: '7fr 3fr',
     gap: '16px',
     marginBottom: '16px',
-    alignItems: 'stretch',
   },
-  leftColumn: {
-    flex: 7,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  rightColumn: {
-    flex: 3,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
+  rightCell: {
     minHeight: '340px',
     position: 'relative',
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    overflow: 'hidden',
   },
   timelineWrapper: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    bottom: '60px', // reserve space for meeting summary below
+    bottom: 0,
     minHeight: '224px',
   },
 
@@ -81,6 +79,8 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     borderRadius: tokens.borderRadiusMedium,
     padding: '12px',
+    overflow: 'hidden',
+    minWidth: 0,
   },
   sectionTitle: {
     fontWeight: tokens.fontWeightSemibold,
@@ -90,16 +90,27 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground1,
   },
 
+  // To-Do + Tickets side by side
+  todoTicketsRow: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'stretch',
+  },
+
   // Todo items
   todoItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '4px 0',
+    gap: '6px',
+    padding: '2px 0',
+    fontSize: tokens.fontSizeBase200,
   },
   todoDone: {
     textDecoration: 'line-through',
     color: tokens.colorNeutralForeground3,
+  },
+  todoText: {
+    fontSize: tokens.fontSizeBase200,
   },
   todoInput: {
     flex: 1,
@@ -107,35 +118,9 @@ const useStyles = makeStyles({
   addTodoRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '4px 0',
-    marginTop: '4px',
-  },
-
-  // Tickets section
-  ticketItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '8px',
-    padding: '4px 0',
-    borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
-  },
-  ticketDot: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    flexShrink: 0,
-    marginTop: '6px',
-  },
-
-  // Meeting summary
-  meetingSummary: {
-    backgroundColor: tokens.colorNeutralBackground3,
-    borderRadius: tokens.borderRadiusMedium,
-    padding: '8px 12px',
-    fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground2,
-    fontStyle: 'italic',
+    gap: '6px',
+    padding: '2px 0',
+    marginBottom: '4px',
   },
 
   // Miscellaneous
@@ -145,12 +130,38 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     padding: '12px',
     minHeight: '200px',
+    minWidth: 0,
+  },
+
+  // Meeting summary
+  meetingSummary: {
+    backgroundColor: tokens.colorNeutralBackground3,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    padding: '12px',
+    color: tokens.colorNeutralForeground2,
+    minWidth: 0,
+  },
+
+  // Todo tooltip
+  todoTooltipContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    fontSize: tokens.fontSizeBase100,
   },
 });
 
+function formatRelativeDate(isoStr) {
+  if (!isoStr) return null;
+  const d = new Date(isoStr);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+
 export default function DailyPlanForm() {
   const styles = useStyles();
-  const { id } = useParams(); // id = YYYY-MM-DD date string
+  const { id } = useParams();
   const { navigate, goBack } = useAppNavigate();
 
   const [plan, setPlan] = useState(null);
@@ -159,22 +170,26 @@ export default function DailyPlanForm() {
   const [content, setContent] = useState('');
   const [newTodoText, setNewTodoText] = useState('');
   const [initialized, setInitialized] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [popupTimesheetUrl, setPopupTimesheetUrl] = useState(null);
+  const [popupNotebookUrl, setPopupNotebookUrl] = useState(null);
+
+  // Entity search dialog for slash menu
+  const [entitySearchType, setEntitySearchType] = useState(null);
+  const editorRef = useRef(null);
 
   const contentRef = useRef(null);
   const saveTimeoutRef = useRef(null);
+  const lastSavedRef = useRef(null);
 
-  // Format date for display
   const dateObj = id ? new Date(id + 'T00:00:00') : null;
   const formattedDate = dateObj
     ? dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     : '';
 
-  // Load plan data
+  // --- Data loading ---
+
   const loadPlan = useCallback(async () => {
     try {
       const data = await dailyPlansApi.getById(id);
@@ -184,6 +199,7 @@ export default function DailyPlanForm() {
 
       const md = await dailyPlansApi.getContent(id);
       setContent(md || '');
+      lastSavedRef.current = md || '';
     } catch (err) {
       setError(err.message);
     } finally {
@@ -195,52 +211,61 @@ export default function DailyPlanForm() {
     if (id) loadPlan();
   }, [id, loadPlan]);
 
-  // Auto-save content with debounce
-  const saveContent = useCallback(async (newContent) => {
+  // --- Auto-save content with debounce (Milkdown onChange gives markdown string) ---
+
+  const doSave = useCallback(async (md) => {
+    if (md === lastSavedRef.current) return;
     try {
-      await dailyPlansApi.updateContent(id, newContent);
+      await dailyPlansApi.updateContent(id, md);
+      lastSavedRef.current = md;
     } catch (err) {
       console.warn('Auto-save failed:', err.message);
     }
   }, [id]);
 
-  const handleContentChange = useCallback((e) => {
-    const val = e.target.value;
-    setContent(val);
+  const scheduleSave = useCallback((md) => {
+    contentRef.current = md;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => saveContent(val), 1500);
-  }, [saveContent]);
+    saveTimeoutRef.current = setTimeout(() => doSave(md), AUTO_SAVE_DELAY);
+  }, [doSave]);
 
-  // Flush content on unmount
+  const handleEditorChange = useCallback((md) => {
+    contentRef.current = md;
+    scheduleSave(md);
+  }, [scheduleSave]);
+
+  // Flush on unmount
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-        // Flush pending save
-        if (contentRef.current !== null) {
-          dailyPlansApi.updateContent(id, contentRef.current).catch(() => {});
-        }
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (contentRef.current !== null && contentRef.current !== lastSavedRef.current) {
+        dailyPlansApi.updateContent(id, contentRef.current).catch(() => {});
       }
     };
   }, [id]);
 
-  // Keep ref in sync for unmount flush
-  useEffect(() => {
-    contentRef.current = content;
-  }, [content]);
+  // --- PostMessage listeners ---
 
-  // Listen for postMessage from embedded timesheet form
   useEffect(() => {
     const handler = (e) => {
       if (e.origin !== window.location.origin) return;
-      if (e.data?.entity !== 'timesheets') return;
-      const cmd = e.data.command;
-      if (cmd === 'back' || cmd === 'saveAndClose' || cmd === 'delete') {
-        setPopupTimesheetUrl(null);
-        loadPlan();
-      } else if (cmd === 'save') {
-        loadPlan();
+      const { entity, command: cmd } = e.data || {};
+
+      if (entity === 'timesheets') {
+        if (cmd === 'back' || cmd === 'saveAndClose' || cmd === 'delete') {
+          setPopupTimesheetUrl(null);
+          loadPlan();
+        } else if (cmd === 'save') {
+          loadPlan();
+        }
       }
+
+      if (entity === 'notebooks') {
+        if (cmd === 'back') {
+          setPopupNotebookUrl(null);
+        }
+      }
+
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
@@ -284,6 +309,65 @@ export default function DailyPlanForm() {
     }
   };
 
+  // --- Timeline event click → meeting note notebook ---
+
+  const handleEventClick = useCallback(async (evt) => {
+    const meetingNotes = plan?.meetingNotes || [];
+    const existing = meetingNotes.find(n => n.calendarEventUid === evt.uid);
+
+    if (existing) {
+      // Open existing notebook
+      setPopupNotebookUrl(`/notebooks/${existing.notebookId}/?embedded=true`);
+    } else {
+      // Create new notebook and link it
+      try {
+        const notebook = await notebooksApi.create({});
+        // Set initial content with meeting title
+        const initialContent = `# ${evt.summary || 'Meeting Notes'}\n\n`;
+        await notebooksApi.updateContent(notebook._id, initialContent);
+        // Link to daily plan
+        await dailyPlansApi.addMeetingNote(id, {
+          notebookId: notebook._id,
+          calendarEventUid: evt.uid,
+          eventSummary: evt.summary || 'Meeting',
+        });
+        setPlan(prev => ({
+          ...prev,
+          meetingNotes: [...(prev.meetingNotes || []), {
+            notebookId: notebook._id,
+            calendarEventUid: evt.uid,
+            eventSummary: evt.summary || 'Meeting',
+          }],
+        }));
+        setPopupNotebookUrl(`/notebooks/${notebook._id}/?embedded=true`);
+      } catch (err) {
+        setError(err.message);
+      }
+    }
+  }, [plan, id]);
+
+  // --- Entity search (slash menu) ---
+
+  const handleEntitySelect = useCallback((entity) => {
+    if (!entity || !editorRef.current) return;
+    let href, displayName;
+    if (entitySearchType === 'project') {
+      href = `/projects/${entity._id}`;
+      displayName = entity.name;
+    } else if (entitySearchType === 'client') {
+      href = `/clients/${entity._id}`;
+      displayName = entity.companyName;
+    } else if (entitySearchType === 'timesheet') {
+      href = `/timesheets/${entity._id}`;
+      displayName = `${entity.date} — ${entity.projectName || 'Timesheet'}`;
+    } else if (entitySearchType === 'ticket') {
+      href = `/tickets/${entity._id}`;
+      displayName = `${entity.externalId || entity._id} — ${entity.title}`;
+    }
+    if (href) editorRef.current.insertEntityLink(href, displayName);
+    setEntitySearchType(null);
+  }, [entitySearchType]);
+
   // --- Delete handler ---
 
   const handleDelete = async () => {
@@ -294,6 +378,17 @@ export default function DailyPlanForm() {
       setError(err.message);
     }
   };
+
+  // --- Render helpers ---
+
+  const todoTooltip = (todo) => (
+    <div className={styles.todoTooltipContent}>
+      <span>Created: {formatRelativeDate(todo.createdAt)}{todo.createdInPlanId ? ` in ${todo.createdInPlanId}` : ''}</span>
+      {todo.status === 'done' && (
+        <span>Completed: {formatRelativeDate(todo.completedAt)}{todo.completedInPlanId ? ` in ${todo.completedInPlanId}` : ''}</span>
+      )}
+    </div>
+  );
 
   if (!initialized) {
     return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
@@ -334,17 +429,6 @@ export default function DailyPlanForm() {
           </BreadcrumbItem>
         </Breadcrumb>
 
-        {/* Title */}
-        <Text className={styles.title}>{formattedDate}</Text>
-        <Badge
-          appearance="filled"
-          color={plan.status === 'complete' ? 'success' : 'informative'}
-          size="small"
-          style={{ marginBottom: '16px' }}
-        >
-          {plan.status}
-        </Badge>
-
         {error && (
           <MessageBar intent="error" className={styles.message}>
             <MessageBarBody>{error}</MessageBarBody>
@@ -357,16 +441,28 @@ export default function DailyPlanForm() {
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>Timesheets:</Text>
           {timesheetsData.length > 0 ? (
             timesheetsData.map(ts => (
-              <Badge
+              <Tooltip
                 key={ts._id}
-                appearance="tint"
-                color="brand"
-                size="small"
-                className={styles.timesheetTag}
-                onClick={() => setPopupTimesheetUrl(`/timesheets/${ts._id}?embedded=true`)}
+                relationship="description"
+                positioning="above"
+                content={
+                  ts.notes
+                    ? <div data-color-mode="light">
+                        <MDEditor.Markdown source={ts.notes} style={{ maxWidth: '320px', backgroundColor: 'transparent', fontSize: '11px', lineHeight: '1.5', padding: 0 }} />
+                      </div>
+                    : 'No description'
+                }
               >
-                {ts.hours}h — {ts.projectName || 'Unknown'}
-              </Badge>
+                <Badge
+                  appearance="tint"
+                  color="brand"
+                  size="small"
+                  className={styles.timesheetTag}
+                  onClick={() => setPopupTimesheetUrl(`/timesheets/${ts._id}?embedded=true`)}
+                >
+                  {ts.hours}h — {ts.projectName || 'Unknown'}
+                </Badge>
+              </Tooltip>
             ))
           ) : (
             <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
@@ -383,36 +479,15 @@ export default function DailyPlanForm() {
           </Tooltip>
         </div>
 
-        {/* Top Row: Tasks + Timeline */}
-        <div className={styles.topRow}>
-          {/* Left Column: Tasks + Tickets */}
-          <div className={styles.leftColumn}>
-            {/* Tasks Section */}
-            <div className={styles.section}>
-              <Text className={styles.sectionTitle}>Tasks</Text>
-              {todosData.map(todo => (
-                <div key={todo._id} className={styles.todoItem}>
-                  <Checkbox
-                    checked={todo.status === 'done'}
-                    onChange={() => handleToggleTodo(todo)}
-                  />
-                  <Text className={todo.status === 'done' ? styles.todoDone : undefined}>
-                    {todo.text}
-                  </Text>
-                  <Tooltip content="Remove from this plan" relationship="label">
-                    <Button
-                      appearance="subtle"
-                      icon={<DeleteRegular />}
-                      size="small"
-                      onClick={() => handleRemoveTodo(todo._id)}
-                      style={{ marginLeft: 'auto', minWidth: 'auto' }}
-                    />
-                  </Tooltip>
-                </div>
-              ))}
+        {/* Main 2-column grid */}
+        <div className={styles.mainGrid}>
+          {/* Row 1 left: To-Do + Tickets */}
+          <div className={styles.todoTicketsRow}>
+            <div className={styles.section} style={{ flex: '4 1 0', minWidth: 0 }}>
+              <Text className={styles.sectionTitle}>To-Do</Text>
               <div className={styles.addTodoRow}>
                 <Input
-                  placeholder="Add a task..."
+                  placeholder="Add a to-do..."
                   value={newTodoText}
                   onChange={(e) => setNewTodoText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleAddTodo(); }}
@@ -427,50 +502,59 @@ export default function DailyPlanForm() {
                   disabled={!newTodoText.trim()}
                 />
               </div>
+              {todosData.map(todo => (
+                <div key={todo._id} className={styles.todoItem}>
+                  <Checkbox
+                    checked={todo.status === 'done'}
+                    onChange={() => handleToggleTodo(todo)}
+                  />
+                  <Tooltip content={todoTooltip(todo)} relationship="description" positioning="above">
+                    <Text className={`${styles.todoText} ${todo.status === 'done' ? styles.todoDone : ''}`}>
+                      {todo.text}
+                    </Text>
+                  </Tooltip>
+                  <Tooltip content="Remove from this plan" relationship="label">
+                    <Button
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      size="small"
+                      onClick={() => handleRemoveTodo(todo._id)}
+                      style={{ marginLeft: 'auto', minWidth: 'auto' }}
+                    />
+                  </Tooltip>
+                </div>
+              ))}
             </div>
-
-            {/* Tickets Section — Phase 2 placeholder */}
-            <div className={styles.section}>
-              <Text className={styles.sectionTitle}>Tickets</Text>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
-                Ticket integration coming in Phase 2
-              </Text>
+            <div className={styles.section} style={{ flex: '6 1 0', minWidth: 0, height: '400px' }}>
+              <TicketsListCard commentsInitialDate={id} />
             </div>
           </div>
 
-          {/* Right Column: Timeline + Meeting Summary */}
-          <div className={styles.rightColumn}>
+          {/* Row 1 right: Timeline */}
+          <div className={styles.rightCell}>
             <div className={styles.timelineWrapper}>
-              <DayTimelineCard date={id} />
-            </div>
-
-            {/* Meeting Summary — Phase 4 placeholder */}
-            <div className={styles.meetingSummary} style={{ marginTop: 'auto' }}>
-              <Text size={200}>Meeting summary will appear here after summarisation.</Text>
+              <DayTimelineCard date={id} onEventClick={handleEventClick} />
             </div>
           </div>
-        </div>
 
-        {/* Miscellaneous Section — full width */}
-        <div className={styles.miscSection}>
-          <Text className={styles.sectionTitle}>Miscellaneous</Text>
-          <textarea
-            value={content}
-            onChange={handleContentChange}
-            placeholder="Freeform notes, AI summaries, and anything else..."
-            style={{
-              width: '100%',
-              minHeight: '180px',
-              border: 'none',
-              outline: 'none',
-              resize: 'vertical',
-              fontFamily: tokens.fontFamilyBase,
-              fontSize: tokens.fontSizeBase300,
-              backgroundColor: 'transparent',
-              color: tokens.colorNeutralForeground1,
-              lineHeight: '1.6',
-            }}
-          />
+          {/* Row 2 left: Miscellaneous */}
+          <div className={styles.miscSection}>
+            <Text className={styles.sectionTitle}>Miscellaneous</Text>
+            {initialized && (
+              <NotebookEditor
+                ref={editorRef}
+                defaultValue={content}
+                onChange={handleEditorChange}
+                onEntitySearch={setEntitySearchType}
+              />
+            )}
+          </div>
+
+          {/* Row 2 right: Meeting Summary */}
+          <div className={styles.meetingSummary}>
+            <Text className={styles.sectionTitle}>Meeting Summary</Text>
+            <Text size={200} style={{ fontStyle: 'italic' }}>Will appear here after summarisation.</Text>
+          </div>
         </div>
       </div>
 
@@ -480,6 +564,14 @@ export default function DailyPlanForm() {
         message={`Are you sure you want to delete the daily plan for ${formattedDate}? This action cannot be undone.`}
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}
+      />
+
+      {/* Entity search dialog for slash menu */}
+      <EntitySearchDialog
+        open={!!entitySearchType}
+        entityType={entitySearchType}
+        onSelect={handleEntitySelect}
+        onClose={() => setEntitySearchType(null)}
       />
 
       {/* Timesheet popup */}
@@ -506,6 +598,37 @@ export default function DailyPlanForm() {
                 <iframe
                   src={popupTimesheetUrl}
                   style={{ width: '100%', height: '70vh', border: 'none' }}
+                />
+              )}
+            </DialogContent>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Meeting note notebook popup */}
+      <Dialog
+        open={!!popupNotebookUrl}
+        onOpenChange={(e, data) => { if (!data.open) setPopupNotebookUrl(null); }}
+      >
+        <DialogSurface style={{ maxWidth: '95vw', width: '1200px', maxHeight: '90vh', padding: 0 }}>
+          <DialogBody style={{ padding: 0 }}>
+            <DialogTitle
+              action={
+                <Button
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  onClick={() => setPopupNotebookUrl(null)}
+                />
+              }
+              style={{ padding: '8px 12px' }}
+            >
+              Meeting Notes
+            </DialogTitle>
+            <DialogContent style={{ padding: 0, overflow: 'hidden' }}>
+              {popupNotebookUrl && (
+                <iframe
+                  src={popupNotebookUrl}
+                  style={{ width: '100%', height: '80vh', border: 'none' }}
                 />
               )}
             </DialogContent>
