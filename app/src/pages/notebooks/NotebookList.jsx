@@ -175,8 +175,10 @@ export default function NotebookList() {
   );
   const searchRef = useRef(initSearchMatch ? initSearchMatch[1].replace(/''/g, "'") : '');
 
-  const [includeMeetingNotes, setIncludeMeetingNotes] = useState(false);
-  const includeMeetingNotesRef = useRef(false);
+  const [includeMeetingNotes, setIncludeMeetingNotes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('notebooks.includeMeetingNotes')) || false; } catch { return false; }
+  });
+  const includeMeetingNotesRef = useRef(includeMeetingNotes);
 
   // Inject search and type filter into $filter alongside hook-managed filters
   const apiFn = useCallback((params) => {
@@ -373,6 +375,7 @@ export default function NotebookList() {
             const next = !includeMeetingNotes;
             setIncludeMeetingNotes(next);
             includeMeetingNotesRef.current = next;
+            try { localStorage.setItem('notebooks.includeMeetingNotes', JSON.stringify(next)); } catch {}
             refresh();
           }}
         >

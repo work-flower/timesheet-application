@@ -261,8 +261,9 @@ export default function DailyPlanForm() {
       }
 
       if (entity === 'notebooks') {
-        if (cmd === 'back') {
+        if (cmd === 'back' || cmd === 'delete') {
           setPopupNotebookUrl(null);
+          if (cmd === 'delete') loadPlan();
         }
       }
 
@@ -316,15 +317,52 @@ export default function DailyPlanForm() {
     const existing = meetingNotes.find(n => n.calendarEventUid === evt.uid);
 
     if (existing) {
-      // Open existing notebook
-      setPopupNotebookUrl(`/notebooks/${existing.notebookId}/?embedded=true`);
-    } else {
-      // Create new notebook and link it
+      // Verify the notebook still exists and isn't deleted
       try {
-        const notebook = await notebooksApi.create({ type: 'meeting-note' });
-        // Set initial content with meeting title
-        const initialContent = `# ${evt.summary || 'Meeting Notes'}\n\n`;
-        await notebooksApi.updateContent(notebook._id, initialContent);
+        const nb = await notebooksApi.getById(existing.notebookId);
+        if (nb.status === 'deleted') {
+          // Restore from recycle bin and open
+          await notebooksApi.restore(existing.notebookId);
+          setPopupNotebookUrl(`/notebooks/${existing.notebookId}/?embedded=true`);
+          return;
+        }
+        setPopupNotebookUrl(`/notebooks/${existing.notebookId}/?embedded=true`);
+        return;
+      } catch {
+        // Notebook was hard-deleted (purged) — remove stale mapping and fall through to create new
+        const updatedNotes = meetingNotes.filter(n => n.calendarEventUid !== evt.uid);
+        await dailyPlansApi.update(id, { meetingNotes: updatedNotes });
+        setPlan(prev => ({ ...prev, meetingNotes: updatedNotes }));
+      }
+    }
+
+    {
+      // Create new notebook (or restore deleted one with same title) and link it
+      try {
+        const evtDate = id;
+        const evtTime = evt.startTime || (evt.start ? new Date(evt.start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
+        const titleSuffix = evtTime ? ` - ${evtDate} ${evtTime}` : ` - ${evtDate}`;
+        const meetingTitle = `${evt.summary || 'Meeting Notes'}${titleSuffix}`;
+
+        let notebook;
+        try {
+          notebook = await notebooksApi.create({ type: 'meeting-note', title: meetingTitle });
+        } catch (createErr) {
+          // Title clash — likely a deleted notebook in the recycle bin, find and restore it
+          if (createErr.message.includes('already exists')) {
+            const all = await notebooksApi.getAll({ status: 'deleted', $filter: `title eq '${meetingTitle.replace(/'/g, "''")}'` });
+            const deleted = (Array.isArray(all) ? all : all.value || [])[0];
+            if (deleted) {
+              await notebooksApi.restore(deleted._id);
+              notebook = await notebooksApi.getById(deleted._id);
+            } else {
+              throw createErr;
+            }
+          } else {
+            throw createErr;
+          }
+        }
+
         // Link to daily plan
         await dailyPlansApi.addMeetingNote(id, {
           notebookId: notebook._id,

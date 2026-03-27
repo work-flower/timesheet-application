@@ -14,8 +14,8 @@ export function sanitizeTitle(title) {
     .replace(/[/\\:*?"<>|]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
-  // Remove leading dots (hidden files on Linux)
-  name = name.replace(/^\.+/, '');
+  // Remove leading dots (hidden files on Linux) and dashes (git interprets as flags)
+  name = name.replace(/^[.\-]+/, '');
   if (!name) name = 'Untitled';
   if (name.length > 200) name = name.slice(0, 200).trim();
   return name;
@@ -131,7 +131,7 @@ export function isCommitted(folderName) {
  * git mv — for renaming tracked folders.
  */
 export function mv(from, to) {
-  git(`mv "${from}" "${to}"`);
+  git(`mv -- "${from}" "${to}"`);
 }
 
 /**

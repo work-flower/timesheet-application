@@ -319,8 +319,9 @@ export async function getById(id) {
 export async function create(data) {
   const now = new Date().toISOString();
 
-  // Template content for new notebooks
-  const template = `# Title
+  // Template content for new notebooks — use provided title if given
+  const initialTitle = data.title || 'Title';
+  const template = `# ${initialTitle}
 
 Summary paragraph here.
 

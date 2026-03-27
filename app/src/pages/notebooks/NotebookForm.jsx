@@ -213,6 +213,7 @@ export default function NotebookForm() {
     try {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       await notebooksApi.delete(id);
+      notifyParent('delete', {}, {});
       navigate('/notebooks');
     } catch (err) {
       setError(err.message);
