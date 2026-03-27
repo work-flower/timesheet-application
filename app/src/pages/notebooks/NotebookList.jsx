@@ -5,7 +5,7 @@ import {
 } from '@fluentui/react-components';
 import {
   SearchRegular, AddRegular, DocumentTextRegular, ArrowImportRegular, ArchiveRegular,
-  ArrowUploadRegular, ArrowDownloadRegular,
+  ArrowUploadRegular, ArrowDownloadRegular, NoteRegular,
 } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
@@ -175,14 +175,19 @@ export default function NotebookList() {
   );
   const searchRef = useRef(initSearchMatch ? initSearchMatch[1].replace(/''/g, "'") : '');
 
-  // Inject search into $filter alongside hook-managed filters
+  const [includeMeetingNotes, setIncludeMeetingNotes] = useState(false);
+  const includeMeetingNotesRef = useRef(false);
+
+  // Inject search and type filter into $filter alongside hook-managed filters
   const apiFn = useCallback((params) => {
+    const clauses = [];
     const searchClause = buildSearchClause(searchRef.current);
-    if (searchClause) {
+    if (searchClause) clauses.push(searchClause);
+    if (!includeMeetingNotesRef.current) clauses.push("type ne 'meeting-note'");
+    if (clauses.length > 0) {
       const existing = params.$filter || '';
-      params.$filter = existing
-        ? `${searchClause} and ${existing}`
-        : searchClause;
+      const combined = clauses.join(' and ');
+      params.$filter = existing ? `${combined} and ${existing}` : combined;
     }
     return notebooksApi.getAll(params);
   }, [buildSearchClause]);
@@ -358,6 +363,20 @@ export default function NotebookList() {
           onClick={() => setFilterValues({ status: includeArchived ? 'active' : '' })}
         >
           Include Archived
+        </ToggleButton>
+        <ToggleButton
+          appearance="subtle"
+          size="small"
+          icon={<NoteRegular />}
+          checked={includeMeetingNotes}
+          onClick={() => {
+            const next = !includeMeetingNotes;
+            setIncludeMeetingNotes(next);
+            includeMeetingNotesRef.current = next;
+            refresh();
+          }}
+        >
+          Include Meeting Notes
         </ToggleButton>
       </div>
 

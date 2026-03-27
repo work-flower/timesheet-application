@@ -321,7 +321,7 @@ export default function DailyPlanForm() {
     } else {
       // Create new notebook and link it
       try {
-        const notebook = await notebooksApi.create({});
+        const notebook = await notebooksApi.create({ type: 'meeting-note' });
         // Set initial content with meeting title
         const initialContent = `# ${evt.summary || 'Meeting Notes'}\n\n`;
         await notebooksApi.updateContent(notebook._id, initialContent);

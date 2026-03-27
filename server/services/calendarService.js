@@ -154,10 +154,33 @@ export async function fetchAndCache(sourceId) {
       }
     }
 
-    // Full replace: delete all events for this source, then bulk insert
-    await calendarEvents.remove({ sourceId }, { multi: true });
-    if (events.length > 0) {
-      await calendarEvents.insert(events);
+    // Upsert: match by sourceId + uid to preserve event _id (used by meetingNotes mappings)
+    const localEvents = await calendarEvents.find({ sourceId });
+    const localMap = {};
+    for (const e of localEvents) {
+      localMap[e.uid] = e;
+    }
+
+    const remoteUids = new Set(events.map(e => e.uid));
+    let created = 0, updated = 0, removed = 0;
+
+    for (const evt of events) {
+      const existing = localMap[evt.uid];
+      if (existing) {
+        await calendarEvents.update({ _id: existing._id }, { $set: evt });
+        updated++;
+      } else {
+        await calendarEvents.insert(evt);
+        created++;
+      }
+    }
+
+    // Remove events no longer in the feed
+    for (const local of localEvents) {
+      if (!remoteUids.has(local.uid)) {
+        await calendarEvents.remove({ _id: local._id });
+        removed++;
+      }
     }
 
     // Update source metadata
@@ -165,7 +188,7 @@ export async function fetchAndCache(sourceId) {
       $set: { lastFetchedAt: new Date().toISOString(), lastError: null },
     });
 
-    return { count: events.length };
+    return { count: events.length, created, updated, removed };
   } catch (err) {
     await calendarSources.update({ _id: sourceId }, {
       $set: { lastError: err.message },

@@ -57,6 +57,7 @@ function mapConfig(data) {
     timeoutMinutes: data.timeoutMinutes != null ? String(data.timeoutMinutes) : '',
     systemPrompt: data.systemPrompt || '',
     expenseSystemPrompt: data.expenseSystemPrompt || '',
+    dailyPlanSystemPrompt: data.dailyPlanSystemPrompt || '',
   };
 }
 
@@ -213,6 +214,21 @@ export default function AiConfigPage() {
               />
               <div className={styles.hint}>
                 Instructions sent to the AI when scanning expense receipts. The AI should return a JSON object with date, amount, vatAmount, expenseType, and description.
+              </div>
+            </FormField>
+          </FormSection>
+
+          <FormSection title="Daily Plan System Prompt">
+            <FormField fullWidth>
+              <MarkdownEditor
+                name="dailyPlanSystemPrompt"
+                value={form.dailyPlanSystemPrompt ?? ''}
+                onChange={(val) => setForm((prev) => ({ ...prev, dailyPlanSystemPrompt: val }))}
+                height={300}
+                placeholder="Instructions for daily plan summarisation and wrap-up..."
+              />
+              <div className={styles.hint}>
+                Instructions sent to the AI when generating daily plan summaries, wrap-ups, and end-of-day reviews. Controls the tone, focus areas, and output format.
               </div>
             </FormField>
           </FormSection>

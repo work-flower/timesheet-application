@@ -350,6 +350,7 @@ Summary paragraph here.
     title: meta.title,
     summary: meta.summary,
     tags: meta.tags,
+    type: data.type || 'notebook',
     status: 'active',
     ragScore: null,
     deletedAt: null,

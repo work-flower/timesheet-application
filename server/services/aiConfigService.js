@@ -12,6 +12,16 @@ const DEFAULT_EXPENSE_SYSTEM_PROMPT = `You are a receipt/invoice parser. The att
 
 Return ONLY the JSON object, no other text. If a field cannot be determined, use null for strings and 0 for numbers.`;
 
+const DEFAULT_DAILY_PLAN_SYSTEM_PROMPT = `You are a daily work assistant for a UK technology contractor. Given the context of previous daily plans, meeting notes, ticket activity, and calendar events, generate a concise daily briefing.
+
+Focus on:
+- Incomplete tasks carried forward from previous days
+- Key action items from recent meeting notes
+- Important ticket comments and status changes
+- Today's scheduled meetings and events
+
+Keep the tone professional and concise. Use bullet points. Highlight blockers or urgent items first.`;
+
 function maskSecret(value) {
   if (!value || value.length <= 4) return value ? '****' : '';
   return '*'.repeat(value.length - 4) + value.slice(-4);
@@ -71,6 +81,7 @@ export async function getRawConfig() {
     model: DEFAULT_MODEL,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     expenseSystemPrompt: DEFAULT_EXPENSE_SYSTEM_PROMPT,
+    dailyPlanSystemPrompt: DEFAULT_DAILY_PLAN_SYSTEM_PROMPT,
     maxTokens: null,
     timeoutMinutes: null,
     createdAt: now,
