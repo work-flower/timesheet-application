@@ -120,7 +120,7 @@ export default function DailyPlanList() {
     try {
       const today = new Date().toISOString().split('T')[0];
       const result = await dailyPlansApi.create({ date: today });
-      navigate(`/daily-plans/${result._id}`);
+      navigate(`/daily-plans/${result._id}?wrapUp=true`);
     } catch (err) {
       // If already exists for today, navigate to it
       if (err.message.includes('already exists')) {

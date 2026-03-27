@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as dailyPlanService from '../services/dailyPlanService.js';
+import * as dailyPlanAiService from '../services/dailyPlanAiService.js';
 
 const router = Router();
 
@@ -118,6 +119,53 @@ router.post('/:id/meeting-notes', async (req, res) => {
     const result = await dailyPlanService.addMeetingNote(req.params.id, notebookId, calendarEventUid, eventSummary);
     res.json(result);
   } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- AI operations ---
+
+// Wrap-up: carry forward todos + AI summary (called after creation)
+router.post('/:id/wrap-up', async (req, res) => {
+  try {
+    const result = await dailyPlanAiService.wrapUp(req.params.id);
+    res.json(result);
+  } catch (err) {
+    console.warn('Wrap-up failed:', err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Scan previous X days
+router.post('/:id/scan', async (req, res) => {
+  try {
+    const days = Number(req.body.days) || 1;
+    const result = await dailyPlanAiService.scanPreviousDays(req.params.id, days);
+    res.json(result);
+  } catch (err) {
+    console.warn('Scan failed:', err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Summarise day (end-of-day)
+router.post('/:id/summarise', async (req, res) => {
+  try {
+    const result = await dailyPlanAiService.summariseDay(req.params.id);
+    res.json(result);
+  } catch (err) {
+    console.warn('Summarise failed:', err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Generate timesheet description from plan context
+router.post('/:id/timesheet-description', async (req, res) => {
+  try {
+    const result = await dailyPlanAiService.generateTimesheetDescription(req.params.id);
+    res.json(result);
+  } catch (err) {
+    console.warn('Timesheet description failed:', err.message);
     res.status(400).json({ error: err.message });
   }
 });

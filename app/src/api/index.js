@@ -513,6 +513,10 @@ export const dailyPlansApi = {
   removeTodo: (id, todoId) => request(`/daily-plans/${id}/todos/${todoId}`, { method: 'DELETE' }),
   addTimesheet: (id, timesheetId) => request(`/daily-plans/${id}/timesheets`, { method: 'POST', body: JSON.stringify({ timesheetId }) }),
   addMeetingNote: (id, data) => request(`/daily-plans/${id}/meeting-notes`, { method: 'POST', body: JSON.stringify(data) }),
+  wrapUp: (id) => request(`/daily-plans/${id}/wrap-up`, { method: 'POST', body: '{}' }),
+  scan: (id, days) => request(`/daily-plans/${id}/scan`, { method: 'POST', body: JSON.stringify({ days }) }),
+  summarise: (id) => request(`/daily-plans/${id}/summarise`, { method: 'POST', body: '{}' }),
+  generateTimesheetDescription: (id) => request(`/daily-plans/${id}/timesheet-description`, { method: 'POST', body: '{}' }),
 };
 
 // Todos

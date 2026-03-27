@@ -8,6 +8,7 @@ import {
 } from '@fluentui/react-components';
 import {
   AddRegular, DeleteRegular, CalendarClockRegular, DismissRegular,
+  SparkleRegular, ScanDashRegular, ClipboardTextLtrRegular,
 } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -174,6 +175,9 @@ export default function DailyPlanForm() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [popupTimesheetUrl, setPopupTimesheetUrl] = useState(null);
   const [popupNotebookUrl, setPopupNotebookUrl] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanDays, setScanDays] = useState('3');
 
   // Entity search dialog for slash menu
   const [entitySearchType, setEntitySearchType] = useState(null);
@@ -207,9 +211,72 @@ export default function DailyPlanForm() {
     }
   }, [id]);
 
+  // Check for wrapUp query param on first load
+  const shouldWrapUp = useMemo(() => {
+    return new URLSearchParams(window.location.search).get('wrapUp') === 'true';
+  }, []);
+
   useEffect(() => {
     if (id) loadPlan();
   }, [id, loadPlan]);
+
+  // Auto wrap-up on creation (triggered by ?wrapUp=true)
+  useEffect(() => {
+    if (!shouldWrapUp || !initialized || !plan) return;
+    setAiLoading(true);
+    dailyPlansApi.wrapUp(id)
+      .then(() => loadPlan())
+      .catch(err => setError(err.message))
+      .finally(() => setAiLoading(false));
+    // Remove the query param from URL without re-render
+    window.history.replaceState({}, '', window.location.pathname);
+  }, [shouldWrapUp, initialized, plan?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- AI handlers ---
+
+  const handleScan = async () => {
+    const days = Number(scanDays);
+    if (!days || days < 1) return;
+    setScanOpen(false);
+    setAiLoading(true);
+    try {
+      await dailyPlansApi.scan(id, days);
+      await loadPlan();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleSummarise = async () => {
+    setAiLoading(true);
+    try {
+      await dailyPlansApi.summarise(id);
+      await loadPlan();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleTimesheetWithAi = async () => {
+    setAiLoading(true);
+    try {
+      const { description } = await dailyPlansApi.generateTimesheetDescription(id);
+      const params = new URLSearchParams();
+      params.set('date', id);
+      if (description) params.set('notes', description);
+      params.set('embedded', 'true');
+      setPopupTimesheetUrl(`/timesheets/new?${params.toString()}`);
+    } catch (err) {
+      // Fall back to plain new timesheet without AI description
+      setPopupTimesheetUrl(`/timesheets/new?date=${id}&embedded=true`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // --- Auto-save content with debounce (Milkdown onChange gives markdown string) ---
 
@@ -452,7 +519,26 @@ export default function DailyPlanForm() {
         onDelete={() => setDeleteOpen(true)}
         locked={false}
       >
-        {/* Phase 4: Summarise Day button will go here */}
+        <Tooltip content="Summarise the day (AI)" relationship="label">
+          <Button
+            size="small"
+            icon={<SparkleRegular />}
+            onClick={handleSummarise}
+            disabled={aiLoading}
+          >
+            Summarise Day
+          </Button>
+        </Tooltip>
+        <Tooltip content="Scan previous days and carry forward" relationship="label">
+          <Button
+            size="small"
+            icon={<ScanDashRegular />}
+            onClick={() => setScanOpen(true)}
+            disabled={aiLoading}
+          >
+            Scan Previous Days
+          </Button>
+        </Tooltip>
       </FormCommandBar>
 
       <div className={styles.pageBody}>
@@ -470,6 +556,12 @@ export default function DailyPlanForm() {
         {error && (
           <MessageBar intent="error" className={styles.message}>
             <MessageBarBody>{error}</MessageBarBody>
+          </MessageBar>
+        )}
+
+        {aiLoading && (
+          <MessageBar intent="info" className={styles.message}>
+            <MessageBarBody><Spinner size="tiny" style={{ marginRight: '8px' }} />AI is processing...</MessageBarBody>
           </MessageBar>
         )}
 
@@ -507,12 +599,13 @@ export default function DailyPlanForm() {
               No timesheets linked
             </Text>
           )}
-          <Tooltip content="Create new timesheet for this day" relationship="label">
+          <Tooltip content="Create new timesheet (AI generates description)" relationship="label">
             <Button
               appearance="subtle"
               icon={<AddRegular />}
               size="small"
-              onClick={() => setPopupTimesheetUrl(`/timesheets/new?date=${id}&embedded=true`)}
+              onClick={handleTimesheetWithAi}
+              disabled={aiLoading}
             />
           </Tooltip>
         </div>
@@ -603,6 +696,32 @@ export default function DailyPlanForm() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}
       />
+
+      {/* Scan previous days dialog */}
+      <Dialog open={scanOpen} onOpenChange={(e, data) => { if (!data.open) setScanOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '360px' }}>
+          <DialogBody>
+            <DialogTitle>Scan Previous Days</DialogTitle>
+            <DialogContent>
+              <Text size={200} style={{ display: 'block', marginBottom: '12px' }}>
+                How many previous days should the AI scan? Incomplete to-dos will be carried forward and an AI summary will be appended to your miscellaneous section.
+              </Text>
+              <Input
+                type="number"
+                value={scanDays}
+                onChange={(e) => setScanDays(e.target.value)}
+                min={1}
+                max={30}
+                style={{ width: '100%' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+                <Button appearance="secondary" onClick={() => setScanOpen(false)}>Cancel</Button>
+                <Button appearance="primary" onClick={handleScan} disabled={!scanDays || Number(scanDays) < 1}>Scan</Button>
+              </div>
+            </DialogContent>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       {/* Entity search dialog for slash menu */}
       <EntitySearchDialog
