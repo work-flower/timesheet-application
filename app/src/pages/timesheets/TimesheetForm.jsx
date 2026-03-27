@@ -205,7 +205,7 @@ export default function TimesheetForm() {
   const handleSave = async () => {
     const result = await saveForm();
     if (result.ok) {
-      notifyParent(handleSave.name, base, form);
+      notifyParent('save', base, form);
       if (isNew) {
         navigateUnguarded(`/timesheets/${result.id}`, { replace: true });
       } else {
@@ -218,7 +218,7 @@ export default function TimesheetForm() {
   const handleSaveAndClose = async () => {
     const result = await saveForm();
     if (result.ok) {
-      notifyParent(handleSaveAndClose.name, base, form);
+      notifyParent('saveAndClose', base, form);
       navigateUnguarded('/timesheets');
     }
   };
@@ -226,7 +226,7 @@ export default function TimesheetForm() {
   const handleDelete = async () => {
     try {
       await timesheetsApi.delete(id);
-      notifyParent(handleDelete.name, base, form);
+      notifyParent('delete', base, form);
       navigate('/timesheets');
     } catch (err) {
       setError(err.message);
@@ -246,7 +246,7 @@ export default function TimesheetForm() {
     <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
       <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
       <FormCommandBar
-        onBack={() => goBack('/timesheets')}
+        onBack={() => { notifyParent('back', base, form); goBack('/timesheets'); }}
         onSave={handleSave}
         onSaveAndClose={handleSaveAndClose}
         onDelete={!isNew ? () => setDeleteOpen(true) : undefined}

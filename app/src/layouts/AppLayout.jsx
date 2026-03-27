@@ -37,6 +37,7 @@ import {
   NotebookRegular,
   GlobeRegular,
   TicketHorizontalRegular,
+  ClipboardTaskListLtrRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -217,6 +218,7 @@ const navItems = [
       { to: '/dashboards/financial', label: 'Financial', icon: <DataBarVerticalRegular /> },
     ],
   },
+  { to: '/daily-plans', label: 'Daily Plans', icon: <ClipboardTaskListLtrRegular /> },
   { to: '/clients', label: 'Clients', icon: <PeopleRegular /> },
   { to: '/projects', label: 'Projects', icon: <FolderRegular /> },
   { to: '/timesheets', label: 'Timesheets', icon: <CalendarClockRegular /> },

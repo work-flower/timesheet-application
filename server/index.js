@@ -30,6 +30,8 @@ import calendarEventRoutes from './routes/calendarEvents.js';
 import ticketSourceRoutes from './routes/ticketSources.js';
 import ticketRoutes from './routes/tickets.js';
 import notebookRoutes from './routes/notebooks.js';
+import dailyPlanRoutes from './routes/dailyPlans.js';
+import todoRoutes from './routes/todos.js';
 
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
 import { initScheduler } from './services/backupScheduler.js';
@@ -133,6 +135,8 @@ app.use('/api/calendar-events', calendarEventRoutes);
 app.use('/api/ticket-sources', ticketSourceRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/notebooks', notebookRoutes);
+app.use('/api/daily-plans', dailyPlanRoutes);
+app.use('/api/todos', todoRoutes);
 
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)

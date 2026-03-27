@@ -36,6 +36,8 @@ import NotebookForm from './pages/notebooks/NotebookForm.jsx';
 import NotebookBin from './pages/notebooks/NotebookBin.jsx';
 import TicketList from './pages/tickets/TicketList.jsx';
 import TicketForm from './pages/tickets/TicketForm.jsx';
+import DailyPlanList from './pages/dailyPlans/DailyPlanList.jsx';
+import DailyPlanForm from './pages/dailyPlans/DailyPlanForm.jsx';
 
 export default function App() {
   return (
@@ -82,6 +84,8 @@ export default function App() {
               <Route path="/notebooks/:id" element={<NotebookForm />} />
               <Route path="/tickets" element={<TicketList />} />
               <Route path="/tickets/:id" element={<TicketForm />} />
+              <Route path="/daily-plans" element={<DailyPlanList />} />
+              <Route path="/daily-plans/:id" element={<DailyPlanForm />} />
               <Route path="/help" element={<HelpIndex />} />
               <Route path="/help/:topicId" element={<HelpTopic />} />
             </Route>

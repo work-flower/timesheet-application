@@ -480,6 +480,58 @@ export const notebooksApi = {
   },
 };
 
+// Daily Plans
+export const dailyPlansApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/daily-plans${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/daily-plans/${id}`),
+  create: (data) => request('/daily-plans', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/daily-plans/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/daily-plans/${id}`, { method: 'DELETE' }),
+  getContent: async (id) => {
+    const res = await fetch(`${BASE}/daily-plans/${id}/content`, {
+      headers: { 'X-Trace-Id': getTraceId() },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.content;
+  },
+  updateContent: (id, content) => request(`/daily-plans/${id}/content`, {
+    method: 'PUT',
+    body: JSON.stringify({ content }),
+  }),
+  addTodo: (id, todoId) => request(`/daily-plans/${id}/todos`, { method: 'POST', body: JSON.stringify({ todoId }) }),
+  removeTodo: (id, todoId) => request(`/daily-plans/${id}/todos/${todoId}`, { method: 'DELETE' }),
+  addTimesheet: (id, timesheetId) => request(`/daily-plans/${id}/timesheets`, { method: 'POST', body: JSON.stringify({ timesheetId }) }),
+  addMeetingNote: (id, data) => request(`/daily-plans/${id}/meeting-notes`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// Todos
+export const todosApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/todos${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => request(`/todos/${id}`),
+  create: (data) => request('/todos', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/todos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/todos/${id}`, { method: 'DELETE' }),
+  getIncomplete: () => request('/todos/incomplete'),
+};
+
 // Dashboard
 export const dashboardApi = {
   getOperations: () => request('/dashboard/operations'),

@@ -14,6 +14,7 @@ mkdirSync(join(dataDir, 'documents'), { recursive: true });
 mkdirSync(join(dataDir, 'expenses'), { recursive: true });
 mkdirSync(join(dataDir, 'imports'), { recursive: true });
 mkdirSync(join(dataDir, 'notebooks'), { recursive: true });
+mkdirSync(join(dataDir, 'daily-plans'), { recursive: true });
 
 // Raw datastores
 const _clients = Datastore.create({ filename: join(dataDir, 'clients.db'), autoload: true });
@@ -27,6 +28,8 @@ const _transactions = Datastore.create({ filename: join(dataDir, 'transactions.d
 const _importJobs = Datastore.create({ filename: join(dataDir, 'importJobs.db'), autoload: true });
 const _stagedTransactions = Datastore.create({ filename: join(dataDir, 'stagedTransactions.db'), autoload: true });
 const _notebooks = Datastore.create({ filename: join(dataDir, 'notebooks.db'), autoload: true });
+const _dailyPlans = Datastore.create({ filename: join(dataDir, 'dailyPlans.db'), autoload: true });
+const _todos = Datastore.create({ filename: join(dataDir, 'todos.db'), autoload: true });
 
 // Wrapped with execution pipeline
 const clients = wrapCollection('clients', _clients);
@@ -40,6 +43,8 @@ const transactions = wrapCollection('transactions', _transactions);
 const importJobs = wrapCollection('importJobs', _importJobs);
 const stagedTransactions = wrapCollection('stagedTransactions', _stagedTransactions);
 const notebooks = wrapCollection('notebooks', _notebooks);
+const dailyPlans = wrapCollection('dailyPlans', _dailyPlans);
+const todos = wrapCollection('todos', _todos);
 
 // Standalone datastores (not wrapped — ephemeral/infrastructure, not business entities)
 const calendarSources = Datastore.create({ filename: join(dataDir, 'calendar-sources.db'), autoload: true });
@@ -47,4 +52,4 @@ const calendarEvents = Datastore.create({ filename: join(dataDir, 'calendar-even
 const ticketSources = Datastore.create({ filename: join(dataDir, 'ticket-sources.db'), autoload: true });
 const tickets = Datastore.create({ filename: join(dataDir, 'tickets.db'), autoload: true });
 
-export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, calendarSources, calendarEvents, ticketSources, tickets };
+export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, calendarSources, calendarEvents, ticketSources, tickets };
