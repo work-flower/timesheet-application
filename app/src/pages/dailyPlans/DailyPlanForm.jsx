@@ -19,6 +19,7 @@ import { dailyPlansApi, todosApi, notebooksApi } from '../../api/index.js';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import DayTimelineCard from '../../components/cards/DayTimelineCard.jsx';
 import TicketsListCard from '../../components/cards/TicketsListCard.jsx';
+import WeekIndicator from '../../components/WeekIndicator.jsx';
 
 const AUTO_SAVE_DELAY = 1500;
 function stripHtml(html) {
@@ -667,44 +668,9 @@ export default function DailyPlanForm() {
               disabled={aiLoading}
             />
           </Tooltip>
-          <Tooltip content={dateObj ? dateObj.toLocaleDateString('en-GB', { weekday: 'long' }) : ''} relationship="label" positioning="above">
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }}>
-              {(() => {
-                const jsDay = dateObj ? dateObj.getDay() : 0;
-                const dayNum = jsDay === 0 ? 7 : jsDay; // Mon=1 .. Sun=7
-                return Array.from({ length: 7 }, (_, i) => {
-                  const isWeekend = i >= 5;
-                  const rectColor = isWeekend ? tokens.colorNeutralStroke2 : tokens.colorNeutralForeground1;
-                  const circleColor = tokens.colorNeutralForeground1;
-                  return (
-                    <span
-                      key={i}
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: 0,
-                        backgroundColor: rectColor,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: '8px',
-                          height: '8px',
-                          borderRadius: '50%',
-                          backgroundColor: i < dayNum ? circleColor : tokens.colorNeutralBackground1,
-                          border: `1.5px solid ${i < dayNum ? circleColor : tokens.colorNeutralBackground1}`,
-                          display: 'inline-block',
-                        }}
-                      />
-                    </span>
-                  );
-                });
-              })()}
-            </div>
-          </Tooltip>
+          <div style={{ marginLeft: 'auto' }}>
+            <WeekIndicator date={id} />
+          </div>
           <input
             type="date"
             value={id || ''}
