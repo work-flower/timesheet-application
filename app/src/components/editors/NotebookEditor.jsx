@@ -21,7 +21,7 @@ import { commandsCtx, editorViewCtx } from '@milkdown/kit/core';
 import { makeStyles, tokens } from '@fluentui/react-components';
 
 import '@milkdown/crepe/theme/common/style.css';
-import '@milkdown/crepe/theme/frame.css';
+import '@milkdown/crepe/theme/nord.css';
 
 // Simple SVG icons for slash menu items (24x24, matching Crepe's icon format)
 const projectIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/></svg>`;
@@ -38,6 +38,19 @@ const useStyles = makeStyles({
       '--crepe-font-title': tokens.fontFamilyBase,
       '--crepe-font-default': tokens.fontFamilyBase,
     },
+    '& .milkdown .ProseMirror': { padding: '8px 12px' },
+    '& .milkdown .ProseMirror h1': { fontSize: '18px', lineHeight: '24px', marginTop: '12px' },
+    '& .milkdown .ProseMirror h2': { fontSize: '16px', lineHeight: '22px', marginTop: '10px' },
+    '& .milkdown .ProseMirror h3': { fontSize: '14px', lineHeight: '20px', marginTop: '8px' },
+    '& .milkdown .ProseMirror h4': { fontSize: '13px', lineHeight: '18px', marginTop: '6px' },
+    '& .milkdown .ProseMirror h5': { fontSize: '13px', lineHeight: '18px', marginTop: '6px' },
+    '& .milkdown .ProseMirror h6': { fontSize: '12px', lineHeight: '16px', marginTop: '4px' },
+    '& .milkdown .ProseMirror p': { fontSize: '13px', lineHeight: '18px', padding: '1px 0' },
+    '& .milkdown .ProseMirror blockquote': { paddingLeft: '16px' },
+    '& .milkdown .ProseMirror code': { fontSize: '12px' },
+    '& .milkdown .ProseMirror pre': { fontSize: '12px', padding: '6px' },
+    '& .milkdown .milkdown-list-item-block li .label-wrapper': { height: '18px' },
+    '& .milkdown .milkdown-list-item-block li .label-wrapper .label': { height: '18px', padding: '0' },
   },
 });
 
