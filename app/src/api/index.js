@@ -516,7 +516,20 @@ export const dailyPlansApi = {
   changeDate: (id, newDate) => request(`/daily-plans/${id}/change-date`, { method: 'PUT', body: JSON.stringify({ newDate }) }),
   wrapUp: (id) => request(`/daily-plans/${id}/wrap-up`, { method: 'POST', body: '{}' }),
   scan: (id, days) => request(`/daily-plans/${id}/scan`, { method: 'POST', body: JSON.stringify({ days }) }),
-  summarise: (id) => request(`/daily-plans/${id}/summarise`, { method: 'POST', body: '{}' }),
+  generateRecap: (id) => request(`/daily-plans/${id}/recap`, { method: 'POST', body: '{}' }),
+  getRecap: async (id) => {
+    const res = await fetch(`${BASE}/daily-plans/${id}/recap`, {
+      headers: { 'X-Trace-Id': getTraceId() },
+    });
+    if (!res.ok) {
+      if (res.status === 404) return null;
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.content;
+  },
+  getRecapStatus: (id) => request(`/daily-plans/${id}/recap/status`),
   generateTimesheetDescription: (id) => request(`/daily-plans/${id}/timesheet-description`, { method: 'POST', body: '{}' }),
 };
 

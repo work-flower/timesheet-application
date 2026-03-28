@@ -149,6 +149,18 @@ export default function DailyPlanList() {
                       : <Badge appearance="tint" color="subtle" size="small">None</Badge>
                   }
                 />
+                <CardMetaItem
+                  label="Recap"
+                  value={
+                    item.recapStatus === 'completed' && !item.recapIsStale
+                      ? <Badge appearance="filled" color="success" size="small">Fresh</Badge>
+                      : item.recapStatus === 'completed' && item.recapIsStale
+                      ? <Badge appearance="tint" color="warning" size="small">Stale</Badge>
+                      : item.recapStatus === 'failed'
+                      ? <Badge appearance="tint" color="danger" size="small">Failed</Badge>
+                      : <Badge appearance="tint" color="subtle" size="small">None</Badge>
+                  }
+                />
               </>
             )}
           />

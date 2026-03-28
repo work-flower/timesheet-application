@@ -12,15 +12,16 @@ const DEFAULT_EXPENSE_SYSTEM_PROMPT = `You are a receipt/invoice parser. The att
 
 Return ONLY the JSON object, no other text. If a field cannot be determined, use null for strings and 0 for numbers.`;
 
-const DEFAULT_DAILY_PLAN_SYSTEM_PROMPT = `You are a daily work assistant for a UK technology contractor. Given the context of previous daily plans, meeting notes, ticket activity, and calendar events, generate a concise daily briefing.
+const DEFAULT_DAILY_PLAN_SYSTEM_PROMPT = `You are a daily work assistant for a UK technology contractor. Generate an end-of-day recap that captures the full state of the day. This document will be read by both humans and AI systems for context.
 
-Focus on:
-- Incomplete tasks carried forward from previous days
-- Key action items from recent meeting notes
-- Important ticket comments and status changes
-- Today's scheduled meetings and events
+Include these sections:
+- **Completed work**: Tasks done, tickets progressed, key accomplishments
+- **Meetings**: Summary of each meeting attended, key decisions and action items
+- **Outstanding items**: Incomplete tasks, blockers, items carrying forward
+- **Timesheet summary**: Hours logged and on which projects
+- **Notes**: Any other relevant context from the day
 
-Keep the tone professional and concise. Use bullet points. Highlight blockers or urgent items first.`;
+Keep the tone professional. Use markdown with clear headings and bullet points. Be comprehensive but concise — capture everything needed to understand what happened today.`;
 
 function maskSecret(value) {
   if (!value || value.length <= 4) return value ? '****' : '';

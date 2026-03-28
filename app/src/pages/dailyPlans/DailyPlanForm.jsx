@@ -3,12 +3,12 @@ import { useParams } from 'react-router-dom';
 import {
   makeStyles, mergeClasses, tokens, Text, Input, Checkbox, Spinner, MessageBar, MessageBarBody,
   Breadcrumb, BreadcrumbItem, BreadcrumbDivider, BreadcrumbButton,
-  Badge, Button, Tooltip,
+  Badge, Button, Tooltip, Tab, TabList,
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent,
 } from '@fluentui/react-components';
 import {
   AddRegular, DeleteRegular, CalendarClockRegular, DismissRegular,
-  SparkleRegular, ScanDashRegular, ClipboardTextLtrRegular,
+  SparkleRegular, ScanDashRegular,
 } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -192,6 +192,11 @@ export default function DailyPlanForm() {
   const [popupTimesheetUrl, setPopupTimesheetUrl] = useState(null);
   const [popupNotebookUrl, setPopupNotebookUrl] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [recapStatus, setRecapStatus] = useState(null);
+  const [recapContent, setRecapContent] = useState(null);
+  const [activeInsightTab, setActiveInsightTab] = useState(() => {
+    try { return localStorage.getItem('dailyPlan.insightTab') || 'recap'; } catch { return 'recap'; }
+  });
   const [commentTodoText, setCommentTodoText] = useState('');
   const [commentTodoOpen, setCommentTodoOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
@@ -222,6 +227,18 @@ export default function DailyPlanForm() {
       const md = await dailyPlansApi.getContent(id);
       setContent(md || '');
       lastSavedRef.current = md || '';
+
+      // Load recap status + content
+      try {
+        const status = await dailyPlansApi.getRecapStatus(id);
+        setRecapStatus(status);
+        if (status.status === 'completed') {
+          const rc = await dailyPlansApi.getRecap(id);
+          setRecapContent(rc);
+        } else {
+          setRecapContent(null);
+        }
+      } catch { /* ignore */ }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -274,13 +291,18 @@ export default function DailyPlanForm() {
     }
   };
 
-  const handleSummarise = async () => {
+  const handleRecap = async () => {
     setAiLoading(true);
     try {
-      await dailyPlansApi.summarise(id);
-      await loadPlan();
+      const result = await dailyPlansApi.generateRecap(id);
+      setRecapContent(result.content);
+      setRecapStatus({ status: 'completed', isStale: false, generatedAt: new Date().toISOString(), error: null });
     } catch (err) {
       setError(err.message);
+      try {
+        const status = await dailyPlansApi.getRecapStatus(id);
+        setRecapStatus(status);
+      } catch { /* ignore */ }
     } finally {
       setAiLoading(false);
     }
@@ -575,14 +597,30 @@ export default function DailyPlanForm() {
         onDelete={() => setDeleteOpen(true)}
         locked={false}
       >
-        <Tooltip content="Summarise the day (AI)" relationship="label">
+        <Tooltip
+          content={
+            !recapStatus || recapStatus.status === 'idle' ? 'No recap generated yet — click to generate'
+            : recapStatus.status === 'failed' ? `Last recap failed: ${recapStatus.error || 'Unknown error'}`
+            : recapStatus.isStale ? 'Recap is stale — plan was updated since last generation'
+            : `Recap is up to date (${recapStatus.generatedAt ? new Date(recapStatus.generatedAt).toLocaleString('en-GB') : ''})`
+          }
+          relationship="label"
+        >
           <Button
             size="small"
             icon={<SparkleRegular />}
-            onClick={handleSummarise}
+            onClick={handleRecap}
             disabled={aiLoading}
+            style={{ position: 'relative' }}
           >
-            Summarise Day
+            Recap
+            {recapStatus && (recapStatus.status === 'idle' || recapStatus.status === 'failed' || recapStatus.isStale) && (
+              <span style={{
+                position: 'absolute', top: 2, right: 2,
+                width: 8, height: 8, borderRadius: '50%',
+                backgroundColor: '#d13438',
+              }} />
+            )}
           </Button>
         </Tooltip>
         <Tooltip content="Scan previous days and carry forward" relationship="label">
@@ -751,8 +789,34 @@ export default function DailyPlanForm() {
             </div>
           </div>
 
-          {/* Row 2: Miscellaneous (span 2) | Meeting Summary */}
-          <div className={styles.miscSection} style={{ gridColumn: 'span 2' }}>
+          {/* Row 2: Recap/Briefing tabs (span 2) | Miscellaneous */}
+          <div className={styles.meetingSummary} style={{ gridColumn: 'span 2', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            <TabList selectedValue={activeInsightTab} onTabSelect={(_, data) => { setActiveInsightTab(data.value); try { localStorage.setItem('dailyPlan.insightTab', data.value); } catch {} }} size="small">
+              <Tab value="recap">Recap</Tab>
+              <Tab value="briefing">Briefing</Tab>
+            </TabList>
+            <div style={{ flex: 1, paddingTop: '8px', overflowY: 'auto' }}>
+              {activeInsightTab === 'recap' && (
+                recapContent ? (
+                  <div data-color-mode="light">
+                    <MDEditor.Markdown source={recapContent} style={{ backgroundColor: 'transparent', fontSize: '13px', lineHeight: '1.5' }} />
+                  </div>
+                ) : (
+                  <Text size={200} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground3 }}>
+                    {recapStatus?.status === 'failed'
+                      ? 'Recap generation failed. Click Recap to retry.'
+                      : 'Click Recap to generate an end-of-day summary.'}
+                  </Text>
+                )
+              )}
+              {activeInsightTab === 'briefing' && (
+                <Text size={200} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground3 }}>
+                  Briefing feature coming soon.
+                </Text>
+              )}
+            </div>
+          </div>
+          <div className={styles.miscSection}>
             <Text className={styles.sectionTitle}>Miscellaneous</Text>
             {initialized && (
               <NotebookEditor
@@ -762,10 +826,6 @@ export default function DailyPlanForm() {
                 onEntitySearch={setEntitySearchType}
               />
             )}
-          </div>
-          <div className={styles.meetingSummary}>
-            <Text className={styles.sectionTitle}>Meeting Summary</Text>
-            <Text size={200} style={{ fontStyle: 'italic' }}>Will appear here after summarisation.</Text>
           </div>
         </div>
       </div>

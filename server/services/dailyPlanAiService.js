@@ -6,7 +6,7 @@ import { tickets } from '../db/index.js';
 import { notebooks } from '../db/index.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, renameSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -128,7 +128,7 @@ async function buildContext(planId, lookbackDays = 1) {
   return sections.join('\n\n');
 }
 
-async function callClaude(systemPrompt, userMessage) {
+async function callClaude(systemPrompt, userMessage, maxTokens = 2048) {
   const config = await getRawConfig();
   if (!config.apiKey) throw new Error('AI API key not configured. Go to Admin > System > AI Config to set it up.');
 
@@ -139,7 +139,7 @@ async function callClaude(systemPrompt, userMessage) {
   const response = await client.messages.create({
     model: config.model,
     system: systemPrompt,
-    max_tokens: 2048,
+    max_tokens: maxTokens,
     messages: [{ role: 'user', content: userMessage }],
   }, { timeout: timeoutMs });
 
@@ -231,23 +231,47 @@ export async function scanPreviousDays(planId, days) {
 }
 
 /**
- * Summarise the day: reads all meeting notes, tasks, tickets, and current content
- * to produce an end-of-day summary.
+ * Generate a daily recap: builds context from the day's data and writes recap.md.
+ * Uses file-based state machine: backup existing → generate → restore on failure.
  */
-export async function summariseDay(planId) {
+export async function generateRecap(planId) {
   const config = await getRawConfig();
   if (!config.apiKey) throw new Error('AI API key not configured. Go to Admin > System > AI Config to set it up.');
 
-  const context = await buildContext(planId, 0);
-  const prompt = config.dailyPlanSystemPrompt || 'Provide a concise end-of-day summary.';
-  const summary = await callClaude(prompt, `Generate an end-of-day summary for ${planId}.\n\n${context}`);
+  const { recapPath, backupPath, errorPath } = dailyPlanService.getRecapFilePaths(planId);
 
-  // Append as "Summary of the Day" to content
-  const existing = await dailyPlanService.getContent(planId) || '';
-  const updatedContent = existing + `\n\n---\n## Summary of the Day\n*AI Generated*\n\n${summary}\n`;
-  await dailyPlanService.updateContent(planId, updatedContent);
+  // Backup existing recap
+  if (existsSync(recapPath)) {
+    renameSync(recapPath, backupPath);
+  }
+  // Clear previous error
+  if (existsSync(errorPath)) {
+    rmSync(errorPath);
+  }
 
-  return { summary };
+  try {
+    const context = await buildContext(planId, 0);
+    const prompt = config.dailyPlanSystemPrompt || 'Provide a comprehensive end-of-day recap.';
+    const maxTokens = config.maxTokens || 4096;
+    const recap = await callClaude(prompt, `Generate a daily recap for ${planId}.\n\n${context}`, maxTokens);
+
+    writeFileSync(recapPath, recap, 'utf8');
+
+    // Success — remove backup
+    if (existsSync(backupPath)) {
+      rmSync(backupPath);
+    }
+
+    return { status: 'completed', content: recap };
+  } catch (err) {
+    // Write error file
+    writeFileSync(errorPath, `${new Date().toISOString()}\n${err.message}`, 'utf8');
+    // Restore backup
+    if (existsSync(backupPath)) {
+      renameSync(backupPath, recapPath);
+    }
+    throw err;
+  }
 }
 
 /**

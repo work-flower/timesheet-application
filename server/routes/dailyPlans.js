@@ -158,14 +158,49 @@ router.post('/:id/scan', async (req, res) => {
   }
 });
 
-// Summarise day (end-of-day)
-router.post('/:id/summarise', async (req, res) => {
+// Generate recap
+router.post('/:id/recap', async (req, res) => {
   try {
-    const result = await dailyPlanAiService.summariseDay(req.params.id);
+    const result = await dailyPlanAiService.generateRecap(req.params.id);
     res.json(result);
   } catch (err) {
-    console.warn('Summarise failed:', err.message);
+    console.warn('Recap generation failed:', err.message);
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Get recap content
+router.get('/:id/recap', async (req, res) => {
+  try {
+    const content = dailyPlanService.getRecapContent(req.params.id);
+    if (content === null) return res.status(404).json({ error: 'No recap found' });
+    res.json({ content });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get recap status
+router.get('/:id/recap/status', async (req, res) => {
+  try {
+    const plan = await dailyPlanService.getById(req.params.id);
+    if (!plan) return res.status(404).json({ error: 'Daily plan not found' });
+
+    const recap = dailyPlanService.getRecapStatus(req.params.id);
+    let isStale = false;
+    if (recap.status === 'completed' && plan.updatedAt) {
+      isStale = recap.recapMtime < new Date(plan.updatedAt).getTime();
+    }
+
+    res.json({
+      status: recap.status,
+      isStale,
+      generatedAt: recap.generatedAt,
+      planUpdatedAt: plan.updatedAt,
+      error: recap.error,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

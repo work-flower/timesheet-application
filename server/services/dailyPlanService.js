@@ -2,7 +2,7 @@ import { dailyPlans, timesheets, todos, projects, clients } from '../db/index.js
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, renameSync } from 'fs';
+import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, renameSync, statSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -10,6 +10,9 @@ function getDataDir() { return process.env.DATA_DIR || join(__dirname, '..', '..
 function getDailyPlansDir() { return join(getDataDir(), 'daily-plans'); }
 function getPlanDir(date) { return join(getDailyPlansDir(), date); }
 function getContentPath(date) { return join(getPlanDir(date), 'content.md'); }
+function getRecapPath(date) { return join(getPlanDir(date), 'recap.md'); }
+function getRecapBackupPath(date) { return join(getPlanDir(date), 'recap.md~1'); }
+function getRecapErrorPath(date) { return join(getPlanDir(date), 'recap.err'); }
 
 const DEFAULT_CONTENT = `## Miscellaneous
 
@@ -42,11 +45,19 @@ export async function getAll(query = {}) {
       : [];
     const hasTimesheet = linkedTimesheets.length > 0;
 
+    const recap = getRecapStatus(plan._id);
+    let recapIsStale = false;
+    if (recap.status === 'completed' && plan.updatedAt) {
+      recapIsStale = recap.recapMtime < new Date(plan.updatedAt).getTime();
+    }
+
     return {
       ...plan,
       todoCount: totalTodos,
       todoCompletedCount: completedTodos,
       hasTimesheet,
+      recapStatus: recap.status,
+      recapIsStale,
     };
   }));
 
@@ -250,4 +261,45 @@ export async function changeDate(oldDate, newDate) {
 
 export function getDailyPlansDirectory() {
   return getDailyPlansDir();
+}
+
+export function getPlanDirectory(date) {
+  return getPlanDir(date);
+}
+
+// --- Recap operations ---
+
+export function getRecapStatus(date) {
+  const hasRecap = existsSync(getRecapPath(date));
+  const hasBackup = existsSync(getRecapBackupPath(date));
+  const hasError = existsSync(getRecapErrorPath(date));
+
+  if (!hasRecap && !hasBackup && !hasError) {
+    return { status: 'idle', generatedAt: null, error: null };
+  }
+  if (hasBackup && !hasError) {
+    return { status: 'generating', generatedAt: null, error: null };
+  }
+  if (hasError) {
+    const error = readFileSync(getRecapErrorPath(date), 'utf8');
+    const generatedAt = hasRecap ? new Date(statSync(getRecapPath(date)).mtimeMs).toISOString() : null;
+    return { status: 'failed', generatedAt, error };
+  }
+  // hasRecap only
+  const recapMtime = statSync(getRecapPath(date)).mtimeMs;
+  return { status: 'completed', generatedAt: new Date(recapMtime).toISOString(), recapMtime, error: null };
+}
+
+export function getRecapContent(date) {
+  const recapPath = getRecapPath(date);
+  if (!existsSync(recapPath)) return null;
+  return readFileSync(recapPath, 'utf8');
+}
+
+export function getRecapFilePaths(date) {
+  return {
+    recapPath: getRecapPath(date),
+    backupPath: getRecapBackupPath(date),
+    errorPath: getRecapErrorPath(date),
+  };
 }
