@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   makeStyles, mergeClasses, tokens, Text, Input, Checkbox, Spinner, MessageBar, MessageBarBody,
@@ -8,7 +8,7 @@ import {
 } from '@fluentui/react-components';
 import {
   AddRegular, DeleteRegular, CalendarClockRegular, DismissRegular,
-  SparkleRegular, ScanDashRegular,
+  SparkleRegular,
 } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -199,8 +199,6 @@ export default function DailyPlanForm() {
   });
   const [commentTodoText, setCommentTodoText] = useState('');
   const [commentTodoOpen, setCommentTodoOpen] = useState(false);
-  const [scanOpen, setScanOpen] = useState(false);
-  const [scanDays, setScanDays] = useState('3');
 
   // Entity search dialog for slash menu
   const [entitySearchType, setEntitySearchType] = useState(null);
@@ -246,11 +244,6 @@ export default function DailyPlanForm() {
     }
   }, [id]);
 
-  // Check for wrapUp query param on first load
-  const shouldWrapUp = useMemo(() => {
-    return new URLSearchParams(window.location.search).get('wrapUp') === 'true';
-  }, []);
-
   useEffect(() => {
     if (id) loadPlan();
   }, [id, loadPlan]);
@@ -262,34 +255,7 @@ export default function DailyPlanForm() {
     return () => clearTimeout(timer);
   }, [error]);
 
-  // Auto wrap-up on creation (triggered by ?wrapUp=true)
-  useEffect(() => {
-    if (!shouldWrapUp || !initialized || !plan) return;
-    setAiLoading(true);
-    dailyPlansApi.wrapUp(id)
-      .then(() => loadPlan())
-      .catch(err => setError(err.message))
-      .finally(() => setAiLoading(false));
-    // Remove the query param from URL without re-render
-    window.history.replaceState({}, '', window.location.pathname);
-  }, [shouldWrapUp, initialized, plan?._id]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // --- AI handlers ---
-
-  const handleScan = async () => {
-    const days = Number(scanDays);
-    if (!days || days < 1) return;
-    setScanOpen(false);
-    setAiLoading(true);
-    try {
-      await dailyPlansApi.scan(id, days);
-      await loadPlan();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setAiLoading(false);
-    }
-  };
 
   const handleRecap = async () => {
     setAiLoading(true);
@@ -623,16 +589,6 @@ export default function DailyPlanForm() {
             )}
           </Button>
         </Tooltip>
-        <Tooltip content="Scan previous days and carry forward" relationship="label">
-          <Button
-            size="small"
-            icon={<ScanDashRegular />}
-            onClick={() => setScanOpen(true)}
-            disabled={aiLoading}
-          >
-            Scan Previous Days
-          </Button>
-        </Tooltip>
       </FormCommandBar>
 
       <div className={styles.pageBody}>
@@ -890,31 +846,6 @@ export default function DailyPlanForm() {
         </DialogSurface>
       </Dialog>
 
-      {/* Scan previous days dialog */}
-      <Dialog open={scanOpen} onOpenChange={(e, data) => { if (!data.open) setScanOpen(false); }}>
-        <DialogSurface style={{ maxWidth: '360px' }}>
-          <DialogBody>
-            <DialogTitle>Scan Previous Days</DialogTitle>
-            <DialogContent>
-              <Text size={200} style={{ display: 'block', marginBottom: '12px' }}>
-                How many previous days should the AI scan? Incomplete to-dos will be carried forward and an AI summary will be appended to your miscellaneous section.
-              </Text>
-              <Input
-                type="number"
-                value={scanDays}
-                onChange={(e) => setScanDays(e.target.value)}
-                min={1}
-                max={30}
-                style={{ width: '100%' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-                <Button appearance="secondary" onClick={() => setScanOpen(false)}>Cancel</Button>
-                <Button appearance="primary" onClick={handleScan} disabled={!scanDays || Number(scanDays) < 1}>Scan</Button>
-              </div>
-            </DialogContent>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
 
       {/* Entity search dialog for slash menu */}
       <EntitySearchDialog

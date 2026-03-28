@@ -67,7 +67,7 @@ export async function remove(id) {
 }
 
 /**
- * Get all incomplete todos — used by daily plan wrap-up to carry forward.
+ * Get all incomplete todos.
  */
 export async function getIncomplete() {
   return todos.find({ status: 'pending' });

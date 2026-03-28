@@ -135,29 +135,6 @@ router.post('/:id/meeting-notes', async (req, res) => {
 
 // --- AI operations ---
 
-// Wrap-up: carry forward todos + AI summary (called after creation)
-router.post('/:id/wrap-up', async (req, res) => {
-  try {
-    const result = await dailyPlanAiService.wrapUp(req.params.id);
-    res.json(result);
-  } catch (err) {
-    console.warn('Wrap-up failed:', err.message);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// Scan previous X days
-router.post('/:id/scan', async (req, res) => {
-  try {
-    const days = Number(req.body.days) || 1;
-    const result = await dailyPlanAiService.scanPreviousDays(req.params.id, days);
-    res.json(result);
-  } catch (err) {
-    console.warn('Scan failed:', err.message);
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // Generate recap
 router.post('/:id/recap', async (req, res) => {
   try {

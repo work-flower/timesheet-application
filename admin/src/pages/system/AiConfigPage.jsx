@@ -228,7 +228,7 @@ export default function AiConfigPage() {
                 placeholder="You are a daily work assistant for a UK technology contractor. Generate an end-of-day recap that captures the full state of the day. This document will be read by both humans and AI systems for context.&#10;&#10;Include these sections:&#10;- Completed work: Tasks done, tickets progressed, key accomplishments&#10;- Meetings: Summary of each meeting attended, key decisions and action items&#10;- Outstanding items: Incomplete tasks, blockers, items carrying forward&#10;- Timesheet summary: Hours logged and on which projects&#10;- Notes: Any other relevant context from the day&#10;&#10;Keep the tone professional. Use markdown with clear headings and bullet points. Be comprehensive but concise."
               />
               <div className={styles.hint}>
-                Instructions sent to the AI when generating daily plan recaps, wrap-ups, and scans. Leave empty to use the default prompt shown above. Controls the tone, focus areas, and output format.
+                Instructions sent to the AI when generating daily plan recaps. Leave empty to use the default prompt shown above. Controls the tone, focus areas, and output format.
               </div>
             </FormField>
           </FormSection>

@@ -87,7 +87,7 @@ export default function DailyPlanList() {
     try {
       const today = new Date().toISOString().split('T')[0];
       const result = await dailyPlansApi.create({ date: today });
-      navigate(`/daily-plans/${result._id}?wrapUp=true`);
+      navigate(`/daily-plans/${result._id}`);
     } catch (err) {
       if (err.message.includes('already exists')) {
         const today = new Date().toISOString().split('T')[0];
