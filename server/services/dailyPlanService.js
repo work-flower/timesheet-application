@@ -2,7 +2,7 @@ import { dailyPlans, timesheets, todos, projects, clients } from '../db/index.js
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, renameSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -220,6 +220,32 @@ export async function addMeetingNote(planId, notebookId, calendarEventUid, event
   notes.push({ notebookId, calendarEventUid, eventSummary });
   await dailyPlans.update({ _id: planId }, { $set: { meetingNotes: notes, updatedAt: new Date().toISOString() } });
   return getById(planId);
+}
+
+export async function changeDate(oldDate, newDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) throw new Error('Date must be in YYYY-MM-DD format');
+
+  const existing = await dailyPlans.findOne({ _id: oldDate });
+  if (!existing) throw new Error('Daily plan not found');
+
+  const conflict = await dailyPlans.findOne({ _id: newDate });
+  if (conflict) throw new Error(`A daily plan already exists for ${newDate}`);
+
+  // Rename folder on disk
+  const oldDir = getPlanDir(oldDate);
+  const newDir = getPlanDir(newDate);
+  if (existsSync(oldDir)) {
+    mkdirSync(getDailyPlansDir(), { recursive: true });
+    renameSync(oldDir, newDir);
+  }
+
+  // Re-create record with new _id (NeDB doesn't allow _id changes)
+  const { _id, ...rest } = existing;
+  rest.updatedAt = new Date().toISOString();
+  await dailyPlans.remove({ _id: oldDate });
+  await dailyPlans.insert({ _id: newDate, ...rest });
+
+  return getById(newDate);
 }
 
 export function getDailyPlansDirectory() {

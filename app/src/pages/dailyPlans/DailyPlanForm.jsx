@@ -608,6 +608,31 @@ export default function DailyPlanForm() {
               disabled={aiLoading}
             />
           </Tooltip>
+          <input
+            type="date"
+            value={id || ''}
+            onChange={async (e) => {
+              const newDate = e.target.value;
+              if (newDate && newDate !== id) {
+                try {
+                  await dailyPlansApi.changeDate(id, newDate);
+                  navigate(`/daily-plans/${newDate}`);
+                } catch (err) {
+                  setError(err.message);
+                }
+              }
+            }}
+            style={{
+              marginLeft: 'auto',
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              fontSize: '13px',
+              fontFamily: 'inherit',
+              color: tokens.colorNeutralForeground3,
+              cursor: 'pointer',
+            }}
+          />
         </div>
 
         {/* Main 3-column grid */}

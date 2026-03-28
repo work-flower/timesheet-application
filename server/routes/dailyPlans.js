@@ -80,6 +80,16 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Change date (rename plan)
+router.put('/:id/change-date', async (req, res) => {
+  try {
+    const result = await dailyPlanService.changeDate(req.params.id, req.body.newDate);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // --- Sub-resource operations ---
 
 // Add a todo to a daily plan
