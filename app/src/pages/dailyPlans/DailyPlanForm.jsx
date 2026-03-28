@@ -53,7 +53,7 @@ const useStyles = makeStyles({
   // Two-column grid layout
   mainGrid: {
     display: 'grid',
-    gridTemplateColumns: '7fr 3fr',
+    gridTemplateColumns: '2fr 5fr 3fr',
     gap: '16px',
     marginBottom: '16px',
   },
@@ -610,66 +610,62 @@ export default function DailyPlanForm() {
           </Tooltip>
         </div>
 
-        {/* Main 2-column grid */}
+        {/* Main 3-column grid */}
         <div className={styles.mainGrid}>
-          {/* Row 1 left: To-Do + Tickets */}
-          <div className={styles.todoTicketsRow}>
-            <div className={styles.section} style={{ flex: '4 1 0', minWidth: 0 }}>
-              <Text className={styles.sectionTitle}>To-Do</Text>
-              <div className={styles.addTodoRow}>
-                <Input
-                  placeholder="Add a to-do..."
-                  value={newTodoText}
-                  onChange={(e) => setNewTodoText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddTodo(); }}
-                  className={styles.todoInput}
-                  size="small"
+          {/* Row 1: To-Do | Tickets | Timeline */}
+          <div className={styles.section}>
+            <Text className={styles.sectionTitle}>To-Do</Text>
+            <div className={styles.addTodoRow}>
+              <Input
+                placeholder="Add a to-do..."
+                value={newTodoText}
+                onChange={(e) => setNewTodoText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddTodo(); }}
+                className={styles.todoInput}
+                size="small"
+              />
+              <Button
+                appearance="subtle"
+                icon={<AddRegular />}
+                size="small"
+                onClick={handleAddTodo}
+                disabled={!newTodoText.trim()}
+              />
+            </div>
+            {todosData.map(todo => (
+              <div key={todo._id} className={styles.todoItem}>
+                <Checkbox
+                  checked={todo.status === 'done'}
+                  onChange={() => handleToggleTodo(todo)}
                 />
-                <Button
-                  appearance="subtle"
-                  icon={<AddRegular />}
-                  size="small"
-                  onClick={handleAddTodo}
-                  disabled={!newTodoText.trim()}
-                />
-              </div>
-              {todosData.map(todo => (
-                <div key={todo._id} className={styles.todoItem}>
-                  <Checkbox
-                    checked={todo.status === 'done'}
-                    onChange={() => handleToggleTodo(todo)}
+                <Tooltip content={todoTooltip(todo)} relationship="description" positioning="above">
+                  <Text className={`${styles.todoText} ${todo.status === 'done' ? styles.todoDone : ''}`}>
+                    {todo.text}
+                  </Text>
+                </Tooltip>
+                <Tooltip content="Remove from this plan" relationship="label">
+                  <Button
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    size="small"
+                    onClick={() => handleRemoveTodo(todo._id)}
+                    style={{ marginLeft: 'auto', minWidth: 'auto' }}
                   />
-                  <Tooltip content={todoTooltip(todo)} relationship="description" positioning="above">
-                    <Text className={`${styles.todoText} ${todo.status === 'done' ? styles.todoDone : ''}`}>
-                      {todo.text}
-                    </Text>
-                  </Tooltip>
-                  <Tooltip content="Remove from this plan" relationship="label">
-                    <Button
-                      appearance="subtle"
-                      icon={<DeleteRegular />}
-                      size="small"
-                      onClick={() => handleRemoveTodo(todo._id)}
-                      style={{ marginLeft: 'auto', minWidth: 'auto' }}
-                    />
-                  </Tooltip>
-                </div>
-              ))}
-            </div>
-            <div className={styles.section} style={{ flex: '6 1 0', minWidth: 0, height: '400px' }}>
-              <TicketsListCard commentsInitialDate={id} />
-            </div>
+                </Tooltip>
+              </div>
+            ))}
           </div>
-
-          {/* Row 1 right: Timeline */}
+          <div className={styles.section} style={{ height: '400px' }}>
+            <TicketsListCard commentsInitialDate={id} />
+          </div>
           <div className={styles.rightCell}>
             <div className={styles.timelineWrapper}>
               <DayTimelineCard date={id} onEventClick={handleEventClick} />
             </div>
           </div>
 
-          {/* Row 2 left: Miscellaneous */}
-          <div className={styles.miscSection}>
+          {/* Row 2: Miscellaneous (span 2) | Meeting Summary */}
+          <div className={styles.miscSection} style={{ gridColumn: 'span 2' }}>
             <Text className={styles.sectionTitle}>Miscellaneous</Text>
             {initialized && (
               <NotebookEditor
@@ -680,8 +676,6 @@ export default function DailyPlanForm() {
               />
             )}
           </div>
-
-          {/* Row 2 right: Meeting Summary */}
           <div className={styles.meetingSummary}>
             <Text className={styles.sectionTitle}>Meeting Summary</Text>
             <Text size={200} style={{ fontStyle: 'italic' }}>Will appear here after summarisation.</Text>
