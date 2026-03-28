@@ -21,6 +21,10 @@ import DayTimelineCard from '../../components/cards/DayTimelineCard.jsx';
 import TicketsListCard from '../../components/cards/TicketsListCard.jsx';
 
 const AUTO_SAVE_DELAY = 1500;
+function stripHtml(html) {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
 const useStyles = makeStyles({
   page: {},
@@ -117,6 +121,11 @@ const useStyles = makeStyles({
   },
   todoText: {
     fontSize: tokens.fontSizeBase200,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    minWidth: 0,
+    flex: 1,
   },
   todoInput: {
     flex: 1,
@@ -182,6 +191,8 @@ export default function DailyPlanForm() {
   const [popupTimesheetUrl, setPopupTimesheetUrl] = useState(null);
   const [popupNotebookUrl, setPopupNotebookUrl] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [commentTodoText, setCommentTodoText] = useState('');
+  const [commentTodoOpen, setCommentTodoOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanDays, setScanDays] = useState('3');
 
@@ -390,6 +401,28 @@ export default function DailyPlanForm() {
     }
   };
 
+  const [commentContext, setCommentContext] = useState(null);
+
+  const handleCommentClick = useCallback((comment) => {
+    setCommentContext(comment);
+    setCommentTodoText(`${comment.externalId}: ${stripHtml(comment.body)}`);
+    setCommentTodoOpen(true);
+  }, []);
+
+  const handleCreateTodoFromComment = async () => {
+    if (!commentTodoText.trim()) return;
+    try {
+      const todo = await todosApi.create({ text: commentTodoText.trim(), createdInPlanId: id });
+      await dailyPlansApi.addTodo(id, todo._id);
+      setTodosData(prev => [...prev, todo]);
+      setPlan(prev => ({ ...prev, todos: [...(prev.todos || []), todo._id] }));
+      setCommentTodoOpen(false);
+      setCommentTodoText('');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   // --- Timeline event click → meeting note notebook ---
 
   const handleEventClick = useCallback(async (evt) => {
@@ -500,11 +533,20 @@ export default function DailyPlanForm() {
   // --- Render helpers ---
 
   const todoTooltip = (todo) => (
-    <div className={styles.todoTooltipContent}>
-      <span>Created: {formatRelativeDate(todo.createdAt)}{todo.createdInPlanId ? ` in ${todo.createdInPlanId}` : ''}</span>
-      {todo.status === 'done' && (
-        <span>Completed: {formatRelativeDate(todo.completedAt)}{todo.completedInPlanId ? ` in ${todo.completedInPlanId}` : ''}</span>
-      )}
+    <div style={{ maxWidth: '320px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <Text style={{ fontSize: '13px', fontWeight: 600, lineHeight: '1.4', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        {todo.text}
+      </Text>
+      <div style={{ borderTop: `1px solid ${tokens.colorNeutralStroke2}`, paddingTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <Text style={{ fontSize: '11px', color: tokens.colorNeutralForeground3 }}>
+          Created: {formatRelativeDate(todo.createdAt)}{todo.createdInPlanId ? ` in ${todo.createdInPlanId}` : ''}
+        </Text>
+        {todo.status === 'done' && (
+          <Text style={{ fontSize: '11px', color: tokens.colorNeutralForeground3 }}>
+            Completed: {formatRelativeDate(todo.completedAt)}{todo.completedInPlanId ? ` in ${todo.completedInPlanId}` : ''}
+          </Text>
+        )}
+      </div>
     </div>
   );
 
@@ -735,7 +777,7 @@ export default function DailyPlanForm() {
             ))}
           </div>
           <div className={styles.section} style={{ height: '400px' }}>
-            <TicketsListCard commentsInitialDate={id} />
+            <TicketsListCard commentsInitialDate={id} onCommentClick={handleCommentClick} />
           </div>
           <div className={styles.rightCell}>
             <div className={styles.timelineWrapper}>
@@ -769,6 +811,58 @@ export default function DailyPlanForm() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}
       />
+
+      {/* Comment → Todo dialog */}
+      <Dialog open={commentTodoOpen} onOpenChange={(_, data) => { if (!data.open) setCommentTodoOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '520px' }}>
+          <DialogBody>
+            <DialogTitle>Create To-Do from Comment</DialogTitle>
+            <DialogContent>
+              {commentContext && (
+                <div style={{
+                  backgroundColor: tokens.colorNeutralBackground3,
+                  borderLeft: `3px solid ${commentContext.sourceColour || '#0078D4'}`,
+                  borderRadius: '4px',
+                  padding: '10px 12px',
+                  marginBottom: '12px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <Text style={{ fontWeight: 600, fontSize: '12px', fontFamily: 'monospace', color: tokens.colorBrandForeground1 }}>{commentContext.externalId}</Text>
+                    <Text style={{ fontSize: '12px', color: tokens.colorNeutralForeground2 }}>{commentContext.ticketTitle}</Text>
+                  </div>
+                  <Text style={{ fontSize: '11px', color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '4px' }}>
+                    {commentContext.author} · {commentContext.created ? new Date(commentContext.created).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+                  </Text>
+                  <Text style={{ fontSize: '12px', color: tokens.colorNeutralForeground1, lineHeight: '1.4' }}>
+                    {stripHtml(commentContext.body)}
+                  </Text>
+                </div>
+              )}
+              <Text style={{ fontSize: '12px', fontWeight: 600, display: 'block', marginBottom: '4px' }}>To-Do Text</Text>
+              <textarea
+                value={commentTodoText}
+                onChange={(e) => setCommentTodoText(e.target.value)}
+                rows={3}
+                style={{
+                  width: '100%',
+                  fontFamily: 'inherit',
+                  fontSize: '13px',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  border: `1px solid ${tokens.colorNeutralStroke1}`,
+                  resize: 'vertical',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+                <Button appearance="secondary" onClick={() => setCommentTodoOpen(false)}>Cancel</Button>
+                <Button appearance="primary" onClick={handleCreateTodoFromComment} disabled={!commentTodoText.trim()}>Create Todo</Button>
+              </div>
+            </DialogContent>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       {/* Scan previous days dialog */}
       <Dialog open={scanOpen} onOpenChange={(e, data) => { if (!data.open) setScanOpen(false); }}>

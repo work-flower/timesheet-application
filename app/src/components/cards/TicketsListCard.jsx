@@ -5,7 +5,7 @@ import {
 } from '@fluentui/react-components';
 import {
   ArrowSyncRegular, DismissRegular, NewsRegular,
-  ChevronLeftRegular, ChevronRightRegular,
+  ChevronLeftRegular, ChevronRightRegular, OpenRegular,
 } from '@fluentui/react-icons';
 import { ticketsApi } from '../../api/index.js';
 
@@ -212,7 +212,7 @@ function getCommentsForDate(items, dateStr) {
     if (!ticket.comments?.length) continue;
     for (const c of ticket.comments) {
       if (c.created && c.created.slice(0, 10) === dateStr) {
-        result.push({ ...c, ticketId: ticket._id, externalId: ticket.externalId, sourceColour: ticket.sourceColour });
+        result.push({ ...c, ticketId: ticket._id, externalId: ticket.externalId, ticketTitle: ticket.title, sourceColour: ticket.sourceColour });
       }
     }
   }
@@ -243,8 +243,9 @@ function shiftDateStr(dateStr, delta) {
  * - commentsInitialDate (string, YYYY-MM-DD) — starting date for the comments panel (default: today)
  * - maxItems (number) — max tickets shown in the list (default: 12)
  * - storageKey (string) — localStorage key for persisted state filter (default: built-in)
+ * - onCommentClick (function) — callback when a comment is clicked, receives the full comment object
  */
-export default function TicketsListCard({ commentsInitialDate, maxItems = 12, storageKey }) {
+export default function TicketsListCard({ commentsInitialDate, maxItems = 12, storageKey, onCommentClick }) {
   const styles = useStyles();
   const filterKey = storageKey || STORAGE_KEY;
 
@@ -324,6 +325,9 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
     <>
       <div className={styles.headerRow}>
         <Text className={styles.title}>Tickets</Text>
+        {onCommentClick && (
+          <OpenRegular style={{ fontSize: '14px', color: tokens.colorNeutralForeground3 }} />
+        )}
         <Tooltip content="Refresh tickets" relationship="label">
           <span
             className={mergeClasses(styles.refresh, refreshing && styles.refreshSpinning)}
@@ -431,7 +435,12 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
                       <div
                         key={`${c.ticketId}-${c.id}`}
                         className={styles.commentItem}
-                        style={{ borderLeftColor: colour, backgroundColor: pastel.bg }}
+                        style={{
+                          borderLeftColor: colour,
+                          backgroundColor: pastel.bg,
+                          cursor: onCommentClick ? 'pointer' : undefined,
+                        }}
+                        onClick={onCommentClick ? () => onCommentClick(c) : undefined}
                       >
                         <div className={styles.commentItemHeader}>
                           <Text className={styles.commentTicketId} style={{ color: pastel.text }}>{c.externalId}</Text>
