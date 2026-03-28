@@ -72,10 +72,22 @@ export async function getById(id) {
   const plan = await dailyPlans.findOne({ _id: id });
   if (!plan) return null;
 
-  // Enrich with full todo objects
-  const planTodos = plan.todos && plan.todos.length > 0
+  // Enrich with full todo objects + ref count
+  let planTodos = plan.todos && plan.todos.length > 0
     ? await todos.find({ _id: { $in: plan.todos } })
     : [];
+
+  if (planTodos.length > 0) {
+    const allPlans = await dailyPlans.find({});
+    const refCounts = {};
+    for (const t of planTodos) refCounts[t._id] = 0;
+    for (const p of allPlans) {
+      for (const tid of (p.todos || [])) {
+        if (refCounts[tid] !== undefined) refCounts[tid]++;
+      }
+    }
+    planTodos = planTodos.map(t => ({ ...t, planRefCount: refCounts[t._id] || 0 }));
+  }
 
   // Enrich with timesheets for this date (by date, not just linked IDs)
   const dateTimesheets = await timesheets.find({ date: id });
@@ -206,6 +218,31 @@ export async function removeTodo(planId, todoId) {
   const todosList = (plan.todos || []).filter(id => id !== todoId);
   await dailyPlans.update({ _id: planId }, { $set: { todos: todosList, updatedAt: new Date().toISOString() } });
   return getById(planId);
+}
+
+/**
+ * Count how many plans reference a given todo.
+ */
+export async function countPlansWithTodo(todoId) {
+  const plans = await dailyPlans.find({ todos: todoId });
+  return plans.length;
+}
+
+/**
+ * Delete a todo permanently — only if it's referenced by a single plan.
+ * Also removes the todo from that plan.
+ */
+export async function deleteTodo(planId, todoId) {
+  const refCount = await countPlansWithTodo(todoId);
+  if (refCount > 1) {
+    throw new Error('This to-do is linked to multiple daily plans. Remove it from this plan instead.');
+  }
+
+  // Remove from the plan
+  await removeTodo(planId, todoId);
+
+  // Delete the todo record
+  await todos.remove({ _id: todoId });
 }
 
 // --- Timesheet management ---

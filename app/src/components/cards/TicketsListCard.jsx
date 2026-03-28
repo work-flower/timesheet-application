@@ -323,7 +323,7 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
   const dateComments = useMemo(() => getCommentsForDate(items, commentsDate), [items, commentsDate]);
 
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className={styles.headerRow}>
         <Text className={styles.title}>Tickets</Text>
         <Tooltip content="Refresh tickets" relationship="label">
@@ -407,6 +407,11 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
                         {ticket.externalId}
                       </Text>
                       <Text className={styles.ticketTitle}>{ticket.title}</Text>
+                      {ticket.sourceName && (
+                        <Text style={{ fontSize: tokens.fontSizeBase100, fontWeight: tokens.fontWeightSemibold, color: ticket.sourceColour || tokens.colorNeutralForeground3, flexShrink: 0, marginLeft: 'auto' }}>
+                          {ticket.sourceName}
+                        </Text>
+                      )}
                     </div>
                   </div>
                 </Tooltip>
@@ -498,6 +503,6 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
           </DialogBody>
         </DialogSurface>
       </Dialog>
-    </>
+    </div>
   );
 }

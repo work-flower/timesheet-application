@@ -511,6 +511,8 @@ export const dailyPlansApi = {
   }),
   addTodo: (id, todoId) => request(`/daily-plans/${id}/todos`, { method: 'POST', body: JSON.stringify({ todoId }) }),
   removeTodo: (id, todoId) => request(`/daily-plans/${id}/todos/${todoId}`, { method: 'DELETE' }),
+  deleteTodoPermanent: (id, todoId) => request(`/daily-plans/${id}/todos/${todoId}/permanent`, { method: 'DELETE' }),
+  getTodoRefCount: (id, todoId) => request(`/daily-plans/${id}/todos/${todoId}/ref-count`),
   addTimesheet: (id, timesheetId) => request(`/daily-plans/${id}/timesheets`, { method: 'POST', body: JSON.stringify({ timesheetId }) }),
   addMeetingNote: (id, data) => request(`/daily-plans/${id}/meeting-notes`, { method: 'POST', body: JSON.stringify(data) }),
   changeDate: (id, newDate) => request(`/daily-plans/${id}/change-date`, { method: 'PUT', body: JSON.stringify({ newDate }) }),

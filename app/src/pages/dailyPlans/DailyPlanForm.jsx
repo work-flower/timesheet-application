@@ -8,7 +8,7 @@ import {
   Menu, MenuTrigger, MenuPopover, MenuList, MenuItem,
 } from '@fluentui/react-components';
 import {
-  AddRegular, DeleteRegular, CalendarClockRegular, DismissRegular,
+  AddRegular, DeleteRegular, CalendarClockRegular, DismissRegular, DismissCircleRegular,
   WeatherMoonRegular, WeatherSunnyRegular, ChevronDownRegular,
 } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
@@ -114,7 +114,7 @@ const useStyles = makeStyles({
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    padding: '2px 0',
+    padding: '2px 8px 2px 0',
     fontSize: tokens.fontSizeBase200,
   },
   todoDone: {
@@ -483,7 +483,7 @@ export default function DailyPlanForm() {
     try {
       const todo = await todosApi.create({ text: newTodoText.trim(), createdInPlanId: id });
       await dailyPlansApi.addTodo(id, todo._id);
-      setTodosData(prev => [...prev, todo]);
+      setTodosData(prev => [...prev, { ...todo, planRefCount: 1 }]);
       setPlan(prev => ({ ...prev, todos: [...(prev.todos || []), todo._id] }));
       setNewTodoText('');
     } catch (err) {
@@ -504,9 +504,24 @@ export default function DailyPlanForm() {
     }
   };
 
-  const handleRemoveTodo = async (todoId) => {
+  const handleRemoveTodo = async (todo) => {
     try {
-      await dailyPlansApi.removeTodo(id, todoId);
+      // If only linked to this plan, delete permanently
+      if (todo.planRefCount <= 1) {
+        await dailyPlansApi.deleteTodoPermanent(id, todo._id);
+      } else {
+        await dailyPlansApi.removeTodo(id, todo._id);
+      }
+      setTodosData(prev => prev.filter(t => t._id !== todo._id));
+      setPlan(prev => ({ ...prev, todos: (prev.todos || []).filter(tid => tid !== todo._id) }));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleDeleteTodo = async (todoId) => {
+    try {
+      await dailyPlansApi.deleteTodoPermanent(id, todoId);
       setTodosData(prev => prev.filter(t => t._id !== todoId));
       setPlan(prev => ({ ...prev, todos: (prev.todos || []).filter(tid => tid !== todoId) }));
     } catch (err) {
@@ -536,7 +551,7 @@ export default function DailyPlanForm() {
     try {
       const todo = await todosApi.create({ text: commentTodoText.trim(), createdInPlanId: id });
       await dailyPlansApi.addTodo(id, todo._id);
-      setTodosData(prev => [...prev, todo]);
+      setTodosData(prev => [...prev, { ...todo, planRefCount: 1 }]);
       setPlan(prev => ({ ...prev, todos: [...(prev.todos || []), todo._id] }));
       setCommentTodoOpen(false);
       setCommentTodoText('');
@@ -854,7 +869,7 @@ export default function DailyPlanForm() {
         {/* Main 3-column grid */}
         <div className={styles.mainGrid}>
           {/* Row 1: To-Do | Tickets | Timeline */}
-          <div className={styles.section}>
+          <div className={styles.section} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '400px' }}>
             <Text className={styles.sectionTitle}>To-Do</Text>
             <div className={styles.addTodoRow}>
               <Input
@@ -873,28 +888,30 @@ export default function DailyPlanForm() {
                 disabled={!newTodoText.trim()}
               />
             </div>
-            {todosData.map(todo => (
-              <div key={todo._id} className={styles.todoItem}>
-                <Checkbox
-                  checked={todo.status === 'done'}
-                  onChange={() => handleToggleTodo(todo)}
-                />
-                <Tooltip content={todoTooltip(todo)} relationship="description" positioning="above">
-                  <Text className={mergeClasses(styles.todoText, todo.status === 'done' && styles.todoDone)}>
-                    {todo.text}
-                  </Text>
-                </Tooltip>
-                <Tooltip content="Remove from this plan" relationship="label">
-                  <Button
-                    appearance="subtle"
-                    icon={<DeleteRegular />}
-                    size="small"
-                    onClick={() => handleRemoveTodo(todo._id)}
-                    style={{ marginLeft: 'auto', minWidth: 'auto' }}
+            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+              {todosData.map(todo => (
+                <div key={todo._id} className={styles.todoItem}>
+                  <Checkbox
+                    checked={todo.status === 'done'}
+                    onChange={() => handleToggleTodo(todo)}
                   />
-                </Tooltip>
-              </div>
-            ))}
+                  <Tooltip content={todoTooltip(todo)} relationship="description" positioning="above">
+                    <Text className={mergeClasses(styles.todoText, todo.status === 'done' && styles.todoDone)}>
+                      {todo.text}
+                    </Text>
+                  </Tooltip>
+                  <Tooltip content={todo.planRefCount > 1 ? 'Remove from this plan (linked to other plans)' : 'Delete'} relationship="label">
+                    <Button
+                      appearance="subtle"
+                      icon={todo.planRefCount > 1 ? <DismissCircleRegular /> : <DeleteRegular />}
+                      size="small"
+                      onClick={() => handleRemoveTodo(todo)}
+                      style={{ marginLeft: 'auto', minWidth: 'auto' }}
+                    />
+                  </Tooltip>
+                </div>
+              ))}
+            </div>
           </div>
           <div className={styles.section} style={{ height: '400px' }}>
             <TicketsListCard commentsInitialDate={id} onCommentClick={handleCommentClick} onTicketShortcutClick={handleTicketShortcutClick} />

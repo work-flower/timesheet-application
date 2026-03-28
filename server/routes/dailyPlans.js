@@ -102,13 +102,33 @@ router.post('/:id/todos', async (req, res) => {
   }
 });
 
-// Remove a todo from a daily plan
+// Remove a todo from a daily plan (unlink only)
 router.delete('/:id/todos/:todoId', async (req, res) => {
   try {
     const result = await dailyPlanService.removeTodo(req.params.id, req.params.todoId);
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Delete a todo permanently (only if not linked to other plans)
+router.delete('/:id/todos/:todoId/permanent', async (req, res) => {
+  try {
+    await dailyPlanService.deleteTodo(req.params.id, req.params.todoId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Check how many plans reference a todo
+router.get('/:id/todos/:todoId/ref-count', async (req, res) => {
+  try {
+    const count = await dailyPlanService.countPlansWithTodo(req.params.todoId);
+    res.json({ count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
