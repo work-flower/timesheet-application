@@ -256,6 +256,11 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
   const [commentsDate, setCommentsDate] = useState(() => commentsInitialDate || new Date().toISOString().split('T')[0]);
   const [popupTicketId, setPopupTicketId] = useState(null);
 
+  // Sync with external date prop
+  useEffect(() => {
+    if (commentsInitialDate) setCommentsDate(commentsInitialDate);
+  }, [commentsInitialDate]);
+
   const fetchTickets = useCallback(() =>
     ticketsApi.getAll({ $top: '50', $orderby: 'updated desc' })
       .then(setItems)

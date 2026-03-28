@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  makeStyles, tokens, Text, Input, Checkbox, Spinner, MessageBar, MessageBarBody,
+  makeStyles, mergeClasses, tokens, Text, Input, Checkbox, Spinner, MessageBar, MessageBarBody,
   Breadcrumb, BreadcrumbItem, BreadcrumbDivider, BreadcrumbButton,
   Badge, Button, Tooltip,
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent,
@@ -47,6 +47,11 @@ const useStyles = makeStyles({
   },
   timesheetTag: {
     cursor: 'pointer',
+    maxWidth: '130px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    display: 'inline-block',
     ':hover': { opacity: 0.8 },
   },
 
@@ -115,6 +120,7 @@ const useStyles = makeStyles({
   },
   todoInput: {
     flex: 1,
+    minWidth: 0,
   },
   addTodoRow: {
     display: 'flex',
@@ -219,6 +225,13 @@ export default function DailyPlanForm() {
   useEffect(() => {
     if (id) loadPlan();
   }, [id, loadPlan]);
+
+  // Auto-dismiss error after 10 seconds
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 10000);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   // Auto wrap-up on creation (triggered by ?wrapUp=true)
   useEffect(() => {
@@ -561,7 +574,7 @@ export default function DailyPlanForm() {
 
         {aiLoading && (
           <MessageBar intent="info" className={styles.message}>
-            <MessageBarBody><Spinner size="tiny" style={{ marginRight: '8px' }} />AI is processing...</MessageBarBody>
+            <MessageBarBody style={{ display: 'flex', alignItems: 'center' }}><Spinner size="tiny" style={{ marginRight: '8px' }} />AI is processing...</MessageBarBody>
           </MessageBar>
         )}
 
@@ -576,11 +589,15 @@ export default function DailyPlanForm() {
                 relationship="description"
                 positioning="above"
                 content={
-                  ts.notes
-                    ? <div data-color-mode="light">
-                        <MDEditor.Markdown source={ts.notes} style={{ maxWidth: '320px', backgroundColor: 'transparent', fontSize: '11px', lineHeight: '1.5', padding: 0 }} />
-                      </div>
-                    : 'No description'
+                  <div style={{ maxWidth: '320px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px' }}>{ts.hours}h — {ts.projectName || 'Unknown'}</div>
+                    {ts.notes
+                      ? <div data-color-mode="light">
+                          <MDEditor.Markdown source={ts.notes} style={{ backgroundColor: 'transparent', fontSize: '11px', lineHeight: '1.5', padding: 0 }} />
+                        </div>
+                      : <span style={{ fontSize: '11px', color: '#888' }}>No description</span>
+                    }
+                  </div>
                 }
               >
                 <Badge
@@ -608,6 +625,44 @@ export default function DailyPlanForm() {
               disabled={aiLoading}
             />
           </Tooltip>
+          <Tooltip content={dateObj ? dateObj.toLocaleDateString('en-GB', { weekday: 'long' }) : ''} relationship="label" positioning="above">
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '2px' }}>
+              {(() => {
+                const jsDay = dateObj ? dateObj.getDay() : 0;
+                const dayNum = jsDay === 0 ? 7 : jsDay; // Mon=1 .. Sun=7
+                return Array.from({ length: 7 }, (_, i) => {
+                  const isWeekend = i >= 5;
+                  const rectColor = isWeekend ? tokens.colorNeutralStroke2 : tokens.colorNeutralForeground1;
+                  const circleColor = tokens.colorNeutralForeground1;
+                  return (
+                    <span
+                      key={i}
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: 0,
+                        backgroundColor: rectColor,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          backgroundColor: i < dayNum ? circleColor : tokens.colorNeutralBackground1,
+                          border: `1.5px solid ${i < dayNum ? circleColor : tokens.colorNeutralBackground1}`,
+                          display: 'inline-block',
+                        }}
+                      />
+                    </span>
+                  );
+                });
+              })()}
+            </div>
+          </Tooltip>
           <input
             type="date"
             value={id || ''}
@@ -623,7 +678,6 @@ export default function DailyPlanForm() {
               }
             }}
             style={{
-              marginLeft: 'auto',
               border: 'none',
               outline: 'none',
               background: 'transparent',
@@ -664,7 +718,7 @@ export default function DailyPlanForm() {
                   onChange={() => handleToggleTodo(todo)}
                 />
                 <Tooltip content={todoTooltip(todo)} relationship="description" positioning="above">
-                  <Text className={`${styles.todoText} ${todo.status === 'done' ? styles.todoDone : ''}`}>
+                  <Text className={mergeClasses(styles.todoText, todo.status === 'done' && styles.todoDone)}>
                     {todo.text}
                   </Text>
                 </Tooltip>
