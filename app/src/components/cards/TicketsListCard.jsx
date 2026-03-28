@@ -243,9 +243,10 @@ function shiftDateStr(dateStr, delta) {
  * - commentsInitialDate (string, YYYY-MM-DD) — starting date for the comments panel (default: today)
  * - maxItems (number) — max tickets shown in the list (default: 12)
  * - storageKey (string) — localStorage key for persisted state filter (default: built-in)
- * - onCommentClick (function) — callback when a comment is clicked, receives the full comment object
+ * - onCommentClick (function) — callback when a comment shortcut is clicked, receives the full comment object
+ * - onTicketShortcutClick (function) — callback when a ticket shortcut icon is clicked, receives the full ticket object
  */
-export default function TicketsListCard({ commentsInitialDate, maxItems = 12, storageKey, onCommentClick }) {
+export default function TicketsListCard({ commentsInitialDate, maxItems = 12, storageKey, onCommentClick, onTicketShortcutClick }) {
   const styles = useStyles();
   const filterKey = storageKey || STORAGE_KEY;
 
@@ -325,9 +326,6 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
     <>
       <div className={styles.headerRow}>
         <Text className={styles.title}>Tickets</Text>
-        {onCommentClick && (
-          <OpenRegular style={{ fontSize: '14px', color: tokens.colorNeutralForeground3 }} />
-        )}
         <Tooltip content="Refresh tickets" relationship="label">
           <span
             className={mergeClasses(styles.refresh, refreshing && styles.refreshSpinning)}
@@ -396,9 +394,15 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
                         className={styles.dot}
                         style={{ backgroundColor: ticket.sourceColour || '#0078D4' }}
                       />
+                      {onTicketShortcutClick && (
+                        <OpenRegular
+                          style={{ fontSize: '12px', color: tokens.colorNeutralForeground3, cursor: 'pointer', flexShrink: 0 }}
+                          onClick={(e) => { e.stopPropagation(); setPopupTicketId(ticket._id); }}
+                        />
+                      )}
                       <Text
                         className={styles.key}
-                        onClick={() => setPopupTicketId(ticket._id)}
+                        onClick={onTicketShortcutClick ? () => onTicketShortcutClick(ticket) : () => setPopupTicketId(ticket._id)}
                       >
                         {ticket.externalId}
                       </Text>
@@ -438,13 +442,17 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
                         style={{
                           borderLeftColor: colour,
                           backgroundColor: pastel.bg,
-                          cursor: onCommentClick ? 'pointer' : undefined,
                         }}
-                        onClick={onCommentClick ? () => onCommentClick(c) : undefined}
                       >
                         <div className={styles.commentItemHeader}>
                           <Text className={styles.commentTicketId} style={{ color: pastel.text }}>{c.externalId}</Text>
                           <Text className={styles.commentAuthor}>{c.author}</Text>
+                          {onCommentClick && (
+                            <OpenRegular
+                              style={{ fontSize: '11px', color: tokens.colorNeutralForeground3, cursor: 'pointer', flexShrink: 0 }}
+                              onClick={() => onCommentClick(c)}
+                            />
+                          )}
                           <Text className={styles.commentTime}>
                             {c.created ? new Date(c.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                           </Text>

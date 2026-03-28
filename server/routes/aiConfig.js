@@ -3,6 +3,7 @@ import {
   getConfig,
   updateConfig,
   testConnection,
+  getDefaults,
 } from '../services/aiConfigService.js';
 
 const router = Router();
@@ -38,6 +39,11 @@ router.post('/test-connection', async (req, res) => {
     console.warn(err.message);
     res.status(400).json({ error: err.message });
   }
+});
+
+// GET /api/ai-config/defaults
+router.get('/defaults', (req, res) => {
+  res.json(getDefaults());
 });
 
 export default router;

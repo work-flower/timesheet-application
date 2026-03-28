@@ -181,15 +181,54 @@ router.get('/:id/recap/status', async (req, res) => {
   }
 });
 
-// Generate timesheet description from plan context
-router.post('/:id/timesheet-description', async (req, res) => {
+// --- Briefing operations ---
+
+// Check previous days for briefing (plan existence + recap status)
+router.get('/:id/briefing/check-days', async (req, res) => {
   try {
-    const result = await dailyPlanAiService.generateTimesheetDescription(req.params.id);
+    const days = Number(req.query.days) || 5;
+    const result = await dailyPlanAiService.checkBriefingDays(req.params.id, days);
     res.json(result);
   } catch (err) {
-    console.warn('Timesheet description failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate briefing from selected dates' recaps
+router.post('/:id/briefing', async (req, res) => {
+  try {
+    const { selectedDates } = req.body;
+    if (!selectedDates || !Array.isArray(selectedDates) || selectedDates.length === 0) {
+      return res.status(400).json({ error: 'selectedDates array is required' });
+    }
+    const result = await dailyPlanAiService.generateBriefing(req.params.id, selectedDates);
+    res.json(result);
+  } catch (err) {
+    console.warn('Briefing generation failed:', err.message);
     res.status(400).json({ error: err.message });
   }
 });
+
+// Get briefing content
+router.get('/:id/briefing', async (req, res) => {
+  try {
+    const content = dailyPlanService.getBriefingContent(req.params.id);
+    if (content === null) return res.status(404).json({ error: 'No briefing found' });
+    res.json({ content });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get briefing status
+router.get('/:id/briefing/status', async (req, res) => {
+  try {
+    const status = dailyPlanService.getBriefingStatus(req.params.id);
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 export default router;

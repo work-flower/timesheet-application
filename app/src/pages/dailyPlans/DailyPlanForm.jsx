@@ -5,10 +5,11 @@ import {
   Breadcrumb, BreadcrumbItem, BreadcrumbDivider, BreadcrumbButton,
   Badge, Button, Tooltip, Tab, TabList,
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent,
+  Menu, MenuTrigger, MenuPopover, MenuList, MenuItem,
 } from '@fluentui/react-components';
 import {
   AddRegular, DeleteRegular, CalendarClockRegular, DismissRegular,
-  SparkleRegular,
+  WeatherMoonRegular, WeatherSunnyRegular, ChevronDownRegular,
 } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -192,11 +193,20 @@ export default function DailyPlanForm() {
   const [popupTimesheetUrl, setPopupTimesheetUrl] = useState(null);
   const [popupNotebookUrl, setPopupNotebookUrl] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [recapLoading, setRecapLoading] = useState(false);
+  const [briefingLoading, setBriefingLoading] = useState(false);
   const [recapStatus, setRecapStatus] = useState(null);
   const [recapContent, setRecapContent] = useState(null);
   const [activeInsightTab, setActiveInsightTab] = useState(() => {
-    try { return localStorage.getItem('dailyPlan.insightTab') || 'recap'; } catch { return 'recap'; }
+    try { return localStorage.getItem('dailyPlan.insightTab') || 'briefing'; } catch { return 'briefing'; }
   });
+  const [briefingContent, setBriefingContent] = useState(null);
+  const [briefingStatus, setBriefingStatus] = useState(null);
+  const [briefingDialogOpen, setBriefingDialogOpen] = useState(false);
+  const [briefingDays, setBriefingDays] = useState([]);
+  const [briefingDaysLoading, setBriefingDaysLoading] = useState(false);
+  const [briefingDaysCount, setBriefingDaysCount] = useState(5);
+  const [aiBannerText, setAiBannerText] = useState(null);
   const [commentTodoText, setCommentTodoText] = useState('');
   const [commentTodoOpen, setCommentTodoOpen] = useState(false);
 
@@ -237,6 +247,18 @@ export default function DailyPlanForm() {
           setRecapContent(null);
         }
       } catch { /* ignore */ }
+
+      // Load briefing status + content
+      try {
+        const bStatus = await dailyPlansApi.getBriefingStatus(id);
+        setBriefingStatus(bStatus);
+        if (bStatus.status === 'completed') {
+          const bc = await dailyPlansApi.getBriefing(id);
+          setBriefingContent(bc);
+        } else {
+          setBriefingContent(null);
+        }
+      } catch { /* ignore */ }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -258,7 +280,7 @@ export default function DailyPlanForm() {
   // --- AI handlers ---
 
   const handleRecap = async () => {
-    setAiLoading(true);
+    setRecapLoading(true);
     try {
       const result = await dailyPlansApi.generateRecap(id);
       setRecapContent(result.content);
@@ -270,25 +292,127 @@ export default function DailyPlanForm() {
         setRecapStatus(status);
       } catch { /* ignore */ }
     } finally {
-      setAiLoading(false);
+      setRecapLoading(false);
     }
   };
 
-  const handleTimesheetWithAi = async () => {
-    setAiLoading(true);
+  // --- Briefing handlers ---
+
+  const openBriefingDialog = async (days) => {
+    setBriefingDaysCount(days);
+    setBriefingDaysLoading(true);
+    setBriefingDialogOpen(true);
     try {
-      const { description } = await dailyPlansApi.generateTimesheetDescription(id);
-      const params = new URLSearchParams();
-      params.set('date', id);
-      if (description) params.set('notes', description);
-      params.set('embedded', 'true');
-      setPopupTimesheetUrl(`/timesheets/new?${params.toString()}`);
+      const result = await dailyPlansApi.checkBriefingDays(id, days);
+      setBriefingDays(result.map(d => ({ ...d, selected: d.defaultSelected })));
     } catch (err) {
-      // Fall back to plain new timesheet without AI description
-      setPopupTimesheetUrl(`/timesheets/new?date=${id}&embedded=true`);
+      setError(err.message);
+      setBriefingDialogOpen(false);
     } finally {
-      setAiLoading(false);
+      setBriefingDaysLoading(false);
     }
+  };
+
+  const handleBriefingDefault = async () => {
+    // Check previous day — if recap is fresh, run immediately; otherwise show dialog
+    setBriefingLoading(true);
+    try {
+      const days = await dailyPlansApi.checkBriefingDays(id, 1);
+      const prev = days[0];
+      if (prev && prev.hasPlan && prev.recapStatus === 'completed' && !prev.recapIsStale) {
+        // Recap is fresh — run briefing directly
+        setActiveInsightTab('briefing');
+        try { localStorage.setItem('dailyPlan.insightTab', 'briefing'); } catch {}
+        setAiBannerText('Generating briefing from 1 day...');
+        const result = await dailyPlansApi.generateBriefing(id, [prev.date]);
+        setBriefingContent(result.content);
+        setBriefingStatus({ status: 'completed', generatedAt: new Date().toISOString(), error: null });
+        await loadPlan();
+      } else {
+        // Needs attention — show dialog
+        setBriefingLoading(false);
+        openBriefingDialog(1);
+        return;
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBriefingLoading(false);
+      setAiBannerText(null);
+    }
+  };
+
+  const handleBriefingGenerate = async () => {
+    const selected = briefingDays.filter(d => d.selected);
+    if (selected.length === 0) return;
+    setBriefingDialogOpen(false);
+    setBriefingLoading(true);
+    setActiveInsightTab('briefing');
+    try { localStorage.setItem('dailyPlan.insightTab', 'briefing'); } catch {}
+
+    try {
+      // Step 1: Check for stale/missing recaps and generate them
+      const needsRecap = selected.filter(d => d.hasPlan && (d.recapStatus !== 'completed' || d.recapIsStale));
+      if (needsRecap.length > 0) {
+        for (const day of needsRecap) {
+          setAiBannerText(`Generating recap for ${day.dayName} ${day.date}...`);
+          try {
+            await dailyPlansApi.generateRecap(day.date);
+          } catch (err) {
+            setError(`Recap failed for ${day.date}: ${err.message}. Exclude this day and retry.`);
+            setBriefingLoading(false);
+            setAiBannerText(null);
+            return;
+          }
+        }
+      }
+
+      // Step 2: Generate briefing
+      const selectedDates = selected.filter(d => d.hasPlan).map(d => d.date);
+      if (selectedDates.length === 0) {
+        setError('No days with daily plans selected.');
+        setBriefingLoading(false);
+        setAiBannerText(null);
+        return;
+      }
+      setAiBannerText(`Generating briefing from ${selectedDates.length} day(s)...`);
+      const result = await dailyPlansApi.generateBriefing(id, selectedDates);
+      setBriefingContent(result.content);
+      setBriefingStatus({ status: 'completed', generatedAt: new Date().toISOString(), error: null });
+      // Reload plan to pick up carried-forward todos
+      await loadPlan();
+    } catch (err) {
+      setError(err.message);
+      try {
+        const status = await dailyPlansApi.getBriefingStatus(id);
+        setBriefingStatus(status);
+      } catch { /* ignore */ }
+    } finally {
+      setBriefingLoading(false);
+      setAiBannerText(null);
+    }
+  };
+
+  const handleTimesheetWithAi = () => {
+    const bullets = [];
+
+    // Meeting titles
+    const meetings = plan?.meetingNotes || [];
+    for (const mn of meetings) {
+      if (mn.eventSummary) bullets.push(`- ${mn.eventSummary}`);
+    }
+
+    // Completed todos
+    const doneTodos = todosData.filter(t => t.status === 'done');
+    for (const t of doneTodos) {
+      bullets.push(`- ${t.text}`);
+    }
+
+    const params = new URLSearchParams();
+    params.set('date', id);
+    if (bullets.length > 0) params.set('notes', bullets.join('\n'));
+    params.set('embedded', 'true');
+    setPopupTimesheetUrl(`/timesheets/new?${params.toString()}`);
   };
 
   // --- Auto-save content with debounce (Milkdown onChange gives markdown string) ---
@@ -391,10 +515,19 @@ export default function DailyPlanForm() {
   };
 
   const [commentContext, setCommentContext] = useState(null);
+  const [todoDialogSource, setTodoDialogSource] = useState(null); // 'comment' or 'ticket'
 
   const handleCommentClick = useCallback((comment) => {
     setCommentContext(comment);
+    setTodoDialogSource('comment');
     setCommentTodoText(`${comment.externalId}: ${stripHtml(comment.body)}`);
+    setCommentTodoOpen(true);
+  }, []);
+
+  const handleTicketShortcutClick = useCallback((ticket) => {
+    setCommentContext({ externalId: ticket.externalId, ticketTitle: ticket.title, sourceColour: ticket.sourceColour });
+    setTodoDialogSource('ticket');
+    setCommentTodoText(`${ticket.externalId}: ${ticket.title}`);
     setCommentTodoOpen(true);
   }, []);
 
@@ -563,6 +696,33 @@ export default function DailyPlanForm() {
         onDelete={() => setDeleteOpen(true)}
         locked={false}
       >
+        <div style={{ display: 'inline-flex', alignItems: 'center' }}>
+          <Button
+            size="small"
+            icon={<WeatherSunnyRegular />}
+            onClick={handleBriefingDefault}
+            disabled={briefingLoading}
+          >
+            Briefing
+          </Button>
+          <Menu>
+            <MenuTrigger>
+              <Button
+                size="small"
+                icon={<ChevronDownRegular />}
+                disabled={briefingLoading}
+                style={{ minWidth: 'auto', paddingLeft: '2px', paddingRight: '2px', borderLeft: 'none', borderTopLeftRadius: 0, borderBottomLeftRadius: 0, marginLeft: '-1px' }}
+              />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem onClick={() => openBriefingDialog(3)}>Last 3 days</MenuItem>
+                <MenuItem onClick={() => openBriefingDialog(5)}>Last 5 days</MenuItem>
+                <MenuItem onClick={() => openBriefingDialog(7)}>Last 7 days</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </div>
         <Tooltip
           content={
             !recapStatus || recapStatus.status === 'idle' ? 'No recap generated yet — click to generate'
@@ -574,9 +734,9 @@ export default function DailyPlanForm() {
         >
           <Button
             size="small"
-            icon={<SparkleRegular />}
+            icon={<WeatherMoonRegular />}
             onClick={handleRecap}
-            disabled={aiLoading}
+            disabled={recapLoading}
             style={{ position: 'relative' }}
           >
             Recap
@@ -609,9 +769,9 @@ export default function DailyPlanForm() {
           </MessageBar>
         )}
 
-        {aiLoading && (
+        {(aiLoading || recapLoading || briefingLoading) && (
           <MessageBar intent="info" className={styles.message}>
-            <MessageBarBody style={{ display: 'flex', alignItems: 'center' }}><Spinner size="tiny" style={{ marginRight: '8px' }} />AI is processing...</MessageBarBody>
+            <MessageBarBody style={{ display: 'flex', alignItems: 'center' }}><Spinner size="tiny" style={{ marginRight: '8px' }} />{aiBannerText || 'AI is processing...'}</MessageBarBody>
           </MessageBar>
         )}
 
@@ -737,7 +897,7 @@ export default function DailyPlanForm() {
             ))}
           </div>
           <div className={styles.section} style={{ height: '400px' }}>
-            <TicketsListCard commentsInitialDate={id} onCommentClick={handleCommentClick} />
+            <TicketsListCard commentsInitialDate={id} onCommentClick={handleCommentClick} onTicketShortcutClick={handleTicketShortcutClick} />
           </div>
           <div className={styles.rightCell}>
             <div className={styles.timelineWrapper}>
@@ -748,8 +908,8 @@ export default function DailyPlanForm() {
           {/* Row 2: Recap/Briefing tabs (span 2) | Miscellaneous */}
           <div className={styles.meetingSummary} style={{ gridColumn: 'span 2', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
             <TabList selectedValue={activeInsightTab} onTabSelect={(_, data) => { setActiveInsightTab(data.value); try { localStorage.setItem('dailyPlan.insightTab', data.value); } catch {} }} size="small">
-              <Tab value="recap">Recap</Tab>
               <Tab value="briefing">Briefing</Tab>
+              <Tab value="recap">Recap</Tab>
             </TabList>
             <div style={{ flex: 1, paddingTop: '8px', overflowY: 'auto' }}>
               {activeInsightTab === 'recap' && (
@@ -766,9 +926,17 @@ export default function DailyPlanForm() {
                 )
               )}
               {activeInsightTab === 'briefing' && (
-                <Text size={200} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground3 }}>
-                  Briefing feature coming soon.
-                </Text>
+                briefingContent ? (
+                  <div data-color-mode="light">
+                    <MDEditor.Markdown source={briefingContent} style={{ backgroundColor: 'transparent', fontSize: '13px', lineHeight: '1.5' }} />
+                  </div>
+                ) : (
+                  <Text size={200} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground3 }}>
+                    {briefingStatus?.status === 'failed'
+                      ? 'Briefing generation failed. Click Briefing to retry.'
+                      : 'Click Briefing to generate a morning briefing from previous days\' recaps.'}
+                  </Text>
+                )
               )}
             </div>
           </div>
@@ -794,11 +962,11 @@ export default function DailyPlanForm() {
         onCancel={() => setDeleteOpen(false)}
       />
 
-      {/* Comment → Todo dialog */}
+      {/* Comment/Ticket → Todo dialog */}
       <Dialog open={commentTodoOpen} onOpenChange={(_, data) => { if (!data.open) setCommentTodoOpen(false); }}>
         <DialogSurface style={{ maxWidth: '520px' }}>
           <DialogBody>
-            <DialogTitle>Create To-Do from Comment</DialogTitle>
+            <DialogTitle>{todoDialogSource === 'ticket' ? 'Create To-Do from Ticket' : 'Create To-Do from Comment'}</DialogTitle>
             <DialogContent>
               {commentContext && (
                 <div style={{
@@ -812,12 +980,16 @@ export default function DailyPlanForm() {
                     <Text style={{ fontWeight: 600, fontSize: '12px', fontFamily: 'monospace', color: tokens.colorBrandForeground1 }}>{commentContext.externalId}</Text>
                     <Text style={{ fontSize: '12px', color: tokens.colorNeutralForeground2 }}>{commentContext.ticketTitle}</Text>
                   </div>
-                  <Text style={{ fontSize: '11px', color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '4px' }}>
-                    {commentContext.author} · {commentContext.created ? new Date(commentContext.created).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
-                  </Text>
-                  <Text style={{ fontSize: '12px', color: tokens.colorNeutralForeground1, lineHeight: '1.4' }}>
-                    {stripHtml(commentContext.body)}
-                  </Text>
+                  {todoDialogSource === 'comment' && commentContext.author && (
+                    <Text style={{ fontSize: '11px', color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '4px' }}>
+                      {commentContext.author} · {commentContext.created ? new Date(commentContext.created).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+                    </Text>
+                  )}
+                  {todoDialogSource === 'comment' && commentContext.body && (
+                    <Text style={{ fontSize: '12px', color: tokens.colorNeutralForeground1, lineHeight: '1.4' }}>
+                      {stripHtml(commentContext.body)}
+                    </Text>
+                  )}
                 </div>
               )}
               <Text style={{ fontSize: '12px', fontWeight: 600, display: 'block', marginBottom: '4px' }}>To-Do Text</Text>
@@ -846,6 +1018,79 @@ export default function DailyPlanForm() {
         </DialogSurface>
       </Dialog>
 
+
+      {/* Briefing day picker dialog */}
+      <Dialog open={briefingDialogOpen} onOpenChange={(_, data) => { if (!data.open) setBriefingDialogOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '480px' }}>
+          <DialogBody>
+            <DialogTitle>Briefing — Select Days</DialogTitle>
+            <DialogContent>
+              {briefingDaysLoading ? (
+                <div style={{ padding: '24px', textAlign: 'center' }}><Spinner size="small" label="Checking previous days..." /></div>
+              ) : (
+                <>
+                  <Text size={200} style={{ display: 'block', marginBottom: '8px', color: tokens.colorNeutralForeground3 }}>
+                    Select which days to include. Days with stale or missing recaps will be generated automatically before briefing.
+                  </Text>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '12px' }}>
+                    {briefingDays.map((day, idx) => (
+                      <div
+                        key={day.date}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '6px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: idx % 2 === 0 ? tokens.colorNeutralBackground1 : tokens.colorNeutralBackground3,
+                        }}
+                      >
+                        <Checkbox
+                          checked={day.selected}
+                          onChange={() => setBriefingDays(prev => prev.map((d, i) => i === idx ? { ...d, selected: !d.selected } : d))}
+                          disabled={!day.hasPlan}
+                        />
+                        <Text size={200} style={{ flex: 1, color: day.hasPlan ? tokens.colorNeutralForeground1 : tokens.colorNeutralForeground3 }}>
+                          <span style={{ fontWeight: 600 }}>{day.dayName}</span>{' '}{day.date}
+                        </Text>
+                        {!day.hasPlan && (
+                          <Badge appearance="tint" color="subtle" size="small">No plan</Badge>
+                        )}
+                        {day.hasPlan && day.recapStatus === 'completed' && !day.recapIsStale && (
+                          <Badge appearance="tint" color="success" size="small">Recap ok</Badge>
+                        )}
+                        {day.hasPlan && day.recapStatus === 'completed' && day.recapIsStale && (
+                          <Badge appearance="tint" color="warning" size="small">Recap stale</Badge>
+                        )}
+                        {day.hasPlan && day.recapStatus !== 'completed' && (
+                          <Badge appearance="tint" color="danger" size="small">No recap</Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {briefingDays.some(d => d.selected && d.hasPlan && (d.recapStatus !== 'completed' || d.recapIsStale)) && (
+                    <MessageBar intent="warning" style={{ marginBottom: '12px' }}>
+                      <MessageBarBody>
+                        Some selected days have stale or missing recaps. These will be generated before the briefing.
+                      </MessageBarBody>
+                    </MessageBar>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                    <Button appearance="secondary" onClick={() => setBriefingDialogOpen(false)}>Cancel</Button>
+                    <Button
+                      appearance="primary"
+                      onClick={handleBriefingGenerate}
+                      disabled={!briefingDays.some(d => d.selected && d.hasPlan)}
+                    >
+                      Generate Briefing
+                    </Button>
+                  </div>
+                </>
+              )}
+            </DialogContent>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       {/* Entity search dialog for slash menu */}
       <EntitySearchDialog

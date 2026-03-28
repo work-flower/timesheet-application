@@ -13,6 +13,9 @@ function getContentPath(date) { return join(getPlanDir(date), 'content.md'); }
 function getRecapPath(date) { return join(getPlanDir(date), 'recap.md'); }
 function getRecapBackupPath(date) { return join(getPlanDir(date), 'recap.md~1'); }
 function getRecapErrorPath(date) { return join(getPlanDir(date), 'recap.err'); }
+function getBriefingPath(date) { return join(getPlanDir(date), 'briefing.md'); }
+function getBriefingBackupPath(date) { return join(getPlanDir(date), 'briefing.md~1'); }
+function getBriefingErrorPath(date) { return join(getPlanDir(date), 'briefing.err'); }
 
 const DEFAULT_CONTENT = `## Miscellaneous
 
@@ -301,5 +304,41 @@ export function getRecapFilePaths(date) {
     recapPath: getRecapPath(date),
     backupPath: getRecapBackupPath(date),
     errorPath: getRecapErrorPath(date),
+  };
+}
+
+// --- Briefing operations ---
+
+export function getBriefingStatus(date) {
+  const hasBriefing = existsSync(getBriefingPath(date));
+  const hasBackup = existsSync(getBriefingBackupPath(date));
+  const hasError = existsSync(getBriefingErrorPath(date));
+
+  if (!hasBriefing && !hasBackup && !hasError) {
+    return { status: 'idle', generatedAt: null, error: null };
+  }
+  if (hasBackup && !hasError) {
+    return { status: 'generating', generatedAt: null, error: null };
+  }
+  if (hasError) {
+    const error = readFileSync(getBriefingErrorPath(date), 'utf8');
+    const generatedAt = hasBriefing ? new Date(statSync(getBriefingPath(date)).mtimeMs).toISOString() : null;
+    return { status: 'failed', generatedAt, error };
+  }
+  const mtime = statSync(getBriefingPath(date)).mtimeMs;
+  return { status: 'completed', generatedAt: new Date(mtime).toISOString(), error: null };
+}
+
+export function getBriefingContent(date) {
+  const path = getBriefingPath(date);
+  if (!existsSync(path)) return null;
+  return readFileSync(path, 'utf8');
+}
+
+export function getBriefingFilePaths(date) {
+  return {
+    briefingPath: getBriefingPath(date),
+    backupPath: getBriefingBackupPath(date),
+    errorPath: getBriefingErrorPath(date),
   };
 }

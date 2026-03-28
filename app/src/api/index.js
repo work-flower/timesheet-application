@@ -528,7 +528,21 @@ export const dailyPlansApi = {
     return data.content;
   },
   getRecapStatus: (id) => request(`/daily-plans/${id}/recap/status`),
-  generateTimesheetDescription: (id) => request(`/daily-plans/${id}/timesheet-description`, { method: 'POST', body: '{}' }),
+  checkBriefingDays: (id, days = 5) => request(`/daily-plans/${id}/briefing/check-days?days=${days}`),
+  generateBriefing: (id, selectedDates) => request(`/daily-plans/${id}/briefing`, { method: 'POST', body: JSON.stringify({ selectedDates }) }),
+  getBriefing: async (id) => {
+    const res = await fetch(`${BASE}/daily-plans/${id}/briefing`, {
+      headers: { 'X-Trace-Id': getTraceId() },
+    });
+    if (!res.ok) {
+      if (res.status === 404) return null;
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.content;
+  },
+  getBriefingStatus: (id) => request(`/daily-plans/${id}/briefing/status`),
 };
 
 // Todos

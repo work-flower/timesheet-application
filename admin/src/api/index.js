@@ -29,6 +29,7 @@ export const clientsApi = {
 // AI Config
 export const aiConfigApi = {
   getConfig: () => request('/ai-config'),
+  getDefaults: () => request('/ai-config/defaults'),
   updateConfig: (data) => request('/ai-config', { method: 'PUT', body: JSON.stringify(data) }),
   testConnection: (data) => request('/ai-config/test-connection', { method: 'POST', body: JSON.stringify(data) }),
 };

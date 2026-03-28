@@ -14,14 +14,30 @@ Return ONLY the JSON object, no other text. If a field cannot be determined, use
 
 const DEFAULT_DAILY_PLAN_SYSTEM_PROMPT = `You are a daily work assistant for a UK technology contractor. Generate an end-of-day recap that captures the full state of the day. This document will be read by both humans and AI systems for context.
 
-Include these sections:
-- **Completed work**: Tasks done, tickets progressed, key accomplishments
-- **Meetings**: Summary of each meeting attended, key decisions and action items
-- **Outstanding items**: Incomplete tasks, blockers, items carrying forward
-- **Timesheet summary**: Hours logged and on which projects
-- **Notes**: Any other relevant context from the day
+IMPORTANT: Start every recap with the Timesheet Review section. Timesheets are the primary deliverable — missing or inconsistent entries are a red flag.
+
+Include these sections in order:
+1. **Timesheet review**: Hours logged per project. Flag if no timesheet entries exist. Cross-check against meetings, todos, and notes — flag any work that appears to have been done but is not reflected in the timesheet (e.g. meetings attended but no hours logged, completed tasks with no corresponding entry).
+2. **Completed work**: Tasks done, tickets progressed, key accomplishments
+3. **Meetings**: Summary of each meeting attended, key decisions and action items
+4. **Outstanding items**: Incomplete tasks, blockers, items carrying forward
+5. **Notes**: Any other relevant context from the day
 
 Keep the tone professional. Use markdown with clear headings and bullet points. Be comprehensive but concise — capture everything needed to understand what happened today.`;
+
+const DEFAULT_BRIEFING_SYSTEM_PROMPT = `You are a daily briefing assistant for a UK technology contractor. You will receive end-of-day recaps and timesheet data from multiple previous working days. Synthesise them into a concise morning briefing that helps the contractor start their day with full context.
+
+IMPORTANT: Start every briefing with the Timesheet Overview. Timesheets are the primary deliverable — missing or inconsistent entries across the briefing period are a red flag that must be surfaced immediately.
+
+Include these sections in order:
+1. **Timesheet overview**: Total hours per day and per project across the period. Flag any days with missing or suspiciously low hours. Highlight any timesheet gaps or inconsistencies found in the recaps.
+2. **Continuing work**: Tasks and threads that carry forward from recent days
+3. **Open items & blockers**: Anything unresolved that needs attention today
+4. **Key decisions made**: Important decisions from recent days for context
+5. **Upcoming commitments**: Meetings, deadlines, or deliverables mentioned in recaps
+
+Keep the tone professional and actionable. Use markdown with clear headings and bullet points. Focus on what matters today — omit historical detail that is no longer relevant.`;
+
 
 function maskSecret(value) {
   if (!value || value.length <= 4) return value ? '****' : '';
@@ -83,6 +99,7 @@ export async function getRawConfig() {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     expenseSystemPrompt: DEFAULT_EXPENSE_SYSTEM_PROMPT,
     dailyPlanSystemPrompt: DEFAULT_DAILY_PLAN_SYSTEM_PROMPT,
+    briefingSystemPrompt: DEFAULT_BRIEFING_SYSTEM_PROMPT,
     maxTokens: null,
     timeoutMinutes: null,
     createdAt: now,
@@ -115,4 +132,14 @@ export async function testConnection(data) {
   return { success: true };
 }
 
-export { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_EXPENSE_SYSTEM_PROMPT };
+export function getDefaults() {
+  return {
+    model: DEFAULT_MODEL,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    expenseSystemPrompt: DEFAULT_EXPENSE_SYSTEM_PROMPT,
+    dailyPlanSystemPrompt: DEFAULT_DAILY_PLAN_SYSTEM_PROMPT,
+    briefingSystemPrompt: DEFAULT_BRIEFING_SYSTEM_PROMPT,
+  };
+}
+
+export { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_EXPENSE_SYSTEM_PROMPT, DEFAULT_BRIEFING_SYSTEM_PROMPT };

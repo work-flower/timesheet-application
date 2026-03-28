@@ -9,6 +9,8 @@ import {
   Spinner,
   MessageBar,
   MessageBarBody,
+  Tab,
+  TabList,
 } from '@fluentui/react-components';
 import { PlugConnectedRegular } from '@fluentui/react-icons';
 import { aiConfigApi } from '../../api/index.js';
@@ -58,6 +60,7 @@ function mapConfig(data) {
     systemPrompt: data.systemPrompt || '',
     expenseSystemPrompt: data.expenseSystemPrompt || '',
     dailyPlanSystemPrompt: data.dailyPlanSystemPrompt || '',
+    briefingSystemPrompt: data.briefingSystemPrompt || '',
   };
 }
 
@@ -71,10 +74,18 @@ export default function AiConfigPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState(null);
+  const [promptTab, setPromptTab] = useState('transactionImport');
+  const [defaults, setDefaults] = useState({});
 
   useEffect(() => {
-    aiConfigApi.getConfig()
-      .then((data) => resetBase(mapConfig(data || {})))
+    Promise.all([
+      aiConfigApi.getConfig(),
+      aiConfigApi.getDefaults(),
+    ])
+      .then(([data, defs]) => {
+        setDefaults(defs || {});
+        resetBase(mapConfig(data || {}));
+      })
       .catch(() => {})
       .finally(() => setInitialized(true));
   }, [resetBase]);
@@ -188,48 +199,72 @@ export default function AiConfigPage() {
             </FormField>
           </FormSection>
 
-          <FormSection title="Transaction Import System Prompt">
+          <FormSection title="System Prompts">
             <FormField fullWidth>
-              <MarkdownEditor
-                name="systemPrompt"
-                value={form.systemPrompt ?? ''}
-                onChange={(val) => setForm((prev) => ({ ...prev, systemPrompt: val }))}
-                height={300}
-                placeholder="General parsing instructions shared across all imports..."
-              />
-              <div className={styles.hint}>
-                General parsing instructions shared across all imports. Each import job can also have a job-specific user prompt.
-              </div>
-            </FormField>
-          </FormSection>
+              <TabList selectedValue={promptTab} onTabSelect={(_, data) => setPromptTab(data.value)} size="small" style={{ marginBottom: '12px' }}>
+                <Tab value="transactionImport">Transaction Import</Tab>
+                <Tab value="expenseReceipt">Expense Receipt</Tab>
+                <Tab value="dailyPlanRecap">Daily Plan Recap</Tab>
+                <Tab value="briefing">Briefing</Tab>
+              </TabList>
 
-          <FormSection title="Expense Receipt System Prompt">
-            <FormField fullWidth>
-              <MarkdownEditor
-                name="expenseSystemPrompt"
-                value={form.expenseSystemPrompt ?? ''}
-                onChange={(val) => setForm((prev) => ({ ...prev, expenseSystemPrompt: val }))}
-                height={300}
-                placeholder="Instructions for parsing expense receipts..."
-              />
-              <div className={styles.hint}>
-                Instructions sent to the AI when scanning expense receipts. The AI should return a JSON object with date, amount, vatAmount, expenseType, and description.
-              </div>
-            </FormField>
-          </FormSection>
+              {promptTab === 'transactionImport' && (
+                <>
+                  <MarkdownEditor
+                    name="systemPrompt"
+                    value={form.systemPrompt || defaults.systemPrompt || ''}
+                    onChange={(val) => setForm((prev) => ({ ...prev, systemPrompt: val }))}
+                    height={300}
+                  />
+                  <div className={styles.hint}>
+                    General parsing instructions shared across all imports. Each import job can also have a job-specific user prompt.
+                  </div>
+                </>
+              )}
 
-          <FormSection title="Daily Plan System Prompt">
-            <FormField fullWidth>
-              <MarkdownEditor
-                name="dailyPlanSystemPrompt"
-                value={form.dailyPlanSystemPrompt ?? ''}
-                onChange={(val) => setForm((prev) => ({ ...prev, dailyPlanSystemPrompt: val }))}
-                height={300}
-                placeholder="You are a daily work assistant for a UK technology contractor. Generate an end-of-day recap that captures the full state of the day. This document will be read by both humans and AI systems for context.&#10;&#10;Include these sections:&#10;- Completed work: Tasks done, tickets progressed, key accomplishments&#10;- Meetings: Summary of each meeting attended, key decisions and action items&#10;- Outstanding items: Incomplete tasks, blockers, items carrying forward&#10;- Timesheet summary: Hours logged and on which projects&#10;- Notes: Any other relevant context from the day&#10;&#10;Keep the tone professional. Use markdown with clear headings and bullet points. Be comprehensive but concise."
-              />
-              <div className={styles.hint}>
-                Instructions sent to the AI when generating daily plan recaps. Leave empty to use the default prompt shown above. Controls the tone, focus areas, and output format.
-              </div>
+              {promptTab === 'expenseReceipt' && (
+                <>
+                  <MarkdownEditor
+                    name="expenseSystemPrompt"
+                    value={form.expenseSystemPrompt || defaults.expenseSystemPrompt || ''}
+                    onChange={(val) => setForm((prev) => ({ ...prev, expenseSystemPrompt: val }))}
+                    height={300}
+                  />
+                  <div className={styles.hint}>
+                    Instructions sent to the AI when scanning expense receipts. The AI should return a JSON object with date, amount, vatAmount, expenseType, and description.
+                  </div>
+                </>
+              )}
+
+              {promptTab === 'dailyPlanRecap' && (
+                <>
+                  <MarkdownEditor
+                    name="dailyPlanSystemPrompt"
+                    value={form.dailyPlanSystemPrompt || defaults.dailyPlanSystemPrompt || ''}
+                    onChange={(val) => setForm((prev) => ({ ...prev, dailyPlanSystemPrompt: val }))}
+                    height={300}
+                  />
+                  <div className={styles.hint}>
+                    Instructions sent to the AI when generating daily plan recaps.
+                  </div>
+                </>
+              )}
+
+              {promptTab === 'briefing' && (
+                <>
+                  <MarkdownEditor
+                    name="briefingSystemPrompt"
+                    value={form.briefingSystemPrompt || defaults.briefingSystemPrompt || ''}
+                    onChange={(val) => setForm((prev) => ({ ...prev, briefingSystemPrompt: val }))}
+                    height={300}
+                  />
+                  <div className={styles.hint}>
+                    Instructions sent to the AI when generating morning briefings from previous days' recaps.
+                  </div>
+                </>
+              )}
+
+
             </FormField>
           </FormSection>
         </div>
