@@ -80,13 +80,17 @@ export async function getById(id) {
   if (planTodos.length > 0) {
     const allPlans = await dailyPlans.find({});
     const refCounts = {};
-    for (const t of planTodos) refCounts[t._id] = 0;
+    const refDates = {};
+    for (const t of planTodos) { refCounts[t._id] = 0; refDates[t._id] = []; }
     for (const p of allPlans) {
       for (const tid of (p.todos || [])) {
-        if (refCounts[tid] !== undefined) refCounts[tid]++;
+        if (refCounts[tid] !== undefined) {
+          refCounts[tid]++;
+          if (p._id !== id) refDates[tid].push(p._id); // exclude current plan
+        }
       }
     }
-    planTodos = planTodos.map(t => ({ ...t, planRefCount: refCounts[t._id] || 0 }));
+    planTodos = planTodos.map(t => ({ ...t, planRefCount: refCounts[t._id] || 0, linkedPlanDates: refDates[t._id] || [] }));
   }
 
   // Enrich with timesheets for this date (by date, not just linked IDs)

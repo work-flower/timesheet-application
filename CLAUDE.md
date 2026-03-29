@@ -32,7 +32,7 @@ If a change spans multiple areas (e.g. adding a new entity end-to-end), load ALL
 2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
 3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
 
-Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`, `notebooks.md`
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`, `notebooks.md`, `daily-plans.md`, `todos.md`
 
 ### Keeping Wiring Docs Up to Date (MANDATORY)
 
@@ -411,6 +411,53 @@ Knowledge base / notebook entries. Metadata in DB, content on disk as markdown f
 
 **Content** stored on disk at `DATA_DIR/notebooks/{notebookId}/content.md` — NOT in DB. Media files stored alongside in the same folder.
 
+### dailyPlans
+
+One plan per date. `_id` IS the date (`YYYY-MM-DD`). Content and AI-generated files stored on disk at `DATA_DIR/daily-plans/{date}/`.
+
+| Field | Description |
+|-------|-------------|
+| _id | Date string `YYYY-MM-DD` (also serves as primary key — one plan per date) |
+| status | `active` |
+| todos | Array of todo IDs linked to this plan |
+| timesheetIds | Array of timesheet IDs linked to this plan |
+| meetingNotes | Array of `{ notebookId, calendarEventUid, eventSummary }` |
+| ticketIds | Array of ticket IDs linked to this plan |
+| createdAt | ISO timestamp |
+| updatedAt | ISO timestamp |
+
+**Disk files** (per plan, at `DATA_DIR/daily-plans/{date}/`):
+- `content.md` — user-editable markdown content (NOT in DB)
+- `recap.md` — AI-generated recap (file-based status: idle/generating/completed/failed)
+- `recap.md~1` — backup during generation (presence = generating)
+- `recap.err` — error from failed recap generation
+- `briefing.md` — AI-generated briefing (same file-based status pattern)
+- `briefing.md~1` — backup during generation
+- `briefing.err` — error from failed briefing generation
+
+**Computed fields (returned by API list, not stored):**
+- `todoCount`, `todoCompletedCount` — from linked todos
+- `hasTimesheet` — whether any linked timesheets exist
+- `recapStatus`, `recapIsStale` — derived from file system state
+
+**Computed fields (returned by API detail, not stored):**
+- `todosData` — full todo objects with `planRefCount` (how many plans reference each todo)
+- `timesheetsData` — enriched timesheet objects for the plan's date (with `projectName`, `clientName`)
+
+### todos
+
+Standalone to-do items. Referenced by daily plans via their `todos` array. A single todo can be linked to multiple plans.
+
+| Field | Description |
+|-------|-------------|
+| text | Required, trimmed on save |
+| status | `pending` or `done` |
+| createdAt | ISO timestamp |
+| updatedAt | ISO timestamp |
+| createdInPlanId | Plan date where the todo was created (nullable) |
+| completedAt | ISO timestamp when marked done (null when pending) |
+| completedInPlanId | Plan date where the todo was completed (null when pending) |
+
 ---
 
 ## Business Rules
@@ -545,6 +592,8 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/notebooks/new` | Create new notebook (create-on-open redirect) |
 | `/notebooks/:id` | Notebook edit form (Milkdown editor) |
 | `/notebooks/bin` | Recycle bin (deleted notebooks with restore/purge) |
+| `/daily-plans` | Daily plan list |
+| `/daily-plans/:id` | Daily plan form |
 | `/help` | Help topics index |
 | `/help/:topicId` | Help topic detail (markdown content with images) |
 

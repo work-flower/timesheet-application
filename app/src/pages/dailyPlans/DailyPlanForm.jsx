@@ -900,7 +900,7 @@ export default function DailyPlanForm() {
                       {todo.text}
                     </Text>
                   </Tooltip>
-                  <Tooltip content={todo.planRefCount > 1 ? 'Remove from this plan (linked to other plans)' : 'Delete'} relationship="label">
+                  <Tooltip content={todo.planRefCount > 1 ? `Remove from this plan (also in: ${(todo.linkedPlanDates || []).join(', ')})` : 'Delete'} relationship="label">
                     <Button
                       appearance="subtle"
                       icon={todo.planRefCount > 1 ? <DismissCircleRegular /> : <DeleteRegular />}
