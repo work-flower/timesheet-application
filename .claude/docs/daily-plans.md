@@ -12,7 +12,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | ---- | ---- | ----- |
 | Form | `app/src/pages/dailyPlans/DailyPlanForm.jsx` | 3-column grid: todos, tickets+comments, timeline. Milkdown editor for miscellaneous. Recap/briefing tab panel. Embedded timesheet popup. Comment-to-todo and ticket-to-todo flows. |
 | List | `app/src/pages/dailyPlans/DailyPlanList.jsx` | Card view with WeekIndicator, badges for todos/timesheets/meetings/recap status. Create-on-open pattern (navigates to date-keyed form). |
-| API client | `app/src/api/index.js` (dailyPlansApi) | ~20 methods: CRUD, content read/write, todo/timesheet/meeting-note management, recap/briefing generate/status/content, briefing day check, timesheet description |
+| API client | `app/src/api/index.js` (dailyPlansApi) | ~22 methods: CRUD, content read/write, todo/timesheet/meeting-note/notebook management, recap/briefing generate/status/content, briefing day check, timesheet description |
 | WeekIndicator | `app/src/components/WeekIndicator.jsx` | Reusable week day indicator showing which days have plans |
 | TicketsListCard | `app/src/components/cards/TicketsListCard.jsx` | Compact ticket list with comments panel, used in DailyPlanForm. Supports onCommentClick, onTicketShortcutClick. |
 
@@ -20,8 +20,8 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Routes | `server/routes/dailyPlans.js` | ~20 endpoints: CRUD, content, todos, timesheets, meeting notes, change-date, recap (generate/status/content), briefing (generate/status/content/check-days) |
-| Service | `server/services/dailyPlanService.js` | CRUD, todo/timesheet/meeting-note linking, file-based content/recap/briefing management, recap status detection from filesystem |
+| Routes | `server/routes/dailyPlans.js` | ~22 endpoints: CRUD, content, todos, timesheets, meeting notes, notebooks, change-date, recap (generate/status/content), briefing (generate/status/content/check-days) |
+| Service | `server/services/dailyPlanService.js` | CRUD, todo/timesheet/meeting-note/notebook linking, file-based content/recap/briefing management, recap status detection from filesystem |
 | AI service | `server/services/dailyPlanAiService.js` | generateRecap, generateBriefing, checkBriefingDays. File-based state machine (backup → generate → restore on failure). |
 | DB collection | `server/db/index.js` | `dailyPlans` — wrapped NeDB via execution pipeline |
 
@@ -34,6 +34,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | todos | Array of todo IDs (FK → todos) |
 | timesheetIds | Array of timesheet IDs (FK → timesheets) |
 | meetingNotes | Array of `{ calendarEventUid, eventSummary, notebookId }` |
+| notebookIds | Array of notebook IDs (FK → notebooks) — related notebooks |
 | ticketIds | Array of ticket IDs |
 | createdAt | ISO timestamp |
 | updatedAt | ISO timestamp |
@@ -50,6 +51,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 **Computed fields (enriched on read, not stored):**
 - `todosData` — Full todo objects with `planRefCount` (from getById)
 - `timesheetsData` — Enriched timesheet objects with project/client names (from getById)
+- `notebooksData` — Notebook objects with `_id`, `title`, `summary` (from getById)
 - `totalTodos`, `completedTodos`, `hasTimesheet`, `recapStatus`, `recapIsStale` (from getAll)
 
 ## Cross-Entity Consumers
@@ -59,7 +61,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | **todoService** | `todoService.js` | Todos are standalone records linked via `todos` array | Read/write |
 | **timesheetService** | `timesheetService.js` | Timesheets linked by date + `timesheetIds` array. AI context reads timesheets for recap/briefing. | Read-only |
 | **calendarService** | `calendarService.js` | Calendar events fetched by date for recap AI context and timeline card | Read-only |
-| **notebookService** | `notebookService.js` | Meeting notes link to notebooks. Content read for recap AI context. | Read-only |
+| **notebookService** | `notebookService.js` | Meeting notes and related notebooks link to notebooks. Content read for recap AI context. Related notebooks displayed as badges in form. | Read/write |
 | **notebookGitService** | `notebookGitService.js` | `sanitizeTitle` used to find notebook content on disk | Read-only |
 | **ticketsApi** | `ticketsApi` (frontend) | TicketsListCard fetches tickets for display in form | Read-only |
 | **aiConfigService** | `aiConfigService.js` | Reads recap/briefing system prompts and API key | Read-only |
@@ -91,6 +93,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | Timesheet popup | `DailyPlanForm.jsx` — embedded iframe with query string pre-fill (date + notes from meetings/todos) |
 | Comment-to-todo | `DailyPlanForm.jsx` — TicketsListCard onCommentClick → dialog → create todo |
 | Ticket-to-todo | `DailyPlanForm.jsx` — TicketsListCard onTicketShortcutClick → dialog → create todo |
+| Notebook linking | `DailyPlanForm.jsx` — search dialog to link existing notebooks, import to link new ones, unlink via badge dismiss |
 
 ## Blast Radius
 
@@ -101,6 +104,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | Changing AI prompts | `aiConfigService` (defaults), admin `AiConfigPage` (editor), `dailyPlanAiService` (reads config) |
 | Changing todo linking | `dailyPlanService` (add/remove/delete), `dailyPlanAiService` (carry-forward), `DailyPlanForm` (all todo handlers) |
 | Changing meeting note structure | `DailyPlanForm` (event click handler), `dailyPlanAiService.buildContext` (reads notebook content) |
+| Changing notebook linking | `dailyPlanService` (add/remove), `DailyPlanForm` (banner, search dialog, import handler) |
 | Changing timesheet description logic | `DailyPlanForm.handleTimesheetWithAi` only (deterministic, frontend-only) |
 
 ## Lessons Learned

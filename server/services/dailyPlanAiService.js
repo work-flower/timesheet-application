@@ -76,6 +76,20 @@ async function buildContext(planId) {
     }
   }
 
+  // Related notebooks (summaries + tags)
+  if (plan && plan.notebookIds && plan.notebookIds.length > 0) {
+    const linkedNotebooks = await notebooks.find({ _id: { $in: plan.notebookIds } });
+    const nbLines = linkedNotebooks
+      .filter(n => n.summary || (n.tags && n.tags.length > 0))
+      .map(n => {
+        const tags = n.tags && n.tags.length > 0 ? ` (tags: ${n.tags.join(', ')})` : '';
+        return `- **${n.title}**${tags}${n.summary ? ` — ${n.summary}` : ''}`;
+      });
+    if (nbLines.length > 0) {
+      sections.push('## Related Notebooks\n' + nbLines.join('\n'));
+    }
+  }
+
   // Current plan's content (for summarise day)
   if (plan) {
     const currentContent = await dailyPlanService.getContent(planId);

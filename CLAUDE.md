@@ -422,6 +422,7 @@ One plan per date. `_id` IS the date (`YYYY-MM-DD`). Content and AI-generated fi
 | todos | Array of todo IDs linked to this plan |
 | timesheetIds | Array of timesheet IDs linked to this plan |
 | meetingNotes | Array of `{ notebookId, calendarEventUid, eventSummary }` |
+| notebookIds | Array of notebook IDs linked to this plan |
 | ticketIds | Array of ticket IDs linked to this plan |
 | createdAt | ISO timestamp |
 | updatedAt | ISO timestamp |
@@ -443,6 +444,7 @@ One plan per date. `_id` IS the date (`YYYY-MM-DD`). Content and AI-generated fi
 **Computed fields (returned by API detail, not stored):**
 - `todosData` — full todo objects with `planRefCount` (how many plans reference each todo)
 - `timesheetsData` — enriched timesheet objects for the plan's date (with `projectName`, `clientName`)
+- `notebooksData` — notebook objects with `_id`, `title`, `summary`
 
 ### todos
 

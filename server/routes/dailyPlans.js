@@ -142,6 +142,26 @@ router.post('/:id/timesheets', async (req, res) => {
   }
 });
 
+// Add a notebook link
+router.post('/:id/notebooks', async (req, res) => {
+  try {
+    const result = await dailyPlanService.addNotebook(req.params.id, req.body.notebookId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Remove a notebook link
+router.delete('/:id/notebooks/:notebookId', async (req, res) => {
+  try {
+    const result = await dailyPlanService.removeNotebook(req.params.id, req.params.notebookId);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Add a meeting note mapping
 router.post('/:id/meeting-notes', async (req, res) => {
   try {

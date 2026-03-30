@@ -1,4 +1,4 @@
-import { dailyPlans, timesheets, todos, projects, clients } from '../db/index.js';
+import { dailyPlans, timesheets, todos, projects, clients, notebooks } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -109,10 +109,17 @@ export async function getById(id) {
     };
   });
 
+  // Enrich with notebook data
+  const planNotebookIds = plan.notebookIds || [];
+  const notebooksData = planNotebookIds.length > 0
+    ? (await notebooks.find({ _id: { $in: planNotebookIds } })).map(n => ({ _id: n._id, title: n.title, summary: n.summary, updatedAt: n.updatedAt }))
+    : [];
+
   return {
     ...plan,
     todosData: planTodos,
     timesheetsData: enrichedTimesheets,
+    notebooksData,
   };
 }
 
@@ -141,6 +148,7 @@ export async function create(data) {
     timesheetIds: [],
     meetingNotes: [],
     ticketIds: [],
+    notebookIds: [],
     createdAt: now,
     updatedAt: now,
   });
@@ -161,6 +169,7 @@ export async function update(id, data) {
   if (data.timesheetIds !== undefined) updateData.timesheetIds = data.timesheetIds;
   if (data.meetingNotes !== undefined) updateData.meetingNotes = data.meetingNotes;
   if (data.ticketIds !== undefined) updateData.ticketIds = data.ticketIds;
+  if (data.notebookIds !== undefined) updateData.notebookIds = data.notebookIds;
 
   await dailyPlans.update({ _id: id }, { $set: updateData });
   return getById(id);
@@ -274,6 +283,28 @@ export async function addMeetingNote(planId, notebookId, calendarEventUid, event
 
   notes.push({ notebookId, calendarEventUid, eventSummary });
   await dailyPlans.update({ _id: planId }, { $set: { meetingNotes: notes, updatedAt: new Date().toISOString() } });
+  return getById(planId);
+}
+
+// --- Notebook management ---
+
+export async function addNotebook(planId, notebookId) {
+  const plan = await dailyPlans.findOne({ _id: planId });
+  if (!plan) throw new Error('Daily plan not found');
+
+  const ids = plan.notebookIds || [];
+  if (ids.includes(notebookId)) return getById(planId);
+
+  await dailyPlans.update({ _id: planId }, { $set: { notebookIds: [...ids, notebookId], updatedAt: new Date().toISOString() } });
+  return getById(planId);
+}
+
+export async function removeNotebook(planId, notebookId) {
+  const plan = await dailyPlans.findOne({ _id: planId });
+  if (!plan) throw new Error('Daily plan not found');
+
+  const ids = (plan.notebookIds || []).filter(id => id !== notebookId);
+  await dailyPlans.update({ _id: planId }, { $set: { notebookIds: ids, updatedAt: new Date().toISOString() } });
   return getById(planId);
 }
 

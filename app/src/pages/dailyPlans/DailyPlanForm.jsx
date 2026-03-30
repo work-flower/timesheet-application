@@ -10,6 +10,7 @@ import {
 import {
   AddRegular, DeleteRegular, CalendarClockRegular, DismissRegular, DismissCircleRegular,
   WeatherMoonRegular, WeatherSunnyRegular, ChevronDownRegular,
+  BookRegular, LinkRegular, LinkDismissRegular, ArrowImportRegular,
 } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -54,6 +55,27 @@ const useStyles = makeStyles({
   timesheetTag: {
     cursor: 'pointer',
     maxWidth: '130px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    display: 'inline-block',
+    ':hover': { opacity: 0.8 },
+  },
+
+  // Notebook banner
+  notebookBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 12px',
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    flexWrap: 'wrap',
+  },
+  notebookBadge: {
+    cursor: 'pointer',
+    maxWidth: '160px',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -185,6 +207,7 @@ export default function DailyPlanForm() {
   const [plan, setPlan] = useState(null);
   const [todosData, setTodosData] = useState([]);
   const [timesheetsData, setTimesheetsData] = useState([]);
+  const [notebooksData, setNotebooksData] = useState([]);
   const [content, setContent] = useState('');
   const [newTodoText, setNewTodoText] = useState('');
   const [initialized, setInitialized] = useState(false);
@@ -209,6 +232,12 @@ export default function DailyPlanForm() {
   const [aiBannerText, setAiBannerText] = useState(null);
   const [commentTodoText, setCommentTodoText] = useState('');
   const [commentTodoOpen, setCommentTodoOpen] = useState(false);
+  const [notebookSearchOpen, setNotebookSearchOpen] = useState(false);
+  const [notebookSearchResults, setNotebookSearchResults] = useState([]);
+  const [notebookSearchQuery, setNotebookSearchQuery] = useState('');
+  const [notebookSearchLoading, setNotebookSearchLoading] = useState(false);
+  const [notebookIncludeMeetingNotes, setNotebookIncludeMeetingNotes] = useState(false);
+  const notebookImportRef = useRef(null);
 
   // Entity search dialog for slash menu
   const [entitySearchType, setEntitySearchType] = useState(null);
@@ -231,6 +260,7 @@ export default function DailyPlanForm() {
       setPlan(data);
       setTodosData(data.todosData || []);
       setTimesheetsData(data.timesheetsData || []);
+      setNotebooksData(data.notebooksData || []);
 
       const md = await dailyPlansApi.getContent(id);
       setContent(md || '');
@@ -559,6 +589,86 @@ export default function DailyPlanForm() {
       setError(err.message);
     }
   };
+
+  // --- Notebook handlers ---
+
+  const fetchNotebooks = useCallback(async (query, includeMeeting) => {
+    setNotebookSearchLoading(true);
+    try {
+      const clauses = [];
+      if (query.trim()) clauses.push(`contains(title,'${query.replace(/'/g, "''")}')`);
+      if (!includeMeeting) clauses.push("type ne 'meeting-note'");
+      const params = { status: 'active', $top: 15, $orderby: 'updatedAt desc' };
+      if (clauses.length > 0) params.$filter = clauses.join(' and ');
+      const results = await notebooksApi.getAll(params);
+      const list = Array.isArray(results) ? results : results.value || [];
+      const linkedIds = new Set(plan?.notebookIds || []);
+      setNotebookSearchResults(list.filter(n => !linkedIds.has(n._id)));
+    } catch {
+      setNotebookSearchResults([]);
+    } finally {
+      setNotebookSearchLoading(false);
+    }
+  }, [plan]);
+
+  const handleNotebookSearch = useCallback((query) => {
+    setNotebookSearchQuery(query);
+    fetchNotebooks(query, notebookIncludeMeetingNotes);
+  }, [fetchNotebooks, notebookIncludeMeetingNotes]);
+
+  const handleLinkNotebook = async (notebookId) => {
+    try {
+      const updated = await dailyPlansApi.addNotebook(id, notebookId);
+      setPlan(updated);
+      setNotebooksData(updated.notebooksData || []);
+      setNotebookSearchOpen(false);
+      setNotebookSearchQuery('');
+      setNotebookSearchResults([]);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleUnlinkNotebook = async (notebookId) => {
+    try {
+      const updated = await dailyPlansApi.removeNotebook(id, notebookId);
+      setPlan(updated);
+      setNotebooksData(updated.notebooksData || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleNotebookImport = useCallback(async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+
+    const mdExts = ['.md', '.markdown'];
+    const mdFiles = files.filter(f => mdExts.some(ext => f.name.toLowerCase().endsWith(ext)));
+    if (mdFiles.length === 0) {
+      setError('No markdown file found. Import requires at least one .md file.');
+      return;
+    }
+
+    const contentFile = mdFiles.reduce((a, b) => (b.size > a.size ? b : a));
+    const resourceFiles = files.filter(f => f !== contentFile);
+    const contentText = await contentFile.text();
+
+    const formData = new FormData();
+    formData.append('content', contentText);
+    for (const file of resourceFiles) formData.append('files', file);
+
+    try {
+      const notebook = await notebooksApi.importNotebook(formData);
+      // Auto-link the imported notebook
+      const updated = await dailyPlansApi.addNotebook(id, notebook._id);
+      setPlan(updated);
+      setNotebooksData(updated.notebooksData || []);
+    } catch (err) {
+      setError(`Import failed: ${err.message}`);
+    }
+  }, [id]);
 
   // --- Timeline event click → meeting note notebook ---
 
@@ -957,7 +1067,78 @@ export default function DailyPlanForm() {
               )}
             </div>
           </div>
-          <div className={styles.miscSection}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* Related Notebooks banner */}
+          <div className={styles.notebookBanner}>
+            <BookRegular style={{ fontSize: '16px', color: tokens.colorNeutralForeground3 }} />
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>Notebooks:</Text>
+            {notebooksData.length > 0 ? (
+              notebooksData.map(nb => (
+                <Tooltip
+                  key={nb._id}
+                  relationship="description"
+                  positioning="above"
+                  content={
+                    <div style={{ maxWidth: '320px' }}>
+                      <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px' }}>{nb.title}</div>
+                      {nb.summary && <div style={{ fontSize: '11px', lineHeight: '1.4', marginBottom: '4px' }}>{nb.summary}</div>}
+                      {nb.updatedAt && (
+                        <div style={{ fontSize: '11px', color: '#999', marginBottom: '6px' }}>
+                          Updated: {new Date(nb.updatedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                      <div
+                        onClick={(e) => { e.stopPropagation(); handleUnlinkNotebook(nb._id); }}
+                        style={{ fontSize: '11px', color: '#d13438', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <LinkDismissRegular style={{ fontSize: '12px' }} /> Unlink
+                      </div>
+                    </div>
+                  }
+                >
+                  <Badge
+                    appearance="tint"
+                    color="informative"
+                    size="small"
+                    className={styles.notebookBadge}
+                    onClick={() => setPopupNotebookUrl(`/notebooks/${nb._id}/?embedded=true`)}
+                  >
+                    {nb.title}
+                  </Badge>
+                </Tooltip>
+              ))
+            ) : (
+              <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
+                No notebooks linked
+              </Text>
+            )}
+            <Tooltip content="Link an existing notebook" relationship="label">
+              <Button
+                appearance="subtle"
+                icon={<LinkRegular />}
+                size="small"
+                onClick={() => { setNotebookSearchOpen(true); setNotebookSearchQuery(''); setNotebookIncludeMeetingNotes(false); fetchNotebooks('', false); }}
+              />
+            </Tooltip>
+            <Tooltip content="Import markdown file as notebook" relationship="label">
+              <Button
+                appearance="subtle"
+                icon={<ArrowImportRegular />}
+                size="small"
+                onClick={() => notebookImportRef.current?.click()}
+              />
+            </Tooltip>
+            <input
+              ref={notebookImportRef}
+              type="file"
+              accept=".md,.markdown"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleNotebookImport}
+            />
+          </div>
+
+          <div className={styles.miscSection} style={{ flex: 1 }}>
             <Text className={styles.sectionTitle}>Miscellaneous</Text>
             {initialized && (
               <NotebookEditor
@@ -967,6 +1148,7 @@ export default function DailyPlanForm() {
                 onEntitySearch={setEntitySearchType}
               />
             )}
+          </div>
           </div>
         </div>
       </div>
@@ -1109,6 +1291,78 @@ export default function DailyPlanForm() {
         </DialogSurface>
       </Dialog>
 
+      {/* Notebook search dialog */}
+      <Dialog open={notebookSearchOpen} onOpenChange={(_, data) => { if (!data.open) setNotebookSearchOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '520px' }}>
+          <DialogBody>
+            <DialogTitle>Link Notebook</DialogTitle>
+            <DialogContent>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <Input
+                  placeholder="Search notebooks by title..."
+                  value={notebookSearchQuery}
+                  onChange={(e, data) => handleNotebookSearch(data.value)}
+                  style={{ flex: 1 }}
+                  autoFocus
+                />
+                <Tooltip content="Include meeting notes" relationship="label">
+                  <Button
+                    appearance={notebookIncludeMeetingNotes ? 'primary' : 'subtle'}
+                    icon={<CalendarClockRegular />}
+                    size="small"
+                    onClick={() => {
+                      const next = !notebookIncludeMeetingNotes;
+                      setNotebookIncludeMeetingNotes(next);
+                      fetchNotebooks(notebookSearchQuery, next);
+                    }}
+                  />
+                </Tooltip>
+              </div>
+              {notebookSearchLoading && (
+                <div style={{ padding: '12px', textAlign: 'center' }}><Spinner size="tiny" /></div>
+              )}
+              {!notebookSearchLoading && notebookSearchResults.length === 0 && (
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic', display: 'block', padding: '8px 0' }}>
+                  No notebooks found
+                </Text>
+              )}
+              {notebookSearchResults.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', maxHeight: '300px', overflowY: 'auto' }}>
+                  {notebookSearchResults.map((nb, idx) => {
+                    const isMeeting = nb.type === 'meeting-note';
+                    const baseBg = idx % 2 === 0 ? tokens.colorNeutralBackground1 : tokens.colorNeutralBackground3;
+                    return (
+                      <div
+                        key={nb._id}
+                        onClick={() => handleLinkNotebook(nb._id)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          backgroundColor: baseBg,
+                          borderLeft: isMeeting ? '3px solid #0078D4' : '3px solid transparent',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.colorNeutralBackground1Hover; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = baseBg; }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                          <Text style={{ fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{nb.title}</Text>
+                          {isMeeting && <Badge appearance="tint" color="brand" size="small" style={{ flexShrink: 0 }}>meeting</Badge>}
+                        </div>
+                        {nb.summary && <Text style={{ fontSize: '11px', color: tokens.colorNeutralForeground3, display: 'block', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nb.summary}</Text>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                <Button appearance="secondary" onClick={() => setNotebookSearchOpen(false)}>Cancel</Button>
+              </div>
+            </DialogContent>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
       {/* Entity search dialog for slash menu */}
       <EntitySearchDialog
         open={!!entitySearchType}
@@ -1148,7 +1402,7 @@ export default function DailyPlanForm() {
         </DialogSurface>
       </Dialog>
 
-      {/* Meeting note notebook popup */}
+      {/* Notebook popup */}
       <Dialog
         open={!!popupNotebookUrl}
         onOpenChange={(e, data) => { if (!data.open) setPopupNotebookUrl(null); }}
@@ -1165,7 +1419,7 @@ export default function DailyPlanForm() {
               }
               style={{ padding: '8px 12px' }}
             >
-              Meeting Notes
+              Notebook
             </DialogTitle>
             <DialogContent style={{ padding: 0, overflow: 'hidden' }}>
               {popupNotebookUrl && (
