@@ -999,7 +999,10 @@ export default function DailyPlanForm() {
               />
             </div>
             <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-              {todosData.map(todo => (
+              {[...todosData].sort((a, b) => {
+                if ((a.status === 'done') !== (b.status === 'done')) return a.status === 'done' ? 1 : -1;
+                return new Date(b.createdAt) - new Date(a.createdAt);
+              }).map(todo => (
                 <div key={todo._id} className={styles.todoItem}>
                   <Checkbox
                     checked={todo.status === 'done'}
