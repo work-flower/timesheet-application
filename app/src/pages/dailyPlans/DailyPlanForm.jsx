@@ -737,8 +737,68 @@ export default function DailyPlanForm() {
             eventSummary: evt.summary || 'Meeting',
           }],
         }));
+
+        // Build attendee sections
+        const attendees = evt.attendees || [];
+        const buildAttendeeContent = () => {
+          const organisers = attendees.filter(a => a.role === 'CHAIR');
+          const required = attendees.filter(a => a.role === 'REQ-PARTICIPANT');
+          const optional = attendees.filter(a => a.role === 'OPT-PARTICIPANT');
+          const rooms = attendees.filter(a => a.type === 'ROOM');
+          const other = attendees.filter(a =>
+            a.role !== 'CHAIR' && a.role !== 'REQ-PARTICIPANT' && a.role !== 'OPT-PARTICIPANT' && a.type !== 'ROOM'
+          );
+
+          const formatAttendee = (a) => {
+            const name = a.name || a.email || 'Unknown';
+            const status = a.status ? ` — ${a.status.toLowerCase()}` : '';
+            return `- ${name}${status}`;
+          };
+
+          const sections = [];
+          if (organisers.length > 0) sections.push(`**Organiser:** ${organisers.map(a => a.name || a.email).join(', ')}`);
+          if (required.length > 0) sections.push(`**Attendees:**\n${required.map(formatAttendee).join('\n')}`);
+          if (optional.length > 0) sections.push(`**Optional:**\n${optional.map(formatAttendee).join('\n')}`);
+          if (rooms.length > 0) sections.push(`**Room:** ${rooms.map(a => a.name || a.email).join(', ')}`);
+          if (other.length > 0) sections.push(`**Other:**\n${other.map(formatAttendee).join('\n')}`);
+          return sections.join('\n\n');
+        };
+
+        // Generate AI summary + populate content
+        setAiLoading(true);
+        setAiBannerText('Generating meeting summary...');
+        try {
+          const ai = await dailyPlansApi.generateMeetingSummary(id, {
+            subject: evt.summary || '',
+            description: evt.description || '',
+            attendees: attendees.map(a => ({ name: a.name, email: a.email, role: a.role })),
+          });
+
+          const contentParts = [`# ${meetingTitle}`];
+          if (ai.summary) contentParts.push(ai.summary);
+          if (ai.hashtags) contentParts.push(ai.hashtags);
+          const attendeeContent = buildAttendeeContent();
+          if (attendeeContent) contentParts.push(attendeeContent);
+          contentParts.push('## Notes\n\n');
+
+          await notebooksApi.updateContent(notebook._id, contentParts.join('\n\n'));
+        } catch {
+          // AI failed — fall back to attendees only
+          const contentParts = [`# ${meetingTitle}`, 'Summary paragraph here.', '#tags'];
+          const attendeeContent = buildAttendeeContent();
+          if (attendeeContent) contentParts.push(attendeeContent);
+          contentParts.push('## Notes\n\n');
+
+          await notebooksApi.updateContent(notebook._id, contentParts.join('\n\n'));
+        } finally {
+          setAiLoading(false);
+          setAiBannerText(null);
+        }
+
         setPopupNotebookUrl(`/notebooks/${notebook._id}/?embedded=true`);
       } catch (err) {
+        setAiLoading(false);
+        setAiBannerText(null);
         setError(err.message);
       }
     }

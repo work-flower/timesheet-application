@@ -59,6 +59,7 @@ Read-only ICS calendar feed integration. Users register ICS subscription URLs (f
 | start, end | ISO datetime strings |
 | location | String |
 | allDay | Boolean |
+| attendees | Array of `{ name, email, type, role, status }` — parsed from ICS ATTENDEE property |
 | cachedAt | When this event was cached |
 
 ## API Endpoints

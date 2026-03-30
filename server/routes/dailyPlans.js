@@ -175,6 +175,18 @@ router.post('/:id/meeting-notes', async (req, res) => {
 
 // --- AI operations ---
 
+// Generate meeting summary
+router.post('/:id/meeting-summary', async (req, res) => {
+  try {
+    const { subject, description, attendees } = req.body;
+    const result = await dailyPlanAiService.generateMeetingSummary({ subject, description, attendees });
+    res.json(result);
+  } catch (err) {
+    console.warn('Meeting summary generation failed:', err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Generate recap
 router.post('/:id/recap', async (req, res) => {
   try {

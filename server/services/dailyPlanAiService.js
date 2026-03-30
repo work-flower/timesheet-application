@@ -307,4 +307,42 @@ export async function generateBriefing(planId, selectedDates) {
   }
 }
 
+/**
+ * Generate a meeting summary + hashtags from event data.
+ * Returns { summary, hashtags } where summary is a paragraph and hashtags is a string like "#tag1 #tag2".
+ */
+export async function generateMeetingSummary({ subject, description, attendees }) {
+  const systemPrompt = `You are a meeting preparation assistant for a UK technology contractor. Given a meeting's subject, description, and attendee list, produce:
+
+1. A concise summary paragraph (2-4 sentences) explaining what this meeting is likely about, its purpose, and any key context the contractor should know before attending.
+2. A line of relevant hashtags (3-6 tags, lowercase, no spaces in tags, prefixed with #) that categorise this meeting by topic, project, or type.
+
+Format your response EXACTLY as:
+
+<summary>
+Your summary paragraph here.
+</summary>
+
+<hashtags>
+#tag1 #tag2 #tag3
+</hashtags>
+
+Do not include any other text outside these tags.`;
+
+  const parts = [`Subject: ${subject}`];
+  if (description && description.trim()) parts.push(`Description:\n${description.slice(0, 3000)}`);
+  if (attendees && attendees.length > 0) {
+    parts.push('Attendees:\n' + attendees.map(a => `- ${a.name || a.email}${a.role ? ` (${a.role})` : ''}`).join('\n'));
+  }
+
+  const result = await callClaude(systemPrompt, parts.join('\n\n'), 512);
+
+  const summaryMatch = result.match(/<summary>\s*([\s\S]*?)\s*<\/summary>/);
+  const hashtagsMatch = result.match(/<hashtags>\s*([\s\S]*?)\s*<\/hashtags>/);
+
+  return {
+    summary: summaryMatch ? summaryMatch[1].trim() : '',
+    hashtags: hashtagsMatch ? hashtagsMatch[1].trim() : '',
+  };
+}
 

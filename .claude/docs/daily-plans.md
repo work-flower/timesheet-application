@@ -22,7 +22,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | ---- | ---- | ----- |
 | Routes | `server/routes/dailyPlans.js` | ~22 endpoints: CRUD, content, todos, timesheets, meeting notes, notebooks, change-date, recap (generate/status/content), briefing (generate/status/content/check-days) |
 | Service | `server/services/dailyPlanService.js` | CRUD, todo/timesheet/meeting-note/notebook linking, file-based content/recap/briefing management, recap status detection from filesystem |
-| AI service | `server/services/dailyPlanAiService.js` | generateRecap, generateBriefing, checkBriefingDays. File-based state machine (backup → generate → restore on failure). |
+| AI service | `server/services/dailyPlanAiService.js` | generateRecap, generateBriefing, checkBriefingDays, generateMeetingSummary. File-based state machine (backup → generate → restore on failure). |
 | DB collection | `server/db/index.js` | `dailyPlans` — wrapped NeDB via execution pipeline |
 
 ## Data Model
@@ -89,7 +89,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | Briefing generation | `dailyPlanAiService.generateBriefing` — todo carry-forward + recap collection + callClaude |
 | Recap status detection | `dailyPlanService.getRecapStatus` — checks recap.md existence, mtime, error file |
 | Briefing day check | `dailyPlanAiService.checkBriefingDays` — returns days with plan existence + recap status |
-| Meeting note lifecycle | `DailyPlanForm.jsx` — calendar event click creates/opens notebook, stores link in meetingNotes |
+| Meeting note lifecycle | `DailyPlanForm.jsx` — calendar event click creates/opens notebook, stores link in meetingNotes. On creation: AI generates summary + hashtags, attendees grouped by role (Organiser/Attendees/Optional/Room). |
 | Timesheet popup | `DailyPlanForm.jsx` — embedded iframe with query string pre-fill (date + notes from meetings/todos) |
 | Comment-to-todo | `DailyPlanForm.jsx` — TicketsListCard onCommentClick → dialog → create todo |
 | Ticket-to-todo | `DailyPlanForm.jsx` — TicketsListCard onTicketShortcutClick → dialog → create todo |

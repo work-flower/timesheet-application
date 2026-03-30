@@ -516,6 +516,7 @@ export const dailyPlansApi = {
   addTimesheet: (id, timesheetId) => request(`/daily-plans/${id}/timesheets`, { method: 'POST', body: JSON.stringify({ timesheetId }) }),
   addNotebook: (id, notebookId) => request(`/daily-plans/${id}/notebooks`, { method: 'POST', body: JSON.stringify({ notebookId }) }),
   removeNotebook: (id, notebookId) => request(`/daily-plans/${id}/notebooks/${notebookId}`, { method: 'DELETE' }),
+  generateMeetingSummary: (id, data) => request(`/daily-plans/${id}/meeting-summary`, { method: 'POST', body: JSON.stringify(data) }),
   addMeetingNote: (id, data) => request(`/daily-plans/${id}/meeting-notes`, { method: 'POST', body: JSON.stringify(data) }),
   changeDate: (id, newDate) => request(`/daily-plans/${id}/change-date`, { method: 'PUT', body: JSON.stringify({ newDate }) }),
   generateRecap: (id) => request(`/daily-plans/${id}/recap`, { method: 'POST', body: '{}' }),

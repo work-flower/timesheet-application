@@ -109,12 +109,27 @@ export async function fetchAndCache(sourceId) {
       const allDay = !!(comp.start && comp.start.dateOnly);
       const duration = end ? end.getTime() - start.getTime() : 0;
       const baseUid = comp.uid || `${start.toISOString()}-${comp.summary || ''}`;
+      // Parse attendees
+      const rawAttendees = comp.attendee
+        ? (Array.isArray(comp.attendee) ? comp.attendee : [comp.attendee])
+        : [];
+      const attendees = rawAttendees
+        .filter(a => a)
+        .map(a => ({
+          name: a.params?.CN || '',
+          email: (a.val || '').replace(/^mailto:/i, ''),
+          type: a.params?.CUTYPE || 'INDIVIDUAL',
+          role: a.params?.ROLE || 'REQ-PARTICIPANT',
+          status: a.params?.PARTSTAT || '',
+        }));
+
       const baseFields = {
         sourceId,
         summary: comp.summary || '',
         description: comp.description || '',
         location: comp.location || '',
         allDay,
+        attendees,
         cachedAt,
       };
 
