@@ -402,7 +402,7 @@ export default function DayTimelineCard({ date, onEventClick }) {
     setTimelineDate((prev) => {
       const d = new Date(prev + 'T00:00:00');
       d.setDate(d.getDate() + delta);
-      return d.toISOString().split('T')[0];
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     });
   }, []);
 
