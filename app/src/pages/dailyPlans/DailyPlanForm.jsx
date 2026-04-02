@@ -22,6 +22,7 @@ import useAppNavigate from '../../hooks/useAppNavigate.js';
 import DayTimelineCard from '../../components/cards/DayTimelineCard.jsx';
 import TicketsListCard from '../../components/cards/TicketsListCard.jsx';
 import WeekIndicator from '../../components/WeekIndicator.jsx';
+import ClaudeChat from '../../components/ClaudeChat.jsx';
 
 const AUTO_SAVE_DELAY = 1500;
 function stripHtml(html) {
@@ -1495,6 +1496,8 @@ export default function DailyPlanForm() {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+
+      <ClaudeChat type="daily-plan" id={id} />
     </div>
   );
 }

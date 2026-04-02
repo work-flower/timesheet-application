@@ -8,7 +8,8 @@ RUN npm run build
 
 # Stage 2: Production
 FROM node:20-alpine
-RUN apk add --no-cache pandoc texlive texlive-xetex texmf-dist-fontsextra texmf-dist-latexextra git
+RUN apk add --no-cache pandoc texlive texlive-xetex texmf-dist-fontsextra texmf-dist-latexextra git util-linux \
+    && npm install -g @anthropic-ai/claude-code
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev

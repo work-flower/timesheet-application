@@ -20,6 +20,7 @@ import NotebookEditor from '../../components/editors/NotebookEditor.jsx';
 import EntitySearchDialog from '../../components/editors/EntitySearchDialog.jsx';
 import DiffViewer from '../../components/DiffViewer.jsx';
 import NotebookArtifactsPanel from './NotebookArtifactsPanel.jsx';
+import ClaudeChat from '../../components/ClaudeChat.jsx';
 
 const AUTO_SAVE_DELAY = 1500; // ms after last change
 
@@ -731,6 +732,8 @@ export default function NotebookForm() {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+
+      <ClaudeChat type="notebook" id={id} />
     </div>
   );
 }

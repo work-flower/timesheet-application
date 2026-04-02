@@ -1,6 +1,7 @@
 import './logging/logHook.js';
 import 'dotenv/config';
 import { randomUUID } from 'crypto';
+import { createServer } from 'http';
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { basename, dirname, join, resolve } from 'path';
@@ -216,7 +217,13 @@ app.get('*', (req, res) => {
 // Ensure notebooks git repo exists before starting
 ensureRepo();
 
-app.listen(PORT, () => {
+const server = createServer(app);
+
+// Attach WebSocket handler for Claude Chat
+import { attachClaudeChatWs } from './ws/claudeChat.js';
+attachClaudeChatWs(server);
+
+server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   initScheduler();
   initUploader();
