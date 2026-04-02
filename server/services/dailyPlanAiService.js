@@ -3,7 +3,7 @@ import * as dailyPlanService from './dailyPlanService.js';
 import * as todoService from './todoService.js';
 import * as calendarService from './calendarService.js';
 import * as timesheetService from './timesheetService.js';
-import { notebooks } from '../db/index.js';
+import { notebooks, tickets } from '../db/index.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync, writeFileSync, rmSync, renameSync, mkdirSync } from 'fs';
@@ -87,6 +87,36 @@ async function buildContext(planId) {
       });
     if (nbLines.length > 0) {
       sections.push('## Related Notebooks\n' + nbLines.join('\n'));
+    }
+  }
+
+  // Linked tickets — today's comments, user notes, and ticket context
+  if (plan && plan.ticketIds && plan.ticketIds.length > 0) {
+    const linkedTickets = await tickets.find({ _id: { $in: plan.ticketIds } });
+    if (linkedTickets.length > 0) {
+      const ticketLines = [];
+      for (const t of linkedTickets) {
+        let line = `### ${t.externalId}: ${t.title}`;
+        if (t.assignedTo) line += `\nAssignee: ${t.assignedTo}`;
+        if (t.description) line += `\n${t.description.slice(0, 500)}`;
+
+        // Filter comments to today
+        const todayComments = (t.comments || []).filter(c => c.created && c.created.startsWith(planId));
+        if (todayComments.length > 0) {
+          line += '\n\n**Today\'s Comments:**\n' + todayComments.map(c =>
+            `- ${c.author} (${c.created}): ${(c.body || '').slice(0, 500)}`
+          ).join('\n');
+        }
+
+        // User notes from extension.comments
+        const userNotes = t.extension?.comments;
+        if (userNotes && userNotes.trim()) {
+          line += `\n\n**My Notes:** ${userNotes}`;
+        }
+
+        ticketLines.push(line);
+      }
+      sections.push('## Linked Tickets\n' + ticketLines.join('\n\n'));
     }
   }
 
@@ -176,7 +206,7 @@ export async function checkBriefingDays(planId, days) {
   for (let i = 1; i <= days; i++) {
     const d = new Date(planDate);
     d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const dayOfWeek = d.getDay(); // 0=Sun, 6=Sat
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const dayName = d.toLocaleDateString('en-GB', { weekday: 'short' });
