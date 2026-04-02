@@ -216,8 +216,6 @@ export default function DailyPlanForm() {
   const [popupTimesheetUrl, setPopupTimesheetUrl] = useState(null);
   const [popupNotebookUrl, setPopupNotebookUrl] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
-  const [recapLoading, setRecapLoading] = useState(false);
-  const [briefingLoading, setBriefingLoading] = useState(false);
   const [recapStatus, setRecapStatus] = useState(null);
   const [recapContent, setRecapContent] = useState(null);
   const [activeInsightTab, setActiveInsightTab] = useState(() => {
@@ -230,6 +228,8 @@ export default function DailyPlanForm() {
   const [briefingDaysLoading, setBriefingDaysLoading] = useState(false);
   const [briefingDaysCount, setBriefingDaysCount] = useState(5);
   const [aiBannerText, setAiBannerText] = useState(null);
+  const recapPollRef = useRef(null);
+  const briefingPollRef = useRef(null);
   const [commentTodoText, setCommentTodoText] = useState('');
   const [commentTodoOpen, setCommentTodoOpen] = useState(false);
   const [notebookSearchOpen, setNotebookSearchOpen] = useState(false);
@@ -252,6 +252,69 @@ export default function DailyPlanForm() {
     ? dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     : '';
 
+  // --- Polling helpers ---
+
+  const startRecapPoll = useCallback(() => {
+    if (recapPollRef.current) return; // Already polling
+    setRecapStatus(prev => ({ ...prev, status: 'generating' }));
+    setAiBannerText('Recap is being generated...');
+    recapPollRef.current = setInterval(async () => {
+      try {
+        const status = await dailyPlansApi.getRecapStatus(id);
+        if (status.status === 'completed') {
+          clearInterval(recapPollRef.current);
+          recapPollRef.current = null;
+          setRecapStatus(status);
+          setAiBannerText(null);
+          const rc = await dailyPlansApi.getRecap(id);
+          setRecapContent(rc);
+        } else if (status.status === 'failed') {
+          clearInterval(recapPollRef.current);
+          recapPollRef.current = null;
+          setRecapStatus(status);
+          setAiBannerText(null);
+          setError(`Recap failed: ${status.error || 'Unknown error'}`);
+        }
+        // 'generating' — keep polling
+      } catch { /* ignore, retry next tick */ }
+    }, 10000);
+  }, [id]);
+
+  const startBriefingPoll = useCallback((reloadPlanFn) => {
+    if (briefingPollRef.current) return;
+    setBriefingStatus(prev => ({ ...prev, status: 'generating' }));
+    setAiBannerText('Briefing is being generated...');
+    briefingPollRef.current = setInterval(async () => {
+      try {
+        const status = await dailyPlansApi.getBriefingStatus(id);
+        if (status.status === 'completed') {
+          clearInterval(briefingPollRef.current);
+          briefingPollRef.current = null;
+          setBriefingStatus(status);
+          setAiBannerText(null);
+          const bc = await dailyPlansApi.getBriefing(id);
+          setBriefingContent(bc);
+          // Reload plan to pick up carried-forward todos
+          if (reloadPlanFn) reloadPlanFn();
+        } else if (status.status === 'failed') {
+          clearInterval(briefingPollRef.current);
+          briefingPollRef.current = null;
+          setBriefingStatus(status);
+          setAiBannerText(null);
+          setError(`Briefing failed: ${status.error || 'Unknown error'}`);
+        }
+      } catch { /* ignore, retry next tick */ }
+    }, 10000);
+  }, [id]);
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      if (recapPollRef.current) clearInterval(recapPollRef.current);
+      if (briefingPollRef.current) clearInterval(briefingPollRef.current);
+    };
+  }, []);
+
   // --- Data loading ---
 
   const loadPlan = useCallback(async () => {
@@ -266,7 +329,7 @@ export default function DailyPlanForm() {
       setContent(md || '');
       lastSavedRef.current = md || '';
 
-      // Load recap status + content
+      // Load recap status + content (starts polling if generating)
       try {
         const status = await dailyPlansApi.getRecapStatus(id);
         setRecapStatus(status);
@@ -275,10 +338,11 @@ export default function DailyPlanForm() {
           setRecapContent(rc);
         } else {
           setRecapContent(null);
+          if (status.status === 'generating') startRecapPoll();
         }
       } catch { /* ignore */ }
 
-      // Load briefing status + content
+      // Load briefing status + content (starts polling if generating)
       try {
         const bStatus = await dailyPlansApi.getBriefingStatus(id);
         setBriefingStatus(bStatus);
@@ -287,6 +351,8 @@ export default function DailyPlanForm() {
           setBriefingContent(bc);
         } else {
           setBriefingContent(null);
+          // Pass loadPlan via a stable ref to avoid circular dependency
+          if (bStatus.status === 'generating') startBriefingPoll(null);
         }
       } catch { /* ignore */ }
     } catch (err) {
@@ -294,7 +360,7 @@ export default function DailyPlanForm() {
     } finally {
       setInitialized(true);
     }
-  }, [id]);
+  }, [id, startRecapPoll, startBriefingPoll]);
 
   useEffect(() => {
     if (id) loadPlan();
@@ -310,19 +376,15 @@ export default function DailyPlanForm() {
   // --- AI handlers ---
 
   const handleRecap = async () => {
-    setRecapLoading(true);
+    startRecapPoll();
     try {
-      const result = await dailyPlansApi.generateRecap(id);
-      setRecapContent(result.content);
-      setRecapStatus({ status: 'completed', isStale: false, generatedAt: new Date().toISOString(), error: null });
+      await dailyPlansApi.generateRecap(id);
     } catch (err) {
+      // Submission failed — stop polling and show error
+      if (recapPollRef.current) { clearInterval(recapPollRef.current); recapPollRef.current = null; }
+      setAiBannerText(null);
+      setRecapStatus(prev => ({ ...prev, status: 'failed' }));
       setError(err.message);
-      try {
-        const status = await dailyPlansApi.getRecapStatus(id);
-        setRecapStatus(status);
-      } catch { /* ignore */ }
-    } finally {
-      setRecapLoading(false);
     }
   };
 
@@ -344,31 +406,20 @@ export default function DailyPlanForm() {
   };
 
   const handleBriefingDefault = async () => {
-    // Check previous day — if recap is fresh, run immediately; otherwise show dialog
-    setBriefingLoading(true);
+    // Check previous day — if recap is fresh, submit briefing directly; otherwise show dialog
     try {
       const days = await dailyPlansApi.checkBriefingDays(id, 1);
       const prev = days[0];
       if (prev && prev.hasPlan && prev.recapStatus === 'completed' && !prev.recapIsStale) {
-        // Recap is fresh — run briefing directly
         setActiveInsightTab('briefing');
         try { localStorage.setItem('dailyPlan.insightTab', 'briefing'); } catch {}
-        setAiBannerText('Generating briefing from 1 day...');
-        const result = await dailyPlansApi.generateBriefing(id, [prev.date]);
-        setBriefingContent(result.content);
-        setBriefingStatus({ status: 'completed', generatedAt: new Date().toISOString(), error: null });
-        await loadPlan();
+        await dailyPlansApi.generateBriefing(id, [prev.date]);
+        startBriefingPoll(loadPlan);
       } else {
-        // Needs attention — show dialog
-        setBriefingLoading(false);
         openBriefingDialog(1);
-        return;
       }
     } catch (err) {
       setError(err.message);
-    } finally {
-      setBriefingLoading(false);
-      setAiBannerText(null);
     }
   };
 
@@ -376,50 +427,61 @@ export default function DailyPlanForm() {
     const selected = briefingDays.filter(d => d.selected);
     if (selected.length === 0) return;
     setBriefingDialogOpen(false);
-    setBriefingLoading(true);
     setActiveInsightTab('briefing');
     try { localStorage.setItem('dailyPlan.insightTab', 'briefing'); } catch {}
 
     try {
-      // Step 1: Check for stale/missing recaps and generate them
+      // Step 1: Submit recaps for stale/missing days
       const needsRecap = selected.filter(d => d.hasPlan && (d.recapStatus !== 'completed' || d.recapIsStale));
       if (needsRecap.length > 0) {
         for (const day of needsRecap) {
-          setAiBannerText(`Generating recap for ${day.dayName} ${day.date}...`);
           try {
             await dailyPlansApi.generateRecap(day.date);
           } catch (err) {
-            setError(`Recap failed for ${day.date}: ${err.message}. Exclude this day and retry.`);
-            setBriefingLoading(false);
-            setAiBannerText(null);
+            setError(`Recap submission failed for ${day.date}: ${err.message}. Exclude this day and retry.`);
             return;
           }
         }
+        // Wait for all recaps to complete before submitting briefing
+        setAiBannerText(`Generating recaps for ${needsRecap.length} day(s) before briefing...`);
+        await waitForRecaps(needsRecap.map(d => d.date));
       }
 
-      // Step 2: Generate briefing
+      // Step 2: Submit briefing
       const selectedDates = selected.filter(d => d.hasPlan).map(d => d.date);
       if (selectedDates.length === 0) {
         setError('No days with daily plans selected.');
-        setBriefingLoading(false);
-        setAiBannerText(null);
         return;
       }
-      setAiBannerText(`Generating briefing from ${selectedDates.length} day(s)...`);
-      const result = await dailyPlansApi.generateBriefing(id, selectedDates);
-      setBriefingContent(result.content);
-      setBriefingStatus({ status: 'completed', generatedAt: new Date().toISOString(), error: null });
-      // Reload plan to pick up carried-forward todos
-      await loadPlan();
+      await dailyPlansApi.generateBriefing(id, selectedDates);
+      startBriefingPoll(loadPlan);
     } catch (err) {
       setError(err.message);
-      try {
-        const status = await dailyPlansApi.getBriefingStatus(id);
-        setBriefingStatus(status);
-      } catch { /* ignore */ }
-    } finally {
-      setBriefingLoading(false);
       setAiBannerText(null);
+    }
+  };
+
+  // Wait for recap batches on other days to complete (used by briefing flow)
+  const waitForRecaps = async (dates) => {
+    const pending = new Set(dates);
+    while (pending.size > 0) {
+      await new Promise(r => setTimeout(r, 10000));
+      for (const date of [...pending]) {
+        try {
+          const status = await dailyPlansApi.getRecapStatus(date);
+          if (status.status === 'completed') {
+            pending.delete(date);
+          } else if (status.status === 'failed') {
+            throw new Error(`Recap failed for ${date}: ${status.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          if (err.message.startsWith('Recap failed')) throw err;
+          // API error — keep waiting
+        }
+      }
+      if (pending.size > 0) {
+        setAiBannerText(`Waiting for recaps (${pending.size} remaining)...`);
+      }
     }
   };
 
@@ -884,9 +946,9 @@ export default function DailyPlanForm() {
         <div style={{ display: 'inline-flex', alignItems: 'center' }}>
           <Button
             size="small"
-            icon={<WeatherSunnyRegular />}
+            icon={briefingStatus?.status === 'generating' ? <Spinner size="tiny" /> : <WeatherSunnyRegular />}
             onClick={handleBriefingDefault}
-            disabled={briefingLoading}
+            disabled={briefingStatus?.status === 'generating'}
           >
             Briefing
           </Button>
@@ -895,7 +957,7 @@ export default function DailyPlanForm() {
               <Button
                 size="small"
                 icon={<ChevronDownRegular />}
-                disabled={briefingLoading}
+                disabled={briefingStatus?.status === 'generating'}
                 style={{ minWidth: 'auto', paddingLeft: '2px', paddingRight: '2px', borderLeft: 'none', borderTopLeftRadius: 0, borderBottomLeftRadius: 0, marginLeft: '-1px' }}
               />
             </MenuTrigger>
@@ -911,6 +973,7 @@ export default function DailyPlanForm() {
         <Tooltip
           content={
             !recapStatus || recapStatus.status === 'idle' ? 'No recap generated yet — click to generate'
+            : recapStatus.status === 'generating' ? 'Recap is being generated...'
             : recapStatus.status === 'failed' ? `Last recap failed: ${recapStatus.error || 'Unknown error'}`
             : recapStatus.isStale ? 'Recap is stale — plan was updated since last generation'
             : `Recap is up to date (${recapStatus.generatedAt ? new Date(recapStatus.generatedAt).toLocaleString('en-GB') : ''})`
@@ -919,9 +982,9 @@ export default function DailyPlanForm() {
         >
           <Button
             size="small"
-            icon={<WeatherMoonRegular />}
+            icon={recapStatus?.status === 'generating' ? <Spinner size="tiny" /> : <WeatherMoonRegular />}
             onClick={handleRecap}
-            disabled={recapLoading}
+            disabled={recapStatus?.status === 'generating'}
             style={{ position: 'relative' }}
           >
             Recap
@@ -954,7 +1017,7 @@ export default function DailyPlanForm() {
           </MessageBar>
         )}
 
-        {(aiLoading || recapLoading || briefingLoading) && (
+        {(aiLoading || recapStatus?.status === 'generating' || briefingStatus?.status === 'generating') && (
           <MessageBar intent="info" className={styles.message}>
             <MessageBarBody style={{ display: 'flex', alignItems: 'center' }}><Spinner size="tiny" style={{ marginRight: '8px' }} />{aiBannerText || 'AI is processing...'}</MessageBarBody>
           </MessageBar>
@@ -1109,7 +1172,9 @@ export default function DailyPlanForm() {
                   </div>
                 ) : (
                   <Text size={200} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground3 }}>
-                    {recapStatus?.status === 'failed'
+                    {recapStatus?.status === 'generating'
+                      ? 'Recap is being generated...'
+                      : recapStatus?.status === 'failed'
                       ? 'Recap generation failed. Click Recap to retry.'
                       : 'Click Recap to generate an end-of-day summary.'}
                   </Text>
@@ -1122,7 +1187,9 @@ export default function DailyPlanForm() {
                   </div>
                 ) : (
                   <Text size={200} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground3 }}>
-                    {briefingStatus?.status === 'failed'
+                    {briefingStatus?.status === 'generating'
+                      ? 'Briefing is being generated...'
+                      : briefingStatus?.status === 'failed'
                       ? 'Briefing generation failed. Click Briefing to retry.'
                       : 'Click Briefing to generate a morning briefing from previous days\' recaps.'}
                   </Text>

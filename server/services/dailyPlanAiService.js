@@ -1,4 +1,5 @@
 import { getRawConfig } from './aiConfigService.js';
+import { submitBatch, checkBatch } from './aiBatchService.js';
 import * as dailyPlanService from './dailyPlanService.js';
 import * as todoService from './todoService.js';
 import * as calendarService from './calendarService.js';
@@ -17,8 +18,6 @@ const CONTENTS_DIR = '.contents';
 async function readNotebookContent(notebookId) {
   const nb = await notebooks.findOne({ _id: notebookId });
   if (!nb) return null;
-  // Notebook content is at DATA_DIR/notebooks/{sanitizedTitle}/.contents/content.md
-  // We need to find the folder — use the title
   const { sanitizeTitle } = await import('./notebookGitService.js');
   const dir = join(getDataDir(), 'notebooks', sanitizeTitle(nb.title), CONTENTS_DIR, 'content.md');
   if (!existsSync(dir)) return null;
@@ -151,15 +150,47 @@ async function callClaude(systemPrompt, userMessage, maxTokens = 2048) {
   return textBlock.text;
 }
 
+// --- Batch file helpers ---
+
+function getRecapBatchPath(planId) {
+  return join(dailyPlanService.getPlanDirectory(planId), 'recap.batchid');
+}
+
+function getBriefingBatchPath(planId) {
+  return join(dailyPlanService.getPlanDirectory(planId), 'briefing.batchid');
+}
+
+function saveBatchId(filePath, batchId, customId) {
+  writeFileSync(filePath, JSON.stringify({ batchId, customId, submittedAt: new Date().toISOString() }), 'utf8');
+}
+
+function readBatchId(filePath) {
+  if (!existsSync(filePath)) return null;
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+// --- Recap ---
+
 /**
- * Generate a daily recap: builds context from the day's data and writes recap.md.
- * Uses file-based state machine: backup existing → generate → restore on failure.
+ * Submit recap generation as a batch job.
+ * Builds context, submits batch, saves batch ID to file, returns immediately.
  */
 export async function generateRecap(planId) {
   const config = await getRawConfig();
   if (!config.apiKey) throw new Error('AI API key not configured. Go to Admin > System > AI Config to set it up.');
 
   const { recapPath, backupPath, errorPath } = dailyPlanService.getRecapFilePaths(planId);
+  const batchPath = getRecapBatchPath(planId);
+
+  // Ensure plan directory exists
+  const planDir = dailyPlanService.getPlanDirectory(planId);
+  if (!existsSync(planDir)) {
+    mkdirSync(planDir, { recursive: true });
+  }
 
   // Backup existing recap
   if (existsSync(recapPath)) {
@@ -174,20 +205,15 @@ export async function generateRecap(planId) {
     const context = await buildContext(planId);
     const prompt = config.dailyPlanSystemPrompt || 'Provide a comprehensive end-of-day recap.';
     const maxTokens = config.maxTokens || 4096;
-    const recap = await callClaude(prompt, `Generate a daily recap for ${planId}.\n\n${context}`, maxTokens);
+    const customId = `recap-${planId}`;
 
-    writeFileSync(recapPath, recap, 'utf8');
+    const { batchId } = await submitBatch(prompt, `Generate a daily recap for ${planId}.\n\n${context}`, maxTokens, customId);
+    saveBatchId(batchPath, batchId, customId);
 
-    // Success — remove backup
-    if (existsSync(backupPath)) {
-      rmSync(backupPath);
-    }
-
-    return { status: 'completed', content: recap };
+    return { status: 'generating' };
   } catch (err) {
-    // Write error file
+    // Write error file and restore backup
     writeFileSync(errorPath, `${new Date().toISOString()}\n${err.message}`, 'utf8');
-    // Restore backup
     if (existsSync(backupPath)) {
       renameSync(backupPath, recapPath);
     }
@@ -196,58 +222,61 @@ export async function generateRecap(planId) {
 }
 
 /**
- * Check previous days for briefing — returns day list with plan existence and recap status.
- * Weekends without a plan are included but marked as optional.
+ * Check recap batch status and resolve if complete.
+ * Called lazily from the status endpoint.
  */
-export async function checkBriefingDays(planId, days) {
-  const planDate = new Date(planId + 'T00:00:00');
-  const result = [];
+export async function resolveRecapBatch(planId) {
+  const batchPath = getRecapBatchPath(planId);
+  const batchInfo = readBatchId(batchPath);
+  if (!batchInfo) return null; // No pending batch
 
-  for (let i = 1; i <= days; i++) {
-    const d = new Date(planDate);
-    d.setDate(d.getDate() - i);
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const dayOfWeek = d.getDay(); // 0=Sun, 6=Sat
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const dayName = d.toLocaleDateString('en-GB', { weekday: 'short' });
+  const { recapPath, backupPath, errorPath } = dailyPlanService.getRecapFilePaths(planId);
 
-    const plan = await dailyPlanService.getById(dateStr);
-    const hasPlan = !!plan;
+  try {
+    const result = await checkBatch(batchInfo.batchId, batchInfo.customId);
 
-    let recapStatus = 'idle';
-    let recapIsStale = false;
-    if (hasPlan) {
-      const recap = dailyPlanService.getRecapStatus(dateStr);
-      recapStatus = recap.status;
-      if (recap.status === 'completed' && plan.updatedAt) {
-        recapIsStale = recap.recapMtime < new Date(plan.updatedAt).getTime();
-      }
+    if (result.status === 'processing') {
+      return { status: 'generating' };
     }
 
-    result.push({
-      date: dateStr,
-      dayName,
-      isWeekend,
-      hasPlan,
-      recapStatus,
-      recapIsStale,
-      // Default: checked if has plan, unchecked if weekend without plan
-      defaultSelected: hasPlan,
-    });
-  }
+    if (result.status === 'completed') {
+      writeFileSync(recapPath, result.text, 'utf8');
+      // Clean up backup and batch file
+      if (existsSync(backupPath)) rmSync(backupPath);
+      rmSync(batchPath);
+      return { status: 'completed', content: result.text };
+    }
 
-  return result;
+    // Failed
+    writeFileSync(errorPath, `${new Date().toISOString()}\n${result.error}`, 'utf8');
+    if (existsSync(backupPath)) renameSync(backupPath, recapPath);
+    rmSync(batchPath);
+    return { status: 'failed', error: result.error };
+  } catch (err) {
+    // API error checking batch — don't clean up, let user retry
+    console.warn(`Failed to check recap batch for ${planId}:`, err.message);
+    return { status: 'generating' };
+  }
 }
 
+// --- Briefing ---
+
 /**
- * Generate a daily briefing from selected days' recaps.
- * Uses file-based state machine identical to recap.
+ * Submit briefing generation as a batch job.
+ * Does todo carry-forward synchronously, then submits batch.
  */
 export async function generateBriefing(planId, selectedDates) {
   const config = await getRawConfig();
   if (!config.apiKey) throw new Error('AI API key not configured. Go to Admin > System > AI Config to set it up.');
 
   const { briefingPath, backupPath, errorPath } = dailyPlanService.getBriefingFilePaths(planId);
+  const batchPath = getBriefingBatchPath(planId);
+
+  // Ensure plan directory exists
+  const planDir = dailyPlanService.getPlanDirectory(planId);
+  if (!existsSync(planDir)) {
+    mkdirSync(planDir, { recursive: true });
+  }
 
   // Backup existing briefing
   if (existsSync(briefingPath)) {
@@ -312,22 +341,12 @@ export async function generateBriefing(planId, selectedDates) {
     const prompt = config.briefingSystemPrompt || 'Synthesise the provided daily recaps into a concise morning briefing.';
     const maxTokens = config.maxTokens || 4096;
     const userMessage = `Generate a morning briefing for ${planId} based on the following ${recapSections.length} day(s) of recaps.\n\n${recapSections.join('\n\n---\n\n')}`;
+    const customId = `briefing-${planId}`;
 
-    const briefing = await callClaude(prompt, userMessage, maxTokens);
+    const { batchId } = await submitBatch(prompt, userMessage, maxTokens, customId);
+    saveBatchId(batchPath, batchId, customId);
 
-    // Ensure plan directory exists
-    const planDir = dailyPlanService.getPlanDirectory(planId);
-    if (!existsSync(planDir)) {
-      mkdirSync(planDir, { recursive: true });
-    }
-
-    writeFileSync(briefingPath, briefing, 'utf8');
-
-    if (existsSync(backupPath)) {
-      rmSync(backupPath);
-    }
-
-    return { status: 'completed', content: briefing };
+    return { status: 'generating' };
   } catch (err) {
     writeFileSync(errorPath, `${new Date().toISOString()}\n${err.message}`, 'utf8');
     if (existsSync(backupPath)) {
@@ -338,8 +357,85 @@ export async function generateBriefing(planId, selectedDates) {
 }
 
 /**
+ * Check briefing batch status and resolve if complete.
+ */
+export async function resolveBriefingBatch(planId) {
+  const batchPath = getBriefingBatchPath(planId);
+  const batchInfo = readBatchId(batchPath);
+  if (!batchInfo) return null; // No pending batch
+
+  const { briefingPath, backupPath, errorPath } = dailyPlanService.getBriefingFilePaths(planId);
+
+  try {
+    const result = await checkBatch(batchInfo.batchId, batchInfo.customId);
+
+    if (result.status === 'processing') {
+      return { status: 'generating' };
+    }
+
+    if (result.status === 'completed') {
+      writeFileSync(briefingPath, result.text, 'utf8');
+      if (existsSync(backupPath)) rmSync(backupPath);
+      rmSync(batchPath);
+      return { status: 'completed', content: result.text };
+    }
+
+    // Failed
+    writeFileSync(errorPath, `${new Date().toISOString()}\n${result.error}`, 'utf8');
+    if (existsSync(backupPath)) renameSync(backupPath, briefingPath);
+    rmSync(batchPath);
+    return { status: 'failed', error: result.error };
+  } catch (err) {
+    console.warn(`Failed to check briefing batch for ${planId}:`, err.message);
+    return { status: 'generating' };
+  }
+}
+
+/**
+ * Check previous days for briefing — returns day list with plan existence and recap status.
+ */
+export async function checkBriefingDays(planId, days) {
+  const planDate = new Date(planId + 'T00:00:00');
+  const result = [];
+
+  for (let i = 1; i <= days; i++) {
+    const d = new Date(planDate);
+    d.setDate(d.getDate() - i);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const dayOfWeek = d.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const dayName = d.toLocaleDateString('en-GB', { weekday: 'short' });
+
+    const plan = await dailyPlanService.getById(dateStr);
+    const hasPlan = !!plan;
+
+    let recapStatus = 'idle';
+    let recapIsStale = false;
+    if (hasPlan) {
+      const recap = dailyPlanService.getRecapStatus(dateStr);
+      recapStatus = recap.status;
+      if (recap.status === 'completed' && plan.updatedAt) {
+        recapIsStale = recap.recapMtime < new Date(plan.updatedAt).getTime();
+      }
+    }
+
+    result.push({
+      date: dateStr,
+      dayName,
+      isWeekend,
+      hasPlan,
+      recapStatus,
+      recapIsStale,
+      defaultSelected: hasPlan,
+    });
+  }
+
+  return result;
+}
+
+/**
  * Generate a meeting summary + hashtags from event data.
- * Returns { summary, hashtags } where summary is a paragraph and hashtags is a string like "#tag1 #tag2".
+ * Stays synchronous — small payload, user needs result inline.
  */
 export async function generateMeetingSummary({ subject, description, attendees }) {
   const systemPrompt = `You are a meeting preparation assistant for a UK technology contractor. Given a meeting's subject, description, and attendee list, produce:
@@ -375,4 +471,3 @@ Do not include any other text outside these tags.`;
     hashtags: hashtagsMatch ? hashtagsMatch[1].trim() : '',
   };
 }
-

@@ -187,13 +187,13 @@ router.post('/:id/meeting-summary', async (req, res) => {
   }
 });
 
-// Generate recap
+// Submit recap generation (batch — returns immediately)
 router.post('/:id/recap', async (req, res) => {
   try {
     const result = await dailyPlanAiService.generateRecap(req.params.id);
     res.json(result);
   } catch (err) {
-    console.warn('Recap generation failed:', err.message);
+    console.warn('Recap submission failed:', err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -209,12 +209,19 @@ router.get('/:id/recap', async (req, res) => {
   }
 });
 
-// Get recap status
+// Get recap status (triggers lazy batch resolution)
 router.get('/:id/recap/status', async (req, res) => {
   try {
     const plan = await dailyPlanService.getById(req.params.id);
     if (!plan) return res.status(404).json({ error: 'Daily plan not found' });
 
+    // Try to resolve pending batch first
+    const batchResult = await dailyPlanAiService.resolveRecapBatch(req.params.id);
+    if (batchResult && batchResult.status === 'generating') {
+      return res.json({ status: 'generating', isStale: false, generatedAt: null, error: null });
+    }
+
+    // Read file-based status (which is now up-to-date after resolution)
     const recap = dailyPlanService.getRecapStatus(req.params.id);
     let isStale = false;
     if (recap.status === 'completed' && plan.updatedAt) {
@@ -246,7 +253,7 @@ router.get('/:id/briefing/check-days', async (req, res) => {
   }
 });
 
-// Generate briefing from selected dates' recaps
+// Submit briefing generation (batch — returns immediately)
 router.post('/:id/briefing', async (req, res) => {
   try {
     const { selectedDates } = req.body;
@@ -256,7 +263,7 @@ router.post('/:id/briefing', async (req, res) => {
     const result = await dailyPlanAiService.generateBriefing(req.params.id, selectedDates);
     res.json(result);
   } catch (err) {
-    console.warn('Briefing generation failed:', err.message);
+    console.warn('Briefing submission failed:', err.message);
     res.status(400).json({ error: err.message });
   }
 });
@@ -272,9 +279,15 @@ router.get('/:id/briefing', async (req, res) => {
   }
 });
 
-// Get briefing status
+// Get briefing status (triggers lazy batch resolution)
 router.get('/:id/briefing/status', async (req, res) => {
   try {
+    // Try to resolve pending batch first
+    const batchResult = await dailyPlanAiService.resolveBriefingBatch(req.params.id);
+    if (batchResult && batchResult.status === 'generating') {
+      return res.json({ status: 'generating', generatedAt: null, error: null });
+    }
+
     const status = dailyPlanService.getBriefingStatus(req.params.id);
     res.json(status);
   } catch (err) {

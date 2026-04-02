@@ -152,7 +152,9 @@ export default function DailyPlanList() {
                 <CardMetaItem
                   label="Recap"
                   value={
-                    item.recapStatus === 'completed' && !item.recapIsStale
+                    item.recapStatus === 'generating'
+                      ? <Badge appearance="tint" color="brand" size="small">Generating</Badge>
+                      : item.recapStatus === 'completed' && !item.recapIsStale
                       ? <Badge appearance="filled" color="success" size="small">Fresh</Badge>
                       : item.recapStatus === 'completed' && item.recapIsStale
                       ? <Badge appearance="tint" color="warning" size="small">Stale</Badge>

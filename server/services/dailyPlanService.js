@@ -43,10 +43,8 @@ export async function getAll(query = {}) {
     const totalTodos = planTodos.length;
     const completedTodos = planTodos.filter(t => t.status === 'done').length;
 
-    const linkedTimesheets = plan.timesheetIds && plan.timesheetIds.length > 0
-      ? await timesheets.find({ _id: { $in: plan.timesheetIds } })
-      : [];
-    const hasTimesheet = linkedTimesheets.length > 0;
+    const dateTimesheets = await timesheets.find({ date: plan._id });
+    const hasTimesheet = dateTimesheets.length > 0;
 
     const recap = getRecapStatus(plan._id);
     let recapIsStale = false;
@@ -344,16 +342,20 @@ export function getPlanDirectory(date) {
 
 // --- Recap operations ---
 
+function getRecapBatchPath(date) { return join(getPlanDir(date), 'recap.batchid'); }
+function getBriefingBatchPath(date) { return join(getPlanDir(date), 'briefing.batchid'); }
+
 export function getRecapStatus(date) {
   const hasRecap = existsSync(getRecapPath(date));
+  const hasBatch = existsSync(getRecapBatchPath(date));
   const hasBackup = existsSync(getRecapBackupPath(date));
   const hasError = existsSync(getRecapErrorPath(date));
 
-  if (!hasRecap && !hasBackup && !hasError) {
-    return { status: 'idle', generatedAt: null, error: null };
-  }
-  if (hasBackup && !hasError) {
+  if (hasBatch || (hasBackup && !hasError)) {
     return { status: 'generating', generatedAt: null, error: null };
+  }
+  if (!hasRecap && !hasError) {
+    return { status: 'idle', generatedAt: null, error: null };
   }
   if (hasError) {
     const error = readFileSync(getRecapErrorPath(date), 'utf8');
@@ -383,14 +385,15 @@ export function getRecapFilePaths(date) {
 
 export function getBriefingStatus(date) {
   const hasBriefing = existsSync(getBriefingPath(date));
+  const hasBatch = existsSync(getBriefingBatchPath(date));
   const hasBackup = existsSync(getBriefingBackupPath(date));
   const hasError = existsSync(getBriefingErrorPath(date));
 
-  if (!hasBriefing && !hasBackup && !hasError) {
-    return { status: 'idle', generatedAt: null, error: null };
-  }
-  if (hasBackup && !hasError) {
+  if (hasBatch || (hasBackup && !hasError)) {
     return { status: 'generating', generatedAt: null, error: null };
+  }
+  if (!hasBriefing && !hasError) {
+    return { status: 'idle', generatedAt: null, error: null };
   }
   if (hasError) {
     const error = readFileSync(getBriefingErrorPath(date), 'utf8');
