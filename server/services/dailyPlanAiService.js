@@ -154,9 +154,9 @@ async function buildContext(planId) {
     }
   }
 
-  // TEMP diagnostic — log section sizes to identify context bloat
-  const _total = sections.reduce((s, x) => s + x.length, 0);
-  console.log(`[buildContext ${planId}] total=${_total} chars (~${Math.round(_total / 4)} tokens)`);
+  // Log context size breakdown — helps catch bloat before it hits the 200k token limit.
+  const totalChars = sections.reduce((s, x) => s + x.length, 0);
+  console.log(`[buildContext ${planId}] total=${totalChars} chars (~${Math.round(totalChars / 4)} tokens)`);
   sections.forEach(s => {
     const heading = (s.split('\n')[0] || '').slice(0, 70);
     console.log(`  ${s.length.toString().padStart(8)} chars  ${heading}`);
