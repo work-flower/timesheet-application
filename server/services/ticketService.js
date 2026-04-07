@@ -324,6 +324,12 @@ export async function patchTicket(id, data) {
     ...(data.extension || {}),
   };
 
+  // Track when user notes (extension.comments) were last updated
+  if (data.extension && Object.prototype.hasOwnProperty.call(data.extension, 'comments')
+      && data.extension.comments !== existing.extension?.comments) {
+    mergedExtension.commentsUpdatedAt = new Date().toISOString();
+  }
+
   await tickets.update({ _id: id }, {
     $set: { extension: mergedExtension },
   });

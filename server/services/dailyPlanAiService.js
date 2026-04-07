@@ -89,33 +89,56 @@ async function buildContext(planId) {
     }
   }
 
-  // Linked tickets — today's comments, user notes, and ticket context
-  if (plan && plan.ticketIds && plan.ticketIds.length > 0) {
-    const linkedTickets = await tickets.find({ _id: { $in: plan.ticketIds } });
-    if (linkedTickets.length > 0) {
-      const ticketLines = [];
-      for (const t of linkedTickets) {
-        let line = `### ${t.externalId}: ${t.title}`;
-        if (t.assignedTo) line += `\nAssignee: ${t.assignedTo}`;
-        if (t.description) line += `\n${t.description.slice(0, 500)}`;
+  // Ticket activity on this plan's date — three independent date-driven queries.
+  const datePrefix = new RegExp('^' + planId);
 
-        // Filter comments to today
-        const todayComments = (t.comments || []).filter(c => c.created && c.created.startsWith(planId));
-        if (todayComments.length > 0) {
-          line += '\n\n**Today\'s Comments:**\n' + todayComments.map(c =>
-            `- ${c.author} (${c.created}): ${(c.body || '').slice(0, 500)}`
-          ).join('\n');
-        }
+  // 1. Comments made today (across all tickets)
+  const ticketsWithCommentsToday = await tickets.find({
+    comments: { $elemMatch: { created: { $regex: datePrefix } } },
+  });
+  if (ticketsWithCommentsToday.length > 0) {
+    const lines = [];
+    for (const t of ticketsWithCommentsToday) {
+      const todayComments = (t.comments || []).filter(c => c.created && c.created.startsWith(planId));
+      if (todayComments.length === 0) continue;
+      let block = `### ${t.externalId}: ${t.title}`;
+      block += '\n' + todayComments.map(c =>
+        `- ${c.author}: ${(c.body || '').slice(0, 500)}`
+      ).join('\n');
+      lines.push(block);
+    }
+    if (lines.length > 0) {
+      sections.push('## Comments Today\n' + lines.join('\n\n'));
+    }
+  }
 
-        // User notes from extension.comments
-        const userNotes = t.extension?.comments;
-        if (userNotes && userNotes.trim()) {
-          line += `\n\n**My Notes:** ${userNotes}`;
-        }
+  // 2. Tickets updated today (description-bearing)
+  const ticketsUpdatedToday = await tickets.find({
+    updated: { $regex: datePrefix },
+  });
+  if (ticketsUpdatedToday.length > 0) {
+    const lines = ticketsUpdatedToday.map(t => {
+      let block = `### ${t.externalId}: ${t.title}`;
+      if (t.assignedTo) block += `\nAssignee: ${t.assignedTo}`;
+      if (t.description) block += `\n${t.description.slice(0, 500)}`;
+      return block;
+    });
+    sections.push('## Tickets Updated Today\n' + lines.join('\n\n'));
+  }
 
-        ticketLines.push(line);
-      }
-      sections.push('## Linked Tickets\n' + ticketLines.join('\n\n'));
+  // 3. My ticket notes (extension.comments) updated today
+  const ticketsWithUserNotesToday = await tickets.find({
+    'extension.commentsUpdatedAt': { $regex: datePrefix },
+  });
+  if (ticketsWithUserNotesToday.length > 0) {
+    const lines = [];
+    for (const t of ticketsWithUserNotesToday) {
+      const notes = t.extension?.comments;
+      if (!notes || !notes.trim()) continue;
+      lines.push(`### ${t.externalId}: ${t.title}\n${notes}`);
+    }
+    if (lines.length > 0) {
+      sections.push('## My Ticket Notes Today\n' + lines.join('\n\n'));
     }
   }
 
