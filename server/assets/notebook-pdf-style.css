@@ -1,0 +1,195 @@
+/* Notebook PDF stylesheet — served via /api/assets/css/notebook-pdf-style.css
+ * and consumed by Puppeteer when rendering markdown notebooks to PDF.
+ *
+ * Font: IBM Plex Sans (body) + IBM Plex Mono (code), bundled in
+ * server/assets/fonts/ and served via /api/assets/fonts/.
+ */
+
+/* ---------- Fonts ---------- */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/api/assets/fonts/IBMPlexSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/api/assets/fonts/IBMPlexSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/api/assets/fonts/IBMPlexSans-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/api/assets/fonts/IBMPlexSans-BoldItalic.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/api/assets/fonts/IBMPlexMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/api/assets/fonts/IBMPlexMono-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+/* ---------- Page ---------- */
+@page {
+  size: A4;
+  margin: 2cm;
+}
+
+/* ---------- Body typography ---------- */
+html, body {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11pt;
+  line-height: 1.5;
+  color: #1a1a1a;
+  margin: 0;
+  padding: 0;
+}
+
+p {
+  margin: 0 0 0.8em 0;
+}
+
+/* ---------- Headings ---------- */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 1.4em 0 0.5em 0;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+h1 { font-size: 22pt; margin-top: 0; }
+h2 { font-size: 17pt; }
+h3 { font-size: 14pt; }
+h4 { font-size: 12pt; }
+h5 { font-size: 11pt; }
+h6 { font-size: 11pt; color: #555; }
+
+/* ---------- Links ---------- */
+a {
+  color: #0078D4;
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+/* ---------- Lists ---------- */
+ul, ol {
+  margin: 0 0 0.8em 0;
+  padding-left: 1.6em;
+}
+li { margin: 0.15em 0; }
+li > p { margin: 0.15em 0; }
+
+/* ---------- Blockquotes ---------- */
+blockquote {
+  margin: 0.8em 0;
+  padding: 0.4em 1em;
+  border-left: 3px solid #0078D4;
+  background: #f7faff;
+  color: #333;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+blockquote > :last-child { margin-bottom: 0; }
+
+/* ---------- Tables ---------- */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+  font-size: 10pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #ebebeb;
+  font-weight: 700;
+}
+tbody tr:nth-child(even) {
+  background: #f5f5f5;
+}
+
+/* ---------- Inline code ---------- */
+code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9em;
+  background: #f5f5f5;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+/* ---------- Code blocks ---------- */
+pre {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9.5pt;
+  line-height: 1.45;
+  background: #f5f5f5;
+  padding: 0.8em 1em;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+/* ---------- highlight.js (github-light theme, embedded) ---------- */
+.hljs { color: #24292e; background: transparent; }
+.hljs-comment, .hljs-quote { color: #6a737d; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-subst { color: #d73a49; }
+.hljs-number, .hljs-literal, .hljs-variable,
+.hljs-template-variable, .hljs-tag .hljs-attr { color: #005cc5; }
+.hljs-string, .hljs-doctag { color: #032f62; }
+.hljs-title, .hljs-section, .hljs-selector-id { color: #6f42c1; }
+.hljs-type, .hljs-class .hljs-title { color: #d73a49; }
+.hljs-tag, .hljs-name, .hljs-attribute { color: #22863a; }
+.hljs-regexp, .hljs-link { color: #032f62; }
+.hljs-symbol, .hljs-bullet { color: #e36209; }
+.hljs-built_in, .hljs-builtin-name { color: #005cc5; }
+.hljs-meta { color: #6a737d; }
+.hljs-deletion { background: #ffeef0; }
+.hljs-addition { background: #f0fff4; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }
+
+/* ---------- Images ---------- */
+img {
+  max-width: 100%;
+  height: auto;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* ---------- Horizontal rule ---------- */
+hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 1.2em 0;
+}

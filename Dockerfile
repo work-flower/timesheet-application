@@ -8,9 +8,11 @@ RUN npm run build
 
 # Stage 2: Production
 FROM node:20-alpine
-RUN apk add --no-cache pandoc texlive texlive-xetex texmf-dist-fontsextra texmf-dist-latexextra git
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont git
 WORKDIR /app
 COPY package.json package-lock.json* ./
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN npm ci --omit=dev
 COPY server/ server/
 COPY shared/ shared/
