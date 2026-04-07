@@ -66,11 +66,13 @@ async function buildContext(planId) {
   } catch { /* no calendar data */ }
 
   // Current plan's meeting notes
+  // Strip embedded base64 images before slicing to avoid wasting the 2000-char budget on image data.
   if (plan && plan.meetingNotes && plan.meetingNotes.length > 0) {
     for (const mn of plan.meetingNotes) {
       const nbContent = await readNotebookContent(mn.notebookId);
       if (nbContent && nbContent.trim()) {
-        sections.push(`## Today's Meeting Note: ${mn.eventSummary}\n${nbContent.slice(0, 2000)}`);
+        const stripped = nbContent.replace(/!\[[^\]]*\]\(data:image\/[^)]+\)/g, '![image removed]');
+        sections.push(`## Today's Meeting Note: ${mn.eventSummary}\n${stripped.slice(0, 2000)}`);
       }
     }
   }
@@ -143,12 +145,22 @@ async function buildContext(planId) {
   }
 
   // Current plan's content (for summarise day)
+  // Strip embedded base64 images — they bloat context with no benefit to text AI.
   if (plan) {
     const currentContent = await dailyPlanService.getContent(planId);
     if (currentContent && currentContent.trim()) {
-      sections.push(`## Current Daily Plan Content\n${currentContent}`);
+      const stripped = currentContent.replace(/!\[[^\]]*\]\(data:image\/[^)]+\)/g, '![image removed]');
+      sections.push(`## Current Daily Plan Content\n${stripped}`);
     }
   }
+
+  // TEMP diagnostic — log section sizes to identify context bloat
+  const _total = sections.reduce((s, x) => s + x.length, 0);
+  console.log(`[buildContext ${planId}] total=${_total} chars (~${Math.round(_total / 4)} tokens)`);
+  sections.forEach(s => {
+    const heading = (s.split('\n')[0] || '').slice(0, 70);
+    console.log(`  ${s.length.toString().padStart(8)} chars  ${heading}`);
+  });
 
   return sections.join('\n\n');
 }
