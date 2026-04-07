@@ -32,6 +32,8 @@ import ticketRoutes from './routes/tickets.js';
 import notebookRoutes from './routes/notebooks.js';
 import dailyPlanRoutes from './routes/dailyPlans.js';
 import todoRoutes from './routes/todos.js';
+import assetsRoutes from './routes/assets.js';
+import { isChromiumAvailable, closeBrowser } from './services/puppeteerBrowser.js';
 
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
 import { initScheduler } from './services/backupScheduler.js';
@@ -137,6 +139,7 @@ app.use('/api/tickets', ticketRoutes);
 app.use('/api/notebooks', notebookRoutes);
 app.use('/api/daily-plans', dailyPlanRoutes);
 app.use('/api/todos', todoRoutes);
+app.use('/api/assets', assetsRoutes);
 
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)
@@ -155,13 +158,10 @@ app.get('/.well-known/oauth-authorization-server', wellKnownHandler);
 app.get('/.well-known/openid-configuration', wellKnownHandler);
 
 // Health check
-import { execFileSync } from 'child_process';
-function checkCmd(cmd) { try { execFileSync(cmd, ['--version'], { stdio: 'ignore' }); return true; } catch { return false; } }
-
 import { hasRemote as gitHasRemote } from './services/notebookGitService.js';
 const BUILD_TIME = new Date().toISOString();
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', buildTime: BUILD_TIME, pandoc: checkCmd('pandoc'), xelatex: checkCmd('xelatex'), notebookGitRemote: gitHasRemote() });
+  res.json({ status: 'ok', buildTime: BUILD_TIME, chromium: isChromiumAvailable(), notebookGitRemote: gitHasRemote() });
 });
 
 // Serve help topic assets (images etc.) from app/src/help/
@@ -223,3 +223,12 @@ app.listen(PORT, () => {
   initCalendarScheduler();
   initTicketScheduler();
 });
+
+// Graceful shutdown — close singleton Puppeteer browser if running.
+async function shutdown(signal) {
+  console.log(`Received ${signal}, shutting down...`);
+  await closeBrowser();
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
