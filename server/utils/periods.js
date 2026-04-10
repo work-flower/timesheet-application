@@ -24,7 +24,7 @@ function toDateStr(d) {
  */
 export function getCompanyYear(date, ard) {
   if (!ard) return getCalendarYear(date);
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const d = typeof date === 'string' ? new Date(date + 'T00:00:00') : date;
   const [ardMonth, ardDay] = ard.split('-').map(Number); // "03-31" → month=3, day=31
 
   // Year-end date in the same calendar year as d
@@ -51,7 +51,7 @@ export function getCompanyYear(date, ard) {
  * @returns {{ start: string, end: string }}
  */
 export function getTaxYear(date) {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const d = typeof date === 'string' ? new Date(date + 'T00:00:00') : date;
   const apr6 = new Date(d.getFullYear(), 3, 6); // April 6 this year
 
   let start, end;
@@ -74,7 +74,7 @@ export function getTaxYear(date) {
  * @returns {{ start: string, end: string }}
  */
 export function getCalendarYear(date) {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const d = typeof date === 'string' ? new Date(date + 'T00:00:00') : date;
   return {
     start: `${d.getFullYear()}-01-01`,
     end: `${d.getFullYear()}-12-31`,
@@ -100,7 +100,7 @@ const VAT_QUARTER_END_MONTHS = {
  * @returns {{ start: string, end: string }}
  */
 export function getVatQuarter(date, staggerGroup) {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const d = typeof date === 'string' ? new Date(date + 'T00:00:00') : date;
   const month = d.getMonth() + 1; // 1-based
   const endMonths = VAT_QUARTER_END_MONTHS[staggerGroup] || VAT_QUARTER_END_MONTHS[1];
 
@@ -165,8 +165,8 @@ export function getVatQuarters(year, staggerGroup) {
  */
 export function getMonthsInRange(start, end) {
   const months = [];
-  const startD = new Date(start);
-  const endD = new Date(end);
+  const startD = new Date(start + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
 
   let current = new Date(startD.getFullYear(), startD.getMonth(), 1);
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -197,7 +197,7 @@ export function getMonthsInRange(start, end) {
 export function formatPeriodLabel(start, end) {
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const s = new Date(start);
-  const e = new Date(end);
+  const s = new Date(start + 'T00:00:00');
+  const e = new Date(end + 'T00:00:00');
   return `${monthNames[s.getMonth()]} ${s.getFullYear()} – ${monthNames[e.getMonth()]} ${e.getFullYear()}`;
 }

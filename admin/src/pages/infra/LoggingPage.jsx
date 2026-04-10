@@ -92,7 +92,8 @@ function formatSize(bytes) {
 
 function formatDate(dateStr) {
   if (!dateStr) return '\u2014';
-  return new Date(dateStr).toLocaleString();
+  const d = dateStr.length === 10 ? new Date(dateStr + 'T00:00:00') : new Date(dateStr);
+  return d.toLocaleString();
 }
 
 function mapConfig(data) {

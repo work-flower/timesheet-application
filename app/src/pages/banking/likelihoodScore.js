@@ -12,8 +12,8 @@ function tokenize(text) {
 }
 
 function daysBetween(dateA, dateB) {
-  const a = new Date(dateA);
-  const b = new Date(dateB);
+  const a = typeof dateA === 'string' ? new Date(dateA + 'T00:00:00') : new Date(dateA);
+  const b = typeof dateB === 'string' ? new Date(dateB + 'T00:00:00') : new Date(dateB);
   return Math.abs(Math.round((a - b) / 86400000));
 }
 
