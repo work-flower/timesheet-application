@@ -6,6 +6,7 @@ import {
   Input,
   Textarea,
   Field,
+  Select,
   Spinner,
   MessageBar,
   MessageBarBody,
@@ -17,6 +18,7 @@ import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
+import { TIMEZONES, DEFAULT_TIMEZONE } from '../../../../shared/timezones.js';
 
 const useStyles = makeStyles({
   page: {
@@ -135,7 +137,11 @@ export default function ProfilePage() {
           <FormSection title="Locale">
             <FormField changed={changedFields.has('timezone')}>
               <Field label="Timezone" hint="Used by AI briefing/recap for time formatting">
-                <Input name="timezone" value={form.timezone ?? ''} onChange={handleChange('timezone')} placeholder="Europe/London" />
+                <Select name="timezone" value={form.timezone ?? DEFAULT_TIMEZONE} onChange={handleChange('timezone')}>
+                  {TIMEZONES.map(tz => (
+                    <option key={tz.value} value={tz.value}>{tz.label}</option>
+                  ))}
+                </Select>
               </Field>
             </FormField>
           </FormSection>

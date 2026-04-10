@@ -5,6 +5,7 @@ import * as todoService from './todoService.js';
 import * as calendarService from './calendarService.js';
 import * as timesheetService from './timesheetService.js';
 import { notebooks, tickets, settings } from '../db/index.js';
+import { getTimezoneLabel, DEFAULT_TIMEZONE } from '../../shared/timezones.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync, writeFileSync, rmSync, renameSync, mkdirSync } from 'fs';
@@ -26,7 +27,7 @@ async function readNotebookContent(notebookId) {
 
 async function getUserTimezone() {
   const docs = await settings.find({});
-  return docs[0]?.timezone || 'Europe/London';
+  return docs[0]?.timezone || DEFAULT_TIMEZONE;
 }
 
 async function buildContext(planId, userTimezone) {
@@ -71,11 +72,11 @@ async function buildContext(planId, userTimezone) {
         const eventTz = e.timezone || settingsTimezone;
         const eventStart = new Date(e.start).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: eventTz });
         const eventEnd = new Date(e.end).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: eventTz });
-        let time = `${eventStart} — ${eventEnd} (${eventTz})`;
+        let time = `${eventStart} — ${eventEnd} (${getTimezoneLabel(eventTz)})`;
         if (eventTz !== viewerTz) {
           const localStart = new Date(e.start).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: viewerTz });
           const localEnd = new Date(e.end).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: viewerTz });
-          time += ` / ${localStart} — ${localEnd} (${viewerTz})`;
+          time += ` / ${localStart} — ${localEnd} (${getTimezoneLabel(viewerTz)})`;
         }
         return `- ${time}: ${e.summary}`;
       }).join('\n'));
@@ -260,7 +261,7 @@ export async function generateRecap(planId, { userTimezone } = {}) {
     const prompt = config.dailyPlanSystemPrompt || 'Provide a comprehensive end-of-day recap.';
     const maxTokens = config.maxTokens || 4096;
     const customId = `recap-${planId}`;
-    const tzNote = viewerTz !== settingsTimezone ? `\nUser's current timezone: ${viewerTz}. Show times in both the event timezone and the user's local timezone when they differ; show a single time when they match.` : '';
+    const tzNote = viewerTz !== settingsTimezone ? `\nUser's current timezone: ${getTimezoneLabel(viewerTz)}. Show times in both the event timezone and the user's local timezone when they differ; show a single time when they match.` : '';
 
     const { batchId } = await submitBatch(prompt, `Generate a daily recap for ${planId}.${tzNote}\n\n${context}`, maxTokens, customId);
     saveBatchId(batchPath, batchId, customId);
@@ -407,11 +408,11 @@ export async function generateBriefing(planId, selectedDates, { userTimezone } =
           const eventTz = e.timezone || settingsTimezone;
           const eventStart = new Date(e.start).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: eventTz });
           const eventEnd = new Date(e.end).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: eventTz });
-          let time = `${eventStart} — ${eventEnd} (${eventTz})`;
+          let time = `${eventStart} — ${eventEnd} (${getTimezoneLabel(eventTz)})`;
           if (eventTz !== viewerTz) {
             const localStart = new Date(e.start).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: viewerTz });
             const localEnd = new Date(e.end).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: viewerTz });
-            time += ` / ${localStart} — ${localEnd} (${viewerTz})`;
+            time += ` / ${localStart} — ${localEnd} (${getTimezoneLabel(viewerTz)})`;
           }
           return `- ${time}: ${e.summary}`;
         }).join('\n');
@@ -420,7 +421,7 @@ export async function generateBriefing(planId, selectedDates, { userTimezone } =
 
     const prompt = config.briefingSystemPrompt || 'Synthesise the provided daily recaps into a concise morning briefing.';
     const maxTokens = config.maxTokens || 4096;
-    const tzNote = viewerTz !== settingsTimezone ? `\nUser's current timezone: ${viewerTz}. Show times in both the event timezone and the user's local timezone when they differ; show a single time when they match.` : '';
+    const tzNote = viewerTz !== settingsTimezone ? `\nUser's current timezone: ${getTimezoneLabel(viewerTz)}. Show times in both the event timezone and the user's local timezone when they differ; show a single time when they match.` : '';
     const userMessage = `Generate a morning briefing for ${planId}.${tzNote}\n\n${recapSections.join('\n\n---\n\n')}${calendarSection}`;
     const customId = `briefing-${planId}`;
 
