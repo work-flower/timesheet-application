@@ -377,6 +377,10 @@ export default function ImportJobForm() {
     return new Date(iso).toLocaleString('en-GB');
   };
 
+  const handleChange = (field) => (e, data) => {
+    setForm((prev) => ({ ...prev, [field]: data?.value ?? e?.target?.value }));
+  };
+
   const canSave = isNew ? !!selectedFile : true;
 
   return (
