@@ -99,11 +99,11 @@ const useStyles = makeStyles({
   slot: {
     display: 'flex',
     height: '28px',
-    borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
     alignItems: 'flex-start',
   },
   slotHour: {
-    borderBottomColor: tokens.colorNeutralStroke2,
+    borderBottomColor: tokens.colorNeutralStroke3,
   },
   timeLabel: {
     width: '44px',
