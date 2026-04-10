@@ -4,7 +4,7 @@ import * as dailyPlanService from './dailyPlanService.js';
 import * as todoService from './todoService.js';
 import * as calendarService from './calendarService.js';
 import * as timesheetService from './timesheetService.js';
-import { notebooks, tickets } from '../db/index.js';
+import { notebooks, tickets, settings } from '../db/index.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync, writeFileSync, rmSync, renameSync, mkdirSync } from 'fs';
@@ -24,7 +24,14 @@ async function readNotebookContent(notebookId) {
   return readFileSync(dir, 'utf8');
 }
 
-async function buildContext(planId) {
+async function getUserTimezone() {
+  const docs = await settings.find({});
+  return docs[0]?.timezone || 'Europe/London';
+}
+
+async function buildContext(planId, userTimezone) {
+  const settingsTimezone = await getUserTimezone();
+  const viewerTz = userTimezone || settingsTimezone;
   const sections = [];
 
   const plan = await dailyPlanService.getById(planId);
@@ -58,8 +65,18 @@ async function buildContext(planId) {
     const events = await calendarService.getEvents({ startDate: planId, endDate: planId });
     const eventList = Array.isArray(events) ? events : events.value || [];
     if (eventList.length > 0) {
+      const timeFmt = { hour: '2-digit', minute: '2-digit' };
       sections.push("## Today's Calendar\n" + eventList.map(e => {
-        const time = e.allDay ? 'All day' : `${new Date(e.start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} — ${new Date(e.end).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+        if (e.allDay) return `- All day: ${e.summary}`;
+        const eventTz = e.timezone || settingsTimezone;
+        const eventStart = new Date(e.start).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: eventTz });
+        const eventEnd = new Date(e.end).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: eventTz });
+        let time = `${eventStart} — ${eventEnd} (${eventTz})`;
+        if (eventTz !== viewerTz) {
+          const localStart = new Date(e.start).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: viewerTz });
+          const localEnd = new Date(e.end).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: viewerTz });
+          time += ` / ${localStart} — ${localEnd} (${viewerTz})`;
+        }
         return `- ${time}: ${e.summary}`;
       }).join('\n'));
     }
@@ -214,7 +231,7 @@ function readBatchId(filePath) {
  * Submit recap generation as a batch job.
  * Builds context, submits batch, saves batch ID to file, returns immediately.
  */
-export async function generateRecap(planId) {
+export async function generateRecap(planId, { userTimezone } = {}) {
   const config = await getRawConfig();
   if (!config.apiKey) throw new Error('AI API key not configured. Go to Admin > System > AI Config to set it up.');
 
@@ -237,12 +254,15 @@ export async function generateRecap(planId) {
   }
 
   try {
-    const context = await buildContext(planId);
+    const context = await buildContext(planId, userTimezone);
+    const settingsTimezone = await getUserTimezone();
+    const viewerTz = userTimezone || settingsTimezone;
     const prompt = config.dailyPlanSystemPrompt || 'Provide a comprehensive end-of-day recap.';
     const maxTokens = config.maxTokens || 4096;
     const customId = `recap-${planId}`;
+    const tzNote = viewerTz !== settingsTimezone ? `\nUser's current timezone: ${viewerTz}. Show times in both the event timezone and the user's local timezone when they differ; show a single time when they match.` : '';
 
-    const { batchId } = await submitBatch(prompt, `Generate a daily recap for ${planId}.\n\n${context}`, maxTokens, customId);
+    const { batchId } = await submitBatch(prompt, `Generate a daily recap for ${planId}.${tzNote}\n\n${context}`, maxTokens, customId);
     saveBatchId(batchPath, batchId, customId);
 
     return { status: 'generating' };
@@ -300,7 +320,7 @@ export async function resolveRecapBatch(planId) {
  * Submit briefing generation as a batch job.
  * Does todo carry-forward synchronously, then submits batch.
  */
-export async function generateBriefing(planId, selectedDates) {
+export async function generateBriefing(planId, selectedDates, { userTimezone } = {}) {
   const config = await getRawConfig();
   if (!config.apiKey) throw new Error('AI API key not configured. Go to Admin > System > AI Config to set it up.');
 
@@ -373,9 +393,35 @@ export async function generateBriefing(planId, selectedDates) {
       throw new Error('No recap content found for selected dates.');
     }
 
+    // Add today's calendar events with timezone info
+    const settingsTimezone = await getUserTimezone();
+    const viewerTz = userTimezone || settingsTimezone;
+    let calendarSection = '';
+    try {
+      const events = await calendarService.getEvents({ startDate: planId, endDate: planId });
+      const eventList = Array.isArray(events) ? events : events.value || [];
+      if (eventList.length > 0) {
+        const timeFmt = { hour: '2-digit', minute: '2-digit' };
+        calendarSection = "\n\n## Today's Calendar\n" + eventList.map(e => {
+          if (e.allDay) return `- All day: ${e.summary}`;
+          const eventTz = e.timezone || settingsTimezone;
+          const eventStart = new Date(e.start).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: eventTz });
+          const eventEnd = new Date(e.end).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: eventTz });
+          let time = `${eventStart} — ${eventEnd} (${eventTz})`;
+          if (eventTz !== viewerTz) {
+            const localStart = new Date(e.start).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: viewerTz });
+            const localEnd = new Date(e.end).toLocaleTimeString('en-GB', { ...timeFmt, timeZone: viewerTz });
+            time += ` / ${localStart} — ${localEnd} (${viewerTz})`;
+          }
+          return `- ${time}: ${e.summary}`;
+        }).join('\n');
+      }
+    } catch { /* no calendar data */ }
+
     const prompt = config.briefingSystemPrompt || 'Synthesise the provided daily recaps into a concise morning briefing.';
     const maxTokens = config.maxTokens || 4096;
-    const userMessage = `Generate a morning briefing for ${planId} based on the following ${recapSections.length} day(s) of recaps.\n\n${recapSections.join('\n\n---\n\n')}`;
+    const tzNote = viewerTz !== settingsTimezone ? `\nUser's current timezone: ${viewerTz}. Show times in both the event timezone and the user's local timezone when they differ; show a single time when they match.` : '';
+    const userMessage = `Generate a morning briefing for ${planId}.${tzNote}\n\n${recapSections.join('\n\n---\n\n')}${calendarSection}`;
     const customId = `briefing-${planId}`;
 
     const { batchId } = await submitBatch(prompt, userMessage, maxTokens, customId);

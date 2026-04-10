@@ -519,7 +519,10 @@ export const dailyPlansApi = {
   generateMeetingSummary: (id, data) => request(`/daily-plans/${id}/meeting-summary`, { method: 'POST', body: JSON.stringify(data) }),
   addMeetingNote: (id, data) => request(`/daily-plans/${id}/meeting-notes`, { method: 'POST', body: JSON.stringify(data) }),
   changeDate: (id, newDate) => request(`/daily-plans/${id}/change-date`, { method: 'PUT', body: JSON.stringify({ newDate }) }),
-  generateRecap: (id) => request(`/daily-plans/${id}/recap`, { method: 'POST', body: '{}' }),
+  generateRecap: (id) => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return request(`/daily-plans/${id}/recap`, { method: 'POST', body: JSON.stringify({ userTimezone: tz }) });
+  },
   getRecap: async (id) => {
     const res = await fetch(`${BASE}/daily-plans/${id}/recap`, {
       headers: { 'X-Trace-Id': getTraceId() },
@@ -534,7 +537,10 @@ export const dailyPlansApi = {
   },
   getRecapStatus: (id) => request(`/daily-plans/${id}/recap/status`),
   checkBriefingDays: (id, days = 5) => request(`/daily-plans/${id}/briefing/check-days?days=${days}`),
-  generateBriefing: (id, selectedDates) => request(`/daily-plans/${id}/briefing`, { method: 'POST', body: JSON.stringify({ selectedDates }) }),
+  generateBriefing: (id, selectedDates) => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return request(`/daily-plans/${id}/briefing`, { method: 'POST', body: JSON.stringify({ selectedDates, userTimezone: tz }) });
+  },
   getBriefing: async (id) => {
     const res = await fetch(`${BASE}/daily-plans/${id}/briefing`, {
       headers: { 'X-Trace-Id': getTraceId() },

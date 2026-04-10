@@ -190,7 +190,8 @@ router.post('/:id/meeting-summary', async (req, res) => {
 // Submit recap generation (batch — returns immediately)
 router.post('/:id/recap', async (req, res) => {
   try {
-    const result = await dailyPlanAiService.generateRecap(req.params.id);
+    const { userTimezone } = req.body || {};
+    const result = await dailyPlanAiService.generateRecap(req.params.id, { userTimezone });
     res.json(result);
   } catch (err) {
     console.warn('Recap submission failed:', err.message);
@@ -256,11 +257,11 @@ router.get('/:id/briefing/check-days', async (req, res) => {
 // Submit briefing generation (batch — returns immediately)
 router.post('/:id/briefing', async (req, res) => {
   try {
-    const { selectedDates } = req.body;
+    const { selectedDates, userTimezone } = req.body;
     if (!selectedDates || !Array.isArray(selectedDates) || selectedDates.length === 0) {
       return res.status(400).json({ error: 'selectedDates array is required' });
     }
-    const result = await dailyPlanAiService.generateBriefing(req.params.id, selectedDates);
+    const result = await dailyPlanAiService.generateBriefing(req.params.id, selectedDates, { userTimezone });
     res.json(result);
   } catch (err) {
     console.warn('Briefing submission failed:', err.message);

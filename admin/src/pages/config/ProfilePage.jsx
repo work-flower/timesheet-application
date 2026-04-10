@@ -132,6 +132,14 @@ export default function ProfilePage() {
             </FormField>
           </FormSection>
 
+          <FormSection title="Locale">
+            <FormField changed={changedFields.has('timezone')}>
+              <Field label="Timezone" hint="Used by AI briefing/recap for time formatting">
+                <Input name="timezone" value={form.timezone ?? ''} onChange={handleChange('timezone')} placeholder="Europe/London" />
+              </Field>
+            </FormField>
+          </FormSection>
+
           <FormSection title="Business Details">
             <FormField changed={changedFields.has('businessName')}>
               <Field label="Business Name"><Input name="businessName" value={form.businessName ?? ''} onChange={handleChange('businessName')} /></Field>

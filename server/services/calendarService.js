@@ -130,6 +130,7 @@ export async function fetchAndCache(sourceId) {
         location: comp.location || '',
         allDay,
         attendees,
+        timezone: comp.start?.tz || null,
         cachedAt,
       };
 
