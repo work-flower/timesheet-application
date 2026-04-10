@@ -351,6 +351,11 @@ const useStyles = makeStyles({
   },
 });
 
+/** Format a local Date as YYYY-MM-DD without UTC conversion. */
+function toLocalDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function getWeekRange() {
   const now = new Date();
   const day = now.getDay() || 7;
@@ -359,8 +364,8 @@ function getWeekRange() {
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
   return {
-    startDate: mon.toISOString().split('T')[0],
-    endDate: sun.toISOString().split('T')[0],
+    startDate: toLocalDateStr(mon),
+    endDate: toLocalDateStr(sun),
   };
 }
 
@@ -369,8 +374,8 @@ function getMonthRange() {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return {
-    startDate: start.toISOString().split('T')[0],
-    endDate: end.toISOString().split('T')[0],
+    startDate: toLocalDateStr(start),
+    endDate: toLocalDateStr(end),
   };
 }
 
@@ -485,8 +490,8 @@ export default function Dashboard() {
   useEffect(() => {
     const start = new Date(coverageMonth.year, coverageMonth.month, 1);
     const end = new Date(coverageMonth.year, coverageMonth.month + 1, 0);
-    const startStr = start.toISOString().split('T')[0];
-    const endStr = end.toISOString().split('T')[0];
+    const startStr = toLocalDateStr(start);
+    const endStr = toLocalDateStr(end);
     timesheetsApi.getAll({
       startDate: startStr,
       endDate: endStr,
@@ -510,7 +515,7 @@ export default function Dashboard() {
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
   }, []);
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => toLocalDateStr(new Date()), []);
 
 
 
@@ -539,7 +544,7 @@ export default function Dashboard() {
     const allDays = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(date);
       const dow = date.getDay(); // 0=Sun, 6=Sat
       const isWeekend = dow === 0 || dow === 6;
       const isFuture = date > today;
@@ -590,7 +595,7 @@ export default function Dashboard() {
         </div>
         <div className={styles.lifelineCells}>
           {data.map((m, i) => {
-            const mDate = new Date(m.start);
+            const mDate = new Date(m.start + 'T00:00:00');
             const mKey = `${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, '0')}`;
             const isCurrent = mKey === nowStr;
             const isFuture = mDate > now;
@@ -790,7 +795,7 @@ export default function Dashboard() {
       {/* Day Timeline */}
       <div className={styles.timelineCol}>
       <div className={styles.timelineColInner}>
-        <DayTimelineCard date={new Date().toISOString().split('T')[0]} />
+        <DayTimelineCard date={toLocalDateStr(new Date())} />
       </div>
       </div>
       </div>
