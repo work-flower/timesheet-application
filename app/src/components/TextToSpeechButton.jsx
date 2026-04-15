@@ -48,15 +48,6 @@ const TextToSpeechButton = forwardRef(function TextToSpeechButton({ text, backgr
     return () => { cancelled = true; };
   }, [audioUrl]);
 
-  // Cleanup blob URL on unmount
-  useEffect(() => {
-    return () => {
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-      }
-    };
-  }, []);
-
   const cleanupBgMusic = useCallback(() => {
     if (bgAudioRef.current) {
       bgAudioRef.current.pause();
@@ -72,6 +63,21 @@ const TextToSpeechButton = forwardRef(function TextToSpeechButton({ text, backgr
     }
     setCountdown(0);
   }, []);
+
+  // Cleanup audio and blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (audioElRef.current) {
+        audioElRef.current.pause();
+        audioElRef.current.src = '';
+      }
+      cleanupBgMusic();
+      cancelPreflight();
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+      }
+    };
+  }, [cleanupBgMusic, cancelPreflight]);
 
   const startPreflight = useCallback((seconds) => {
     return new Promise((resolve, reject) => {
