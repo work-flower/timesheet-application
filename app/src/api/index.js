@@ -466,6 +466,21 @@ export const notebooksApi = {
   executePull: (force = false) => request('/notebooks/git/pull/execute', { method: 'POST', body: JSON.stringify({ force }) }),
   getOperation: () => request('/notebooks/git/operation'),
   clearOperation: () => request('/notebooks/git/operation/clear', { method: 'POST', body: '{}' }),
+  getAudioUrl: (id) => `${BASE}/notebooks/${id}/audio`,
+  saveAudio: async (id, blob) => {
+    const formData = new FormData();
+    formData.append('file', blob, 'audio.wav');
+    const res = await fetch(`${BASE}/notebooks/${id}/audio`, {
+      method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    return res.json();
+  },
   importNotebook: async (formData) => {
     const res = await fetch(`${BASE}/notebooks/import`, {
       method: 'POST',

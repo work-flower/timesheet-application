@@ -461,6 +461,42 @@ export async function purge(id) {
   return { success: true };
 }
 
+// --- Audio (TTS) ---
+
+function getAudioPath(dir) {
+  return join(dir, CONTENTS_DIR, 'audio.wav');
+}
+
+export async function getAudioStatus(id) {
+  const existing = await notebooks.findOne({ _id: id });
+  if (!existing) return { hasAudio: false };
+
+  const dir = dirFromTitle(existing.title);
+  const audioFile = getAudioPath(dir);
+  if (!existsSync(audioFile)) return { hasAudio: false };
+
+  const contentFile = getContentPath(dir);
+  if (existsSync(contentFile)) {
+    const audioMtime = statSync(audioFile).mtimeMs;
+    const contentMtime = statSync(contentFile).mtimeMs;
+    if (contentMtime > audioMtime) return { hasAudio: false };
+  }
+
+  return { hasAudio: true };
+}
+
+export async function getAudioFilePath(id) {
+  const dir = await getNotebookDir(id);
+  return getAudioPath(dir);
+}
+
+export async function saveAudio(id, wavBuffer) {
+  const dir = await getNotebookDir(id);
+  const contentsDir = join(dir, CONTENTS_DIR);
+  mkdirSync(contentsDir, { recursive: true });
+  writeFileSync(getAudioPath(dir), wavBuffer);
+}
+
 // --- Content (markdown file) ---
 
 function getContentPath(dir) {

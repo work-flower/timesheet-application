@@ -20,6 +20,7 @@ import NotebookEditor from '../../components/editors/NotebookEditor.jsx';
 import EntitySearchDialog from '../../components/editors/EntitySearchDialog.jsx';
 import DiffViewer from '../../components/DiffViewer.jsx';
 import NotebookArtifactsPanel from './NotebookArtifactsPanel.jsx';
+import TextToSpeechButton from '../../components/TextToSpeechButton.jsx';
 
 const AUTO_SAVE_DELAY = 1500; // ms after last change
 
@@ -122,6 +123,9 @@ export default function NotebookForm() {
   // Save status: 'idle' | 'saving' | 'saved' | 'error'
   const [saveStatus, setSaveStatus] = useState('idle');
 
+  // TTS audio
+  const [audioUrl, setAudioUrl] = useState(null);
+
   // Content
   const [initialContent, setInitialContent] = useState('');
   const contentRef = useRef('');
@@ -146,6 +150,7 @@ export default function NotebookForm() {
         setInitialContent(md || '');
         contentRef.current = md || '';
         lastSavedRef.current = md || '';
+        setAudioUrl(notebooksApi.getAudioUrl(id));
       } catch (err) {
         setError(err.message);
       } finally {
@@ -473,6 +478,18 @@ export default function NotebookForm() {
             <Button appearance="subtle" size="small" icon={<HistoryRegular />}
               onClick={openHistory} />
           </Tooltip>
+          <div className={styles.toolbarDivider} />
+          <TextToSpeechButton
+            text={contentRef.current}
+            backgroundMusic
+            audioUrl={audioUrl}
+            persistKey={`notebook-${id}`}
+            onAudioGenerated={(blob) => {
+              notebooksApi.saveAudio(id, blob).then(() => {
+                setAudioUrl(notebooksApi.getAudioUrl(id));
+              }).catch(() => {});
+            }}
+          />
           {statusLabel && (
             <Text className={styles.statusText} style={saveStatus === 'error' ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
               {statusLabel}

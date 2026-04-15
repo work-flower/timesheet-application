@@ -372,6 +372,37 @@ router.put('/:id/content', async (req, res) => {
   }
 });
 
+// --- Audio (TTS) ---
+
+const audioUpload = multer({ storage: multer.memoryStorage() });
+
+// GET /api/notebooks/:id/audio — serve cached TTS audio
+router.get('/:id/audio', async (req, res) => {
+  try {
+    const status = await notebookService.getAudioStatus(req.params.id);
+    if (!status.hasAudio) return res.status(404).json({ error: 'No cached audio' });
+
+    const audioPath = await notebookService.getAudioFilePath(req.params.id);
+    res.set('Content-Type', 'audio/wav');
+    res.sendFile(audioPath);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/notebooks/:id/audio — upload generated TTS audio
+router.post('/:id/audio', audioUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
+    await notebookService.saveAudio(req.params.id, req.file.buffer);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Media ---
 
 router.post('/:id/media', upload.single('file'), async (req, res) => {

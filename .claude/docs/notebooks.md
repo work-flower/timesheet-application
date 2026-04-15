@@ -64,6 +64,7 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 DATA_DIR/notebooks/{notebookId}/
   ├── .contents/
   │   ├── content.md       ← markdown file (system-managed)
+  │   ├── audio.wav        ← TTS audio cache (auto-invalidated when content is newer)
   │   └── thumb_*.png      ← auto-generated thumbnails (400x250, cover)
   ├── image1.png           ← editor media upload (referenced in markdown)
   ├── report.pdf           ← user artifact
@@ -87,6 +88,8 @@ System files (`content.md`, thumbnails) live in `.contents/`. All other files in
 | `/api/notebooks/:id/unarchive` | POST | Unarchive |
 | `/api/notebooks/:id/purge` | DELETE | Permanent delete |
 | `/api/notebooks/:id/pdf` | GET | Generate PDF (returns application/pdf) — rendered via Puppeteer singleton |
+| `/api/notebooks/:id/audio` | GET | Serve cached TTS audio (audio/wav, 404 if stale or missing) |
+| `/api/notebooks/:id/audio` | POST | Upload generated TTS audio (multipart, memory storage) |
 | `/api/notebooks/:id/content` | GET | Get markdown (text/markdown) |
 | `/api/notebooks/:id/content` | PUT | Save markdown (derives title, summary, tags from content) |
 | `/api/notebooks/:id/media` | POST | Upload file (multipart) |
@@ -147,6 +150,7 @@ System files (`content.md`, thumbnails) live in `.contents/`. All other files in
 - **PDF internal-link flattening:** `notebookPdfService.js` overrides markdown-it's `link_open`/`link_close` renderer rules so that any link whose `href` is not `http://` or `https://` renders as plain text (no anchor tag). Source markdown is never modified — only the renderer's behaviour changes. Image refs are unaffected (different token type). External links remain clickable in the PDF.
 - **Virtual field search:** `getAll` supports virtual fields in OData `$filter`: `tagsAll` (searches `tags` array), `relatedProjectNamesAll` (resolves project names → IDs → filters `relatedProjects`), `relatedClientNamesAll`, `relatedTimesheetLabelsAll`. Uses `odata-filter-to-ast` to parse the AST, detect virtual fields, resolve them to NeDB conditions, then passes the resolved query as `baseFilter` to `buildQuery` with `$filter` cleared. Supports `or` grouping for cross-field search.
 - **Import:** Multipart upload of files → largest `.md`/`.markdown` becomes `content.md`, rest stored as media resources. Metadata derived from content via same `parseContentMeta()`. Uses memory storage multer (separate from per-notebook disk storage multer)
+- **TTS audio:** `TextToSpeechButton` in toolbar reads notebook content aloud via Gemini TTS. Generated audio cached as `.contents/audio.wav`. Stale detection: if `content.md` mtime > `audio.wav` mtime, GET returns 404 (forces regeneration). Same pattern as daily plan recap/briefing audio. Background music enabled.
 - **Git versioning:** Local git repo at `DATA_DIR/notebooks/`. Each notebook is a folder named by sanitized title. `notebookGitService.js` handles all git operations. isDraft computed from git status (dirty folder = draft). Publish = git add + commit with user message. Discard = git checkout + clean to last commit.
 - **Git remote:** Configured via admin page (`/admin/system/notebook-git`). Remote URL with embedded token stored in `.git/config`. Push/Pull wizards on notebook list.
 - **Push flow:** Prepare (fetch + list unpushed commits + check conflicts) → Review (wizard shows commits, affected notebooks, conflict warnings) → Execute (git push, optional force). Conflicts = remote diverged; resolved with --force.
