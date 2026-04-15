@@ -554,6 +554,21 @@ export const dailyPlansApi = {
     return data.content;
   },
   getBriefingStatus: (id) => request(`/daily-plans/${id}/briefing/status`),
+  getBriefingAudioUrl: (id) => `${BASE}/daily-plans/${id}/briefing/audio`,
+  saveBriefingAudio: async (id, blob) => {
+    const formData = new FormData();
+    formData.append('file', blob, 'briefing.wav');
+    const res = await fetch(`${BASE}/daily-plans/${id}/briefing/audio`, {
+      method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    return res.json();
+  },
 };
 
 // Todos
@@ -571,6 +586,25 @@ export const todosApi = {
   update: (id, data) => request(`/todos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/todos/${id}`, { method: 'DELETE' }),
   getIncomplete: () => request('/todos/incomplete'),
+};
+
+// Text-to-Speech
+export const ttsApi = {
+  generateSpeech: async (text) => {
+    const res = await fetch(`${BASE}/gemini-config/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Trace-Id': getTraceId() },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    return res.blob();
+  },
+  getStatus: () => request('/gemini-config/status'),
+  getBackgroundMusicSettings: () => request('/gemini-config/background-music-settings'),
+  getBackgroundMusicUrl: (filename) => `${BASE}/gemini-config/background-music/${encodeURIComponent(filename)}`,
 };
 
 // Dashboard

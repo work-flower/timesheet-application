@@ -1,6 +1,10 @@
 import { Router } from 'express';
+import { resolve } from 'path';
+import multer from 'multer';
 import * as dailyPlanService from '../services/dailyPlanService.js';
 import * as dailyPlanAiService from '../services/dailyPlanAiService.js';
+
+const audioUpload = multer({ storage: multer.memoryStorage() });
 
 const router = Router();
 
@@ -296,5 +300,59 @@ router.get('/:id/briefing/status', async (req, res) => {
   }
 });
 
+
+// GET /api/daily-plans/:id/briefing/audio — serve cached audio if fresh
+router.get('/:id/briefing/audio', (req, res) => {
+  try {
+    const status = dailyPlanService.getAudioStatus(req.params.id, 'briefing');
+    if (!status.hasAudio) return res.status(404).json({ error: 'No cached audio' });
+
+    const audioPath = resolve(dailyPlanService.getAudioPath(req.params.id, 'briefing'));
+    res.set('Content-Type', 'audio/wav');
+    res.sendFile(audioPath);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/daily-plans/:id/briefing/audio — upload generated WAV
+router.post('/:id/briefing/audio', audioUpload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
+    dailyPlanService.saveAudio(req.params.id, 'briefing', req.file.buffer);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/daily-plans/:id/recap/audio — serve cached audio if fresh
+router.get('/:id/recap/audio', (req, res) => {
+  try {
+    const status = dailyPlanService.getAudioStatus(req.params.id, 'recap');
+    if (!status.hasAudio) return res.status(404).json({ error: 'No cached audio' });
+
+    const audioPath = resolve(dailyPlanService.getAudioPath(req.params.id, 'recap'));
+    res.set('Content-Type', 'audio/wav');
+    res.sendFile(audioPath);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/daily-plans/:id/recap/audio — upload generated WAV
+router.post('/:id/recap/audio', audioUpload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
+    dailyPlanService.saveAudio(req.params.id, 'recap', req.file.buffer);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;

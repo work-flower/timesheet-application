@@ -14,6 +14,8 @@ function getRecapPath(date) { return join(getPlanDir(date), 'recap.md'); }
 function getRecapBackupPath(date) { return join(getPlanDir(date), 'recap.md~1'); }
 function getRecapErrorPath(date) { return join(getPlanDir(date), 'recap.err'); }
 function getBriefingPath(date) { return join(getPlanDir(date), 'briefing.md'); }
+function getBriefingAudioPath(date) { return join(getPlanDir(date), 'briefing.wav'); }
+function getRecapAudioPath(date) { return join(getPlanDir(date), 'recap.wav'); }
 function getBriefingBackupPath(date) { return join(getPlanDir(date), 'briefing.md~1'); }
 function getBriefingErrorPath(date) { return join(getPlanDir(date), 'briefing.err'); }
 
@@ -416,4 +418,30 @@ export function getBriefingFilePaths(date) {
     backupPath: getBriefingBackupPath(date),
     errorPath: getBriefingErrorPath(date),
   };
+}
+
+export function getAudioStatus(date, type) {
+  const audioPath = type === 'briefing' ? getBriefingAudioPath(date) : getRecapAudioPath(date);
+  const mdPath = type === 'briefing' ? getBriefingPath(date) : getRecapPath(date);
+
+  if (!existsSync(audioPath)) return { hasAudio: false };
+
+  const audioMtime = statSync(audioPath).mtimeMs;
+  const mdMtime = existsSync(mdPath) ? statSync(mdPath).mtimeMs : 0;
+
+  // Audio is stale if the markdown file is newer
+  if (mdMtime > audioMtime) return { hasAudio: false };
+
+  return { hasAudio: true };
+}
+
+export function getAudioPath(date, type) {
+  return type === 'briefing' ? getBriefingAudioPath(date) : getRecapAudioPath(date);
+}
+
+export function saveAudio(date, type, wavBuffer) {
+  const dir = getPlanDir(date);
+  mkdirSync(dir, { recursive: true });
+  const audioPath = type === 'briefing' ? getBriefingAudioPath(date) : getRecapAudioPath(date);
+  writeFileSync(audioPath, wavBuffer);
 }

@@ -33,6 +33,7 @@ import notebookRoutes from './routes/notebooks.js';
 import dailyPlanRoutes from './routes/dailyPlans.js';
 import todoRoutes from './routes/todos.js';
 import assetsRoutes from './routes/assets.js';
+import geminiConfigRoutes from './routes/geminiConfig.js';
 import { isChromiumAvailable, closeBrowser } from './services/puppeteerBrowser.js';
 
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
@@ -140,6 +141,7 @@ app.use('/api/notebooks', notebookRoutes);
 app.use('/api/daily-plans', dailyPlanRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/assets', assetsRoutes);
+app.use('/api/gemini-config', geminiConfigRoutes);
 
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)

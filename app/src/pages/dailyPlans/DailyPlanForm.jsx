@@ -13,6 +13,7 @@ import {
   BookRegular, LinkRegular, LinkDismissRegular, ArrowImportRegular,
 } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
+import TextToSpeechButton from '../../components/TextToSpeechButton.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import NotebookEditor from '../../components/editors/NotebookEditor.jsx';
 import EntitySearchDialog from '../../components/editors/EntitySearchDialog.jsx';
@@ -223,6 +224,7 @@ export default function DailyPlanForm() {
   });
   const [briefingContent, setBriefingContent] = useState(null);
   const [briefingStatus, setBriefingStatus] = useState(null);
+  const [briefingAudioUrl, setBriefingAudioUrl] = useState(null);
   const [briefingDialogOpen, setBriefingDialogOpen] = useState(false);
   const [briefingDays, setBriefingDays] = useState([]);
   const [briefingDaysLoading, setBriefingDaysLoading] = useState(false);
@@ -230,6 +232,7 @@ export default function DailyPlanForm() {
   const [aiBannerText, setAiBannerText] = useState(null);
   const recapPollRef = useRef(null);
   const briefingPollRef = useRef(null);
+  const briefingTtsRef = useRef(null);
   const [commentTodoText, setCommentTodoText] = useState('');
   const [commentTodoOpen, setCommentTodoOpen] = useState(false);
   const [notebookSearchOpen, setNotebookSearchOpen] = useState(false);
@@ -294,6 +297,9 @@ export default function DailyPlanForm() {
           setAiBannerText(null);
           const bc = await dailyPlansApi.getBriefing(id);
           setBriefingContent(bc);
+          setBriefingAudioUrl(null); // Fresh briefing — old audio is stale
+          // Auto-play TTS for the newly generated briefing
+          setTimeout(() => briefingTtsRef.current?.play(bc), 100);
           // Reload plan to pick up carried-forward todos
           if (reloadPlanFn) reloadPlanFn();
         } else if (status.status === 'failed') {
@@ -349,8 +355,11 @@ export default function DailyPlanForm() {
         if (bStatus.status === 'completed') {
           const bc = await dailyPlansApi.getBriefing(id);
           setBriefingContent(bc);
+          // Always point to the audio endpoint — component handles 404
+          setBriefingAudioUrl(dailyPlansApi.getBriefingAudioUrl(id));
         } else {
           setBriefingContent(null);
+          setBriefingAudioUrl(null);
           // Pass loadPlan via a stable ref to avoid circular dependency
           if (bStatus.status === 'generating') startBriefingPoll(null);
         }
@@ -1183,6 +1192,20 @@ export default function DailyPlanForm() {
               {activeInsightTab === 'briefing' && (
                 briefingContent ? (
                   <div data-color-mode="light">
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+                      <TextToSpeechButton
+                        ref={briefingTtsRef}
+                        text={briefingContent}
+                        backgroundMusic
+                        audioUrl={briefingAudioUrl}
+                        disabled={briefingStatus?.status === 'generating'}
+                        onAudioGenerated={(blob) => {
+                          dailyPlansApi.saveBriefingAudio(id, blob).then(() => {
+                            setBriefingAudioUrl(dailyPlansApi.getBriefingAudioUrl(id));
+                          }).catch(() => {});
+                        }}
+                      />
+                    </div>
                     <MDEditor.Markdown source={briefingContent} style={{ backgroundColor: 'transparent', fontSize: '13px', lineHeight: '1.5' }} />
                   </div>
                 ) : (

@@ -34,6 +34,29 @@ export const aiConfigApi = {
   testConnection: (data) => request('/ai-config/test-connection', { method: 'POST', body: JSON.stringify(data) }),
 };
 
+// Gemini Config
+export const geminiConfigApi = {
+  getConfig: () => request('/gemini-config'),
+  getDefaults: () => request('/gemini-config/defaults'),
+  updateConfig: (data) => request('/gemini-config', { method: 'PUT', body: JSON.stringify(data) }),
+  testConnection: (data) => request('/gemini-config/test-connection', { method: 'POST', body: JSON.stringify(data) }),
+  uploadBackgroundMusic: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE}/gemini-config/background-music`, {
+      method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
+  deleteBackgroundMusic: () => request('/gemini-config/background-music', { method: 'DELETE' }),
+};
+
 // MCP Auth
 export const mcpAuthApi = {
   getConfig: () => request('/mcp-auth'),
