@@ -225,6 +225,7 @@ export default function DailyPlanForm() {
   const [briefingContent, setBriefingContent] = useState(null);
   const [briefingStatus, setBriefingStatus] = useState(null);
   const [briefingAudioUrl, setBriefingAudioUrl] = useState(null);
+  const [recapAudioUrl, setRecapAudioUrl] = useState(null);
   const [briefingDialogOpen, setBriefingDialogOpen] = useState(false);
   const [briefingDays, setBriefingDays] = useState([]);
   const [briefingDaysLoading, setBriefingDaysLoading] = useState(false);
@@ -233,6 +234,7 @@ export default function DailyPlanForm() {
   const recapPollRef = useRef(null);
   const briefingPollRef = useRef(null);
   const briefingTtsRef = useRef(null);
+  const recapTtsRef = useRef(null);
   const [commentTodoText, setCommentTodoText] = useState('');
   const [commentTodoOpen, setCommentTodoOpen] = useState(false);
   const [notebookSearchOpen, setNotebookSearchOpen] = useState(false);
@@ -271,6 +273,8 @@ export default function DailyPlanForm() {
           setAiBannerText(null);
           const rc = await dailyPlansApi.getRecap(id);
           setRecapContent(rc);
+          setRecapAudioUrl(null); // Fresh recap — old audio is stale
+          setTimeout(() => recapTtsRef.current?.play(rc), 100);
         } else if (status.status === 'failed') {
           clearInterval(recapPollRef.current);
           recapPollRef.current = null;
@@ -342,8 +346,10 @@ export default function DailyPlanForm() {
         if (status.status === 'completed') {
           const rc = await dailyPlansApi.getRecap(id);
           setRecapContent(rc);
+          setRecapAudioUrl(dailyPlansApi.getRecapAudioUrl(id));
         } else {
           setRecapContent(null);
+          setRecapAudioUrl(null);
           if (status.status === 'generating') startRecapPoll();
         }
       } catch { /* ignore */ }
@@ -1177,6 +1183,20 @@ export default function DailyPlanForm() {
               {activeInsightTab === 'recap' && (
                 recapContent ? (
                   <div data-color-mode="light">
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+                      <TextToSpeechButton
+                        ref={recapTtsRef}
+                        text={recapContent}
+                        backgroundMusic
+                        audioUrl={recapAudioUrl}
+                        disabled={recapStatus?.status === 'generating'}
+                        onAudioGenerated={(blob) => {
+                          dailyPlansApi.saveRecapAudio(id, blob).then(() => {
+                            setRecapAudioUrl(dailyPlansApi.getRecapAudioUrl(id));
+                          }).catch(() => {});
+                        }}
+                      />
+                    </div>
                     <MDEditor.Markdown source={recapContent} style={{ backgroundColor: 'transparent', fontSize: '13px', lineHeight: '1.5' }} />
                   </div>
                 ) : (

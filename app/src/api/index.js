@@ -569,6 +569,21 @@ export const dailyPlansApi = {
     }
     return res.json();
   },
+  getRecapAudioUrl: (id) => `${BASE}/daily-plans/${id}/recap/audio`,
+  saveRecapAudio: async (id, blob) => {
+    const formData = new FormData();
+    formData.append('file', blob, 'recap.wav');
+    const res = await fetch(`${BASE}/daily-plans/${id}/recap/audio`, {
+      method: 'POST',
+      headers: { 'X-Trace-Id': getTraceId() },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed: ${res.status}`);
+    }
+    return res.json();
+  },
 };
 
 // Todos
