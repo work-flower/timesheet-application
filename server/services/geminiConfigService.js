@@ -138,7 +138,14 @@ export async function generateSpeech(text) {
   });
 
   const part = response.candidates?.[0]?.content?.parts?.[0];
-  if (!part?.inlineData) throw new Error('No audio data returned from Gemini');
+  if (!part?.inlineData) {
+    const candidate = response.candidates?.[0];
+    console.error('Gemini TTS: no audio in response', {
+      finishReason: candidate?.finishReason,
+      parts: candidate?.content?.parts?.map((p) => ({ text: p.text, hasInlineData: !!p.inlineData })),
+    });
+    throw new Error('No audio data returned from Gemini');
+  }
 
   const { data: base64Data, mimeType } = part.inlineData;
   const pcmBuffer = Buffer.from(base64Data, 'base64');
