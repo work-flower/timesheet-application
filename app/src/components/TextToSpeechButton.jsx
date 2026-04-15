@@ -1,19 +1,32 @@
 import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
-import { Button, Spinner, Tooltip } from '@fluentui/react-components';
-import { PlayRegular, StopRegular } from '@fluentui/react-icons';
+import { Button, Slider, Spinner, Tooltip, tokens } from '@fluentui/react-components';
+import { PlayRegular, PauseRegular, StopRegular } from '@fluentui/react-icons';
 import { ttsApi } from '../api/index.js';
 
-const TextToSpeechButton = forwardRef(function TextToSpeechButton({ text, backgroundMusic, audioUrl, onAudioGenerated, disabled: externalDisabled }, ref) {
-  const [state, setState] = useState('idle'); // idle | preflight | loading | playing
+function formatTime(seconds) {
+  if (!isFinite(seconds)) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+const TextToSpeechButton = forwardRef(function TextToSpeechButton({ text, backgroundMusic, audioUrl, onAudioGenerated, disabled: externalDisabled, persistKey }, ref) {
+  const [state, setState] = useState('idle'); // idle | preflight | loading | ready
   const [error, setError] = useState(null);
-  const [geminiReady, setGeminiReady] = useState(null); // null = loading, true/false
+  const [geminiReady, setGeminiReady] = useState(null);
   const [preflightSeconds, setPreflightSeconds] = useState(5);
   const [countdown, setCountdown] = useState(0);
-  const audioRef = useRef(null);
-  const urlRef = useRef(null);
+  const [audioSrc, setAudioSrc] = useState(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioElRef = useRef(null);
+  const blobUrlRef = useRef(null);
   const bgAudioRef = useRef(null);
-  const preflightRef = useRef(null); // { timer, resolve, reject }
-  const pendingContentRef = useRef(null);
+  const preflightRef = useRef(null);
+  const shouldAutoPlayRef = useRef(false);
+
+  const storageKey = persistKey ? `tts-pos-${persistKey}` : null;
 
   useEffect(() => {
     ttsApi.getStatus().then((s) => {
@@ -22,24 +35,34 @@ const TextToSpeechButton = forwardRef(function TextToSpeechButton({ text, backgr
     }).catch(() => setGeminiReady(false));
   }, []);
 
+  // Verify cached audio exists on mount
+  useEffect(() => {
+    if (!audioUrl) return;
+    let cancelled = false;
+    fetch(audioUrl, { method: 'HEAD' }).then((res) => {
+      if (!cancelled && res.ok) {
+        setAudioSrc(audioUrl);
+        setState('ready');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [audioUrl]);
+
+  // Cleanup blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+      }
+    };
+  }, []);
+
   const cleanupBgMusic = useCallback(() => {
     if (bgAudioRef.current) {
       bgAudioRef.current.pause();
       bgAudioRef.current = null;
     }
   }, []);
-
-  const cleanup = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    if (urlRef.current) {
-      URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
-    }
-    cleanupBgMusic();
-  }, [cleanupBgMusic]);
 
   const cancelPreflight = useCallback(() => {
     if (preflightRef.current) {
@@ -79,74 +102,114 @@ const TextToSpeechButton = forwardRef(function TextToSpeechButton({ text, backgr
       bgAudioRef.current = bgAudio;
       await bgAudio.play();
     } catch {
-      // Background music is optional — don't fail TTS if it errors
+      // Background music is optional
     }
   }, [backgroundMusic]);
 
-  const playAudioElement = useCallback(async (src, isObjectUrl) => {
-    const audio = new Audio(src);
-    audioRef.current = audio;
-    if (isObjectUrl) urlRef.current = src;
+  const handleLoadedMetadata = useCallback(() => {
+    const el = audioElRef.current;
+    if (!el) return;
+    setDuration(el.duration);
+    if (storageKey) {
+      const saved = localStorage.getItem(storageKey);
+      if (saved != null) {
+        const pos = parseFloat(saved);
+        if (isFinite(pos) && pos > 0) {
+          el.currentTime = pos;
+          setCurrentTime(pos);
+        }
+      }
+    }
+    if (shouldAutoPlayRef.current) {
+      shouldAutoPlayRef.current = false;
+      el.play().catch(() => {});
+    }
+  }, [storageKey]);
 
-    audio.onended = () => {
-      cleanup();
-      setState('idle');
-    };
+  const handleTimeUpdate = useCallback(() => {
+    const el = audioElRef.current;
+    if (!el) return;
+    setCurrentTime(el.currentTime);
+    if (storageKey) {
+      localStorage.setItem(storageKey, String(el.currentTime));
+    }
+  }, [storageKey]);
 
-    audio.onerror = () => {
-      cleanup();
-      setError('Audio playback failed');
-      setState('idle');
-    };
+  const handleEnded = useCallback(() => {
+    setPlaying(false);
+    if (storageKey) localStorage.removeItem(storageKey);
+    cleanupBgMusic();
+  }, [storageKey, cleanupBgMusic]);
 
-    await audio.play();
-    await startBgMusic();
-    setState('playing');
-  }, [cleanup, startBgMusic]);
+  const handleSeek = useCallback((_ev, data) => {
+    const el = audioElRef.current;
+    if (!el) return;
+    el.currentTime = data.value;
+    setCurrentTime(data.value);
+  }, []);
 
-  const handlePlay = useCallback(async (textOverride) => {
+  const togglePlayPause = useCallback(() => {
+    const el = audioElRef.current;
+    if (!el) return;
+    if (el.paused) {
+      el.play().catch(() => {});
+    } else {
+      el.pause();
+    }
+  }, []);
+
+  const handleGenerate = useCallback(async (textOverride) => {
     const content = textOverride || text;
-
     setError(null);
+
+    // Already have audio loaded — just play it
+    if (audioSrc && audioElRef.current) {
+      audioElRef.current.play().catch(() => {});
+      return;
+    }
+
+    // Try cached audio first
+    if (audioUrl && !audioSrc) {
+      setState('loading');
+      try {
+        const res = await fetch(audioUrl, { method: 'HEAD' });
+        if (res.ok) {
+          shouldAutoPlayRef.current = true;
+          setAudioSrc(audioUrl);
+          setState('ready');
+          return;
+        }
+        // 404 — no cached audio, fall through to generate
+      } catch {
+        // fall through to generate
+      }
+    }
+
+    if (!content?.trim()) {
+      setState('idle');
+      return;
+    }
+
     setState('loading');
 
     try {
-      // Try cached audio first
-      if (audioUrl) {
-        const res = await fetch(audioUrl);
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          await playAudioElement(url, true);
-          return;
-        }
-        if (res.status !== 404) {
-          throw new Error(`Failed to load cached audio: ${res.status}`);
-        }
-        // 404 — no cached audio, fall through to generate
-      }
-
-      if (!content?.trim()) {
-        setState('idle');
-        return;
-      }
-
-      // Pre-flight countdown before expensive Gemini call
       if (preflightSeconds > 0) {
         setState('preflight');
-        pendingContentRef.current = content;
         await startPreflight(preflightSeconds);
         setState('loading');
       }
 
       const blob = await ttsApi.generateSpeech(content);
       const url = URL.createObjectURL(blob);
-      await playAudioElement(url, true);
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = url;
 
-      // Notify caller with the generated blob so it can be saved
+      shouldAutoPlayRef.current = true;
+      setAudioSrc(url);
+      setState('ready');
+
       if (onAudioGenerated) onAudioGenerated(blob);
     } catch (err) {
-      cleanup();
       if (err.message === 'Cancelled') {
         setState('idle');
         return;
@@ -154,22 +217,60 @@ const TextToSpeechButton = forwardRef(function TextToSpeechButton({ text, backgr
       setError(err.message);
       setState('idle');
     }
-  }, [text, audioUrl, preflightSeconds, cleanup, playAudioElement, startPreflight, onAudioGenerated]);
+  }, [text, audioUrl, audioSrc, preflightSeconds, startPreflight, onAudioGenerated]);
 
   const handleStop = () => {
     cancelPreflight();
-    cleanup();
     setState('idle');
   };
 
-  useImperativeHandle(ref, () => ({ play: handlePlay }), [handlePlay]);
+  useImperativeHandle(ref, () => ({ play: handleGenerate }), [handleGenerate]);
 
-  // Can play if: Gemini is configured OR cached audio exists
   const canPlay = audioUrl || geminiReady;
   const disabled = externalDisabled || !canPlay || (!text?.trim() && !audioUrl);
   const notConfiguredMessage = !geminiReady && !audioUrl
     ? 'Gemini text-to-speech configuration is not set and tested successfully.'
     : undefined;
+
+  // Custom Fluent UI player when ready
+  if (state === 'ready' && audioSrc) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 260 }}>
+        {/* Hidden audio element */}
+        <audio
+          ref={audioElRef}
+          src={audioSrc}
+          onLoadedMetadata={handleLoadedMetadata}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleEnded}
+          onPlay={() => { setPlaying(true); startBgMusic(); }}
+          onPause={() => { setPlaying(false); cleanupBgMusic(); }}
+        />
+        <Button
+          appearance="subtle"
+          size="small"
+          icon={playing ? <PauseRegular /> : <PlayRegular />}
+          onClick={togglePlayPause}
+          style={{ minWidth: 28, padding: '2px 4px' }}
+        />
+        <span style={{ fontSize: 11, color: tokens.colorNeutralForeground3, whiteSpace: 'nowrap', minWidth: 36, textAlign: 'right' }}>
+          {formatTime(currentTime)}
+        </span>
+        <Slider
+          size="small"
+          min={0}
+          max={duration || 1}
+          step={0.1}
+          value={currentTime}
+          onChange={handleSeek}
+          style={{ flex: 1, minWidth: 100 }}
+        />
+        <span style={{ fontSize: 11, color: tokens.colorNeutralForeground3, whiteSpace: 'nowrap', minWidth: 36 }}>
+          {formatTime(duration)}
+        </span>
+      </div>
+    );
+  }
 
   if (state === 'preflight') {
     return (
@@ -190,25 +291,20 @@ const TextToSpeechButton = forwardRef(function TextToSpeechButton({ text, backgr
     );
   }
 
-  if (state === 'playing') {
-    return (
-      <Button appearance="subtle" size="small" icon={<StopRegular />} onClick={handleStop}>
-        Stop
-      </Button>
-    );
-  }
+  // Show "Generate" when no cached audio, "Listen" when cached
+  const buttonLabel = audioSrc ? 'Listen' : 'Generate';
 
   const button = (
     <Button
       appearance="subtle"
       size="small"
       icon={<PlayRegular />}
-      onClick={() => handlePlay()}
+      onClick={() => handleGenerate()}
       disabled={notConfiguredMessage ? undefined : disabled}
       disabledFocusable={notConfiguredMessage ? true : undefined}
       title={error || undefined}
     >
-      Listen
+      {buttonLabel}
     </Button>
   );
 

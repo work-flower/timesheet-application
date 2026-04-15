@@ -1180,8 +1180,8 @@ export default function DailyPlanForm() {
               <Tab value="recap">Recap</Tab>
             </TabList>
             <div style={{ flex: 1, paddingTop: '8px', overflowY: 'auto' }}>
-              {activeInsightTab === 'recap' && (
-                recapContent ? (
+              <div style={{ display: activeInsightTab === 'recap' ? undefined : 'none' }}>
+                {recapContent ? (
                   <div data-color-mode="light">
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
                       <TextToSpeechButton
@@ -1189,6 +1189,7 @@ export default function DailyPlanForm() {
                         text={recapContent}
                         backgroundMusic
                         audioUrl={recapAudioUrl}
+                        persistKey={`recap-${id}`}
                         disabled={recapStatus?.status === 'generating'}
                         onAudioGenerated={(blob) => {
                           dailyPlansApi.saveRecapAudio(id, blob).then(() => {
@@ -1207,10 +1208,10 @@ export default function DailyPlanForm() {
                       ? 'Recap generation failed. Click Recap to retry.'
                       : 'Click Recap to generate an end-of-day summary.'}
                   </Text>
-                )
-              )}
-              {activeInsightTab === 'briefing' && (
-                briefingContent ? (
+                )}
+              </div>
+              <div style={{ display: activeInsightTab === 'briefing' ? undefined : 'none' }}>
+                {briefingContent ? (
                   <div data-color-mode="light">
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
                       <TextToSpeechButton
@@ -1218,6 +1219,7 @@ export default function DailyPlanForm() {
                         text={briefingContent}
                         backgroundMusic
                         audioUrl={briefingAudioUrl}
+                        persistKey={`briefing-${id}`}
                         disabled={briefingStatus?.status === 'generating'}
                         onAudioGenerated={(blob) => {
                           dailyPlansApi.saveBriefingAudio(id, blob).then(() => {
@@ -1236,8 +1238,8 @@ export default function DailyPlanForm() {
                       ? 'Briefing generation failed. Click Briefing to retry.'
                       : 'Click Briefing to generate a morning briefing from previous days\' recaps.'}
                   </Text>
-                )
-              )}
+                )}
+              </div>
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
