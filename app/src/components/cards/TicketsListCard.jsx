@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  makeStyles, tokens, Text, Button, Tooltip, ToggleButton, mergeClasses,
+  makeStyles, tokens, Text, Button, Tooltip, ToggleButton, mergeClasses, SearchBox,
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent,
 } from '@fluentui/react-components';
 import {
@@ -9,7 +9,7 @@ import {
 } from '@fluentui/react-icons';
 import { ticketsApi } from '../../api/index.js';
 
-const STORAGE_KEY = 'ticketsListCard.stateFilter';
+const STORAGE_PREFIX = 'ticketsListCard';
 
 const useStyles = makeStyles({
   headerRow: {
@@ -45,6 +45,9 @@ const useStyles = makeStyles({
     animationIterationCount: 'infinite',
     animationTimingFunction: 'linear',
   },
+  searchRow: {
+    marginBottom: '8px',
+  },
   body: {
     flex: 1,
     display: 'flex',
@@ -67,11 +70,27 @@ const useStyles = makeStyles({
     minHeight: 0,
     overflow: 'hidden',
   },
+  listColumn: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
   list: {
     flex: 1,
     minWidth: 0,
     overflowY: 'auto',
     overflowX: 'hidden',
+  },
+  paginationFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    paddingTop: '4px',
+    borderTop: `1px solid ${tokens.colorNeutralStroke3}`,
+    flexShrink: 0,
   },
   item: {
     padding: '4px 0',
@@ -206,20 +225,6 @@ function hexToPastel(hex) {
   return { bg, text };
 }
 
-function getCommentsForDate(items, dateStr) {
-  const result = [];
-  for (const ticket of items) {
-    if (!ticket.comments?.length) continue;
-    for (const c of ticket.comments) {
-      if (c.created && c.created.slice(0, 10) === dateStr) {
-        result.push({ ...c, ticketId: ticket._id, externalId: ticket.externalId, ticketTitle: ticket.title, sourceColour: ticket.sourceColour });
-      }
-    }
-  }
-  result.sort((a, b) => (b.created || '').localeCompare(a.created || ''));
-  return result;
-}
-
 function formatCommentsDateLabel(dateStr) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -239,40 +244,151 @@ function shiftDateStr(dateStr, delta) {
   return `${y}-${m}-${day}`;
 }
 
+function escapeOdataString(s) {
+  return s.replace(/'/g, "''");
+}
+
+function buildSearchClause(searchText) {
+  const trimmed = searchText.trim();
+  if (!trimmed) return '';
+  const esc = escapeOdataString(trimmed);
+  return `(contains(externalId,'${esc}') or contains(title,'${esc}'))`;
+}
+
+function buildStateClause(stateFilter) {
+  if (stateFilter.size === 0) return '';
+  const parts = [...stateFilter].map(s => `state eq '${escapeOdataString(s)}'`);
+  return `(${parts.join(' or ')})`;
+}
+
+function buildListFilter(searchText, stateFilter) {
+  const parts = [buildSearchClause(searchText), buildStateClause(stateFilter)].filter(Boolean);
+  return parts.join(' and ');
+}
+
 /**
- * Compact tickets list with state filters and a comments panel with day navigation.
+ * Compact tickets list with backend-driven search, state filters, and pagination,
+ * plus a comments panel with day navigation backed by a separate endpoint.
  *
  * Props:
  * - commentsInitialDate (string, YYYY-MM-DD) — starting date for the comments panel (default: today)
- * - maxItems (number) — max tickets shown in the list (default: 12)
- * - storageKey (string) — localStorage key for persisted state filter (default: built-in)
+ * - maxItems (number) — page size for the tickets list (default: 12)
+ * - storageKey (string) — localStorage key prefix for persisted state (default: 'ticketsListCard')
  * - onCommentClick (function) — callback when a comment shortcut is clicked, receives the full comment object
  * - onTicketShortcutClick (function) — callback when a ticket shortcut icon is clicked, receives the full ticket object
  */
 export default function TicketsListCard({ commentsInitialDate, maxItems = 12, storageKey, onCommentClick, onTicketShortcutClick }) {
   const styles = useStyles();
-  const filterKey = storageKey || STORAGE_KEY;
+  const prefix = storageKey || STORAGE_PREFIX;
+  const searchKey = `${prefix}.search`;
+  const pageKey = `${prefix}.page`;
+  const stateFilterKey = `${prefix}.stateFilter`;
 
   const [items, setItems] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const [stateFilter, setStateFilter] = useState(() => {
-    try { const raw = localStorage.getItem(filterKey); if (raw) return new Set(JSON.parse(raw)); } catch {} return new Set();
+
+  const [searchInput, setSearchInput] = useState(() => {
+    try { return localStorage.getItem(searchKey) || ''; } catch { return ''; }
   });
+  const [searchText, setSearchText] = useState(searchInput);
+
+  const [currentPage, setCurrentPage] = useState(() => {
+    try { const raw = localStorage.getItem(pageKey); return raw ? Math.max(1, parseInt(raw, 10) || 1) : 1; } catch { return 1; }
+  });
+
+  const [stateFilter, setStateFilter] = useState(() => {
+    try { const raw = localStorage.getItem(stateFilterKey); if (raw) return new Set(JSON.parse(raw)); } catch {} return new Set();
+  });
+
+  const [availableStates, setAvailableStates] = useState([]);
+
   const [commentsDate, setCommentsDate] = useState(() => commentsInitialDate || new Date().toISOString().split('T')[0]);
+  const [dateComments, setDateComments] = useState([]);
+
   const [popupTicketId, setPopupTicketId] = useState(null);
 
-  // Sync with external date prop
+  const listScrollRef = useRef(null);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / maxItems));
+
+  // Sync external date prop
   useEffect(() => {
     if (commentsInitialDate) setCommentsDate(commentsInitialDate);
   }, [commentsInitialDate]);
 
-  const fetchTickets = useCallback(() =>
-    ticketsApi.getAll({ $top: '50', $orderby: 'updated desc' })
-      .then(setItems)
-      .catch(() => setItems([])),
-  []);
+  // Apply a search value: sync into searchText, persist, reset to page 1.
+  // Triggered explicitly on Enter or when the input is cleared (empty value).
+  const applySearchValue = useCallback((value) => {
+    if (value === searchText) return;
+    setSearchText(value);
+    try { localStorage.setItem(searchKey, value); } catch {}
+    setCurrentPage(1);
+    try { localStorage.setItem(pageKey, '1'); } catch {}
+  }, [searchText, searchKey, pageKey]);
 
-  useEffect(() => { fetchTickets(); }, [fetchTickets]);
+  // Fetch list page
+  const fetchList = useCallback(() => {
+    const params = {
+      $top: String(maxItems),
+      $skip: String((currentPage - 1) * maxItems),
+      $count: 'true',
+      $orderby: 'updated desc',
+    };
+    const filter = buildListFilter(searchText, stateFilter);
+    if (filter) params.$filter = filter;
+
+    return ticketsApi.getAll(params)
+      .then(resp => {
+        setItems(resp.value || []);
+        setTotalCount(resp['@odata.count'] || 0);
+      })
+      .catch(() => {
+        setItems([]);
+        setTotalCount(0);
+      });
+  }, [searchText, stateFilter, currentPage, maxItems]);
+
+  useEffect(() => { fetchList(); }, [fetchList]);
+
+  // Discover available states for the toggle buttons (search-only filter, no pagination)
+  const fetchAvailableStates = useCallback(() => {
+    const params = { $select: 'state', $orderby: 'state asc' };
+    const searchClause = buildSearchClause(searchText);
+    if (searchClause) params.$filter = searchClause;
+
+    return ticketsApi.getAll(params)
+      .then(resp => {
+        const value = Array.isArray(resp) ? resp : (resp.value || []);
+        const set = new Set(value.map(t => t.state).filter(Boolean));
+        setAvailableStates([...set].sort());
+      })
+      .catch(() => setAvailableStates([]));
+  }, [searchText]);
+
+  useEffect(() => { fetchAvailableStates(); }, [fetchAvailableStates]);
+
+  // Fetch comments for current date
+  const fetchDateComments = useCallback(() => {
+    return ticketsApi.getCommentsByDate(commentsDate)
+      .then(setDateComments)
+      .catch(() => setDateComments([]));
+  }, [commentsDate]);
+
+  useEffect(() => { fetchDateComments(); }, [fetchDateComments]);
+
+  // Clamp page if totalPages shrinks below currentPage (e.g. after filter narrowing)
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+      try { localStorage.setItem(pageKey, String(totalPages)); } catch {}
+    }
+  }, [totalPages, currentPage, pageKey]);
+
+  // Scroll list to top on page change
+  useEffect(() => {
+    if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+  }, [currentPage]);
 
   // Listen for postMessage from embedded ticket form
   useEffect(() => {
@@ -282,48 +398,47 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
       const cmd = e.data.command;
       if (cmd === 'back' || cmd === 'saveAndClose') {
         setPopupTicketId(null);
-        fetchTickets();
+        fetchList();
+        fetchDateComments();
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [fetchTickets]);
+  }, [fetchList, fetchDateComments]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await ticketsApi.refreshAll();
-      await fetchTickets();
+      await Promise.all([fetchList(), fetchAvailableStates(), fetchDateComments()]);
     } catch { /* ignore */ }
     setRefreshing(false);
-  }, [fetchTickets]);
-
-  const states = useMemo(() => {
-    const s = [...new Set(items.map(t => t.state).filter(Boolean))];
-    s.sort();
-    return s;
-  }, [items]);
-
-  const filtered = useMemo(() => {
-    if (stateFilter.size === 0) return items;
-    return items.filter(t => stateFilter.has(t.state));
-  }, [items, stateFilter]);
+  }, [fetchList, fetchAvailableStates, fetchDateComments]);
 
   const toggle = useCallback((state) => {
     setStateFilter(prev => {
       const next = new Set(prev);
       if (next.has(state)) next.delete(state); else next.add(state);
-      try { localStorage.setItem(filterKey, JSON.stringify([...next])); } catch {}
+      try { localStorage.setItem(stateFilterKey, JSON.stringify([...next])); } catch {}
       return next;
     });
-  }, [filterKey]);
+    setCurrentPage(1);
+    try { localStorage.setItem(pageKey, '1'); } catch {}
+  }, [stateFilterKey, pageKey]);
 
   const clearFilter = useCallback(() => {
     setStateFilter(new Set());
-    try { localStorage.setItem(filterKey, '[]'); } catch {}
-  }, [filterKey]);
+    try { localStorage.setItem(stateFilterKey, '[]'); } catch {}
+    setCurrentPage(1);
+    try { localStorage.setItem(pageKey, '1'); } catch {}
+  }, [stateFilterKey, pageKey]);
 
-  const dateComments = useMemo(() => getCommentsForDate(items, commentsDate), [items, commentsDate]);
+  const goToPage = useCallback((p) => {
+    setCurrentPage(p);
+    try { localStorage.setItem(pageKey, String(p)); } catch {}
+  }, [pageKey]);
+
+  const isFiltering = !!searchText.trim() || stateFilter.size > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -340,141 +455,181 @@ export default function TicketsListCard({ commentsInitialDate, maxItems = 12, st
         </Tooltip>
       </div>
 
-      {items.length === 0 ? (
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
-          No recent tickets
-        </Text>
-      ) : (
-        <div className={styles.body}>
-          {states.length > 1 && (
-            <div className={styles.filters}>
-              {states.map(state => (
-                <ToggleButton
-                  key={state}
-                  size="small"
-                  checked={stateFilter.has(state)}
-                  onClick={() => toggle(state)}
-                >
-                  {state}
-                </ToggleButton>
-              ))}
-              {stateFilter.size > 0 && (
-                <Button size="small" appearance="subtle" onClick={clearFilter}>Clear</Button>
-              )}
-            </div>
-          )}
-          <div className={styles.split}>
-            {/* Left: ticket list */}
-            <div className={styles.list}>
-              {filtered.slice(0, maxItems).map(ticket => (
-                <Tooltip
-                  key={ticket._id}
-                  relationship="description"
-                  positioning="above"
-                  content={(() => {
-                    const colour = ticket.sourceColour || '#0078D4';
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', fontSize: '11px' }}>
-                        {ticket.state && <span><span style={{ color: '#888' }}>Status:</span> {ticket.state}</span>}
-                        {ticket.assignedTo && <span><span style={{ color: '#888' }}>Assigned:</span> {ticket.assignedTo}</span>}
-                        {ticket.type && <span><span style={{ color: '#888' }}>Type:</span> {ticket.type}</span>}
-                        {ticket.priority && <span><span style={{ color: '#888' }}>Priority:</span> {ticket.priority}</span>}
-                        {ticket.sprint && <span><span style={{ color: '#888' }}>Sprint:</span> {ticket.sprint}</span>}
+      <div className={styles.searchRow}>
+        <SearchBox
+          size="small"
+          placeholder="Search by ID or title — press Enter"
+          value={searchInput}
+          onChange={(_, data) => {
+            const next = data.value;
+            setSearchInput(next);
+            // Pragmatic clear: empty input applies immediately so the dismiss
+            // button works as expected. Non-empty values wait for Enter.
+            if (next === '') applySearchValue('');
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') applySearchValue(searchInput);
+          }}
+          style={{ width: '100%' }}
+        />
+      </div>
+
+      <div className={styles.body}>
+        {availableStates.length > 1 && (
+          <div className={styles.filters}>
+            {availableStates.map(state => (
+              <ToggleButton
+                key={state}
+                size="small"
+                checked={stateFilter.has(state)}
+                onClick={() => toggle(state)}
+              >
+                {state}
+              </ToggleButton>
+            ))}
+            {stateFilter.size > 0 && (
+              <Button size="small" appearance="subtle" onClick={clearFilter}>Clear</Button>
+            )}
+          </div>
+        )}
+        <div className={styles.split}>
+          {/* Left: ticket list with pagination footer */}
+          <div className={styles.listColumn}>
+            <div className={styles.list} ref={listScrollRef}>
+              {items.length === 0 ? (
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
+                  {isFiltering ? 'No tickets match your search.' : 'No recent tickets'}
+                </Text>
+              ) : (
+                items.map(ticket => (
+                  <Tooltip
+                    key={ticket._id}
+                    relationship="description"
+                    positioning="above"
+                    content={(() => {
+                      const colour = ticket.sourceColour || '#0078D4';
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', fontSize: '11px' }}>
+                          {ticket.state && <span><span style={{ color: '#888' }}>Status:</span> {ticket.state}</span>}
+                          {ticket.assignedTo && <span><span style={{ color: '#888' }}>Assigned:</span> {ticket.assignedTo}</span>}
+                          {ticket.type && <span><span style={{ color: '#888' }}>Type:</span> {ticket.type}</span>}
+                          {ticket.priority && <span><span style={{ color: '#888' }}>Priority:</span> {ticket.priority}</span>}
+                          {ticket.sprint && <span><span style={{ color: '#888' }}>Sprint:</span> {ticket.sprint}</span>}
+                          {ticket.sourceName && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ color: '#888' }}>Source:</span>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colour, display: 'inline-block' }} />
+                              {ticket.sourceName}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  >
+                    <div className={styles.item}>
+                      <div className={styles.itemHeader}>
+                        <div
+                          className={styles.dot}
+                          style={{ backgroundColor: ticket.sourceColour || '#0078D4' }}
+                        />
+                        {onTicketShortcutClick && (
+                          <OpenRegular
+                            style={{ fontSize: '12px', color: tokens.colorNeutralForeground3, cursor: 'pointer', flexShrink: 0 }}
+                            onClick={(e) => { e.stopPropagation(); setPopupTicketId(ticket._id); }}
+                          />
+                        )}
+                        <Text
+                          className={styles.key}
+                          onClick={onTicketShortcutClick ? () => onTicketShortcutClick(ticket) : () => setPopupTicketId(ticket._id)}
+                        >
+                          {ticket.externalId}
+                        </Text>
+                        <Text className={styles.ticketTitle}>{ticket.title}</Text>
                         {ticket.sourceName && (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ color: '#888' }}>Source:</span>
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colour, display: 'inline-block' }} />
+                          <Text style={{ fontSize: tokens.fontSizeBase100, fontWeight: tokens.fontWeightSemibold, color: ticket.sourceColour || tokens.colorNeutralForeground3, flexShrink: 0, marginLeft: 'auto' }}>
                             {ticket.sourceName}
-                          </span>
+                          </Text>
                         )}
                       </div>
-                    );
-                  })()}
-                >
-                  <div className={styles.item}>
-                    <div className={styles.itemHeader}>
-                      <div
-                        className={styles.dot}
-                        style={{ backgroundColor: ticket.sourceColour || '#0078D4' }}
-                      />
-                      {onTicketShortcutClick && (
-                        <OpenRegular
-                          style={{ fontSize: '12px', color: tokens.colorNeutralForeground3, cursor: 'pointer', flexShrink: 0 }}
-                          onClick={(e) => { e.stopPropagation(); setPopupTicketId(ticket._id); }}
-                        />
-                      )}
-                      <Text
-                        className={styles.key}
-                        onClick={onTicketShortcutClick ? () => onTicketShortcutClick(ticket) : () => setPopupTicketId(ticket._id)}
-                      >
-                        {ticket.externalId}
-                      </Text>
-                      <Text className={styles.ticketTitle}>{ticket.title}</Text>
-                      {ticket.sourceName && (
-                        <Text style={{ fontSize: tokens.fontSizeBase100, fontWeight: tokens.fontWeightSemibold, color: ticket.sourceColour || tokens.colorNeutralForeground3, flexShrink: 0, marginLeft: 'auto' }}>
-                          {ticket.sourceName}
-                        </Text>
-                      )}
                     </div>
-                  </div>
-                </Tooltip>
-              ))}
+                  </Tooltip>
+                ))
+              )}
             </div>
+            {totalPages > 1 && (
+              <div className={styles.paginationFooter}>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<ChevronLeftRegular />}
+                  disabled={currentPage <= 1}
+                  onClick={() => goToPage(currentPage - 1)}
+                />
+                <Text size={200}>Page {currentPage} of {totalPages}</Text>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<ChevronRightRegular />}
+                  disabled={currentPage >= totalPages}
+                  onClick={() => goToPage(currentPage + 1)}
+                />
+              </div>
+            )}
+          </div>
 
-            {/* Right: comments panel */}
-            <div className={styles.commentsPanel}>
-              <div className={styles.commentsPanelHeader}>
-                <NewsRegular style={{ fontSize: '14px', color: tokens.colorBrandForeground1 }} />
-                <Text className={styles.commentsPanelTitle}>Comments</Text>
-                <span className={styles.commentsNavArrow} onClick={() => setCommentsDate(d => shiftDateStr(d, -1))}>
-                  <ChevronLeftRegular />
-                </span>
-                <Text className={styles.commentsDateLabel}>{formatCommentsDateLabel(commentsDate)}</Text>
-                <span className={styles.commentsNavArrow} onClick={() => setCommentsDate(d => shiftDateStr(d, 1))}>
-                  <ChevronRightRegular />
-                </span>
-              </div>
-              <div className={styles.commentsList}>
-                {dateComments.length === 0 ? (
-                  <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3 }}>
-                    No comments for this date.
-                  </Text>
-                ) : (
-                  dateComments.map(c => {
-                    const colour = c.sourceColour || '#0078D4';
-                    const pastel = hexToPastel(colour);
-                    return (
-                      <div
-                        key={`${c.ticketId}-${c.id}`}
-                        className={styles.commentItem}
-                        style={{
-                          borderLeftColor: colour,
-                          backgroundColor: pastel.bg,
-                        }}
-                      >
-                        <div className={styles.commentItemHeader}>
-                          <Text className={styles.commentTicketId} style={{ color: pastel.text }}>{c.externalId}</Text>
-                          <Text className={styles.commentAuthor}>{c.author}</Text>
-                          {onCommentClick && (
-                            <OpenRegular
-                              style={{ fontSize: '11px', color: tokens.colorNeutralForeground3, cursor: 'pointer', flexShrink: 0 }}
-                              onClick={() => onCommentClick(c)}
-                            />
-                          )}
-                          <Text className={styles.commentTime}>
-                            {c.created ? new Date(c.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                          </Text>
-                        </div>
-                        <Text className={styles.commentBody}>{stripHtml(c.body)}</Text>
+          {/* Right: comments panel */}
+          <div className={styles.commentsPanel}>
+            <div className={styles.commentsPanelHeader}>
+              <NewsRegular style={{ fontSize: '14px', color: tokens.colorBrandForeground1 }} />
+              <Text className={styles.commentsPanelTitle}>Comments</Text>
+              <span className={styles.commentsNavArrow} onClick={() => setCommentsDate(d => shiftDateStr(d, -1))}>
+                <ChevronLeftRegular />
+              </span>
+              <Text className={styles.commentsDateLabel}>{formatCommentsDateLabel(commentsDate)}</Text>
+              <span className={styles.commentsNavArrow} onClick={() => setCommentsDate(d => shiftDateStr(d, 1))}>
+                <ChevronRightRegular />
+              </span>
+            </div>
+            <div className={styles.commentsList}>
+              {dateComments.length === 0 ? (
+                <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3 }}>
+                  No comments for this date.
+                </Text>
+              ) : (
+                dateComments.map(c => {
+                  const colour = c.sourceColour || '#0078D4';
+                  const pastel = hexToPastel(colour);
+                  return (
+                    <div
+                      key={`${c.ticketId}-${c.id}`}
+                      className={styles.commentItem}
+                      style={{
+                        borderLeftColor: colour,
+                        backgroundColor: pastel.bg,
+                      }}
+                    >
+                      <div className={styles.commentItemHeader}>
+                        <Text className={styles.commentTicketId} style={{ color: pastel.text }}>{c.externalId}</Text>
+                        <Text className={styles.commentAuthor}>{c.author}</Text>
+                        {onCommentClick && (
+                          <OpenRegular
+                            style={{ fontSize: '11px', color: tokens.colorNeutralForeground3, cursor: 'pointer', flexShrink: 0 }}
+                            onClick={() => onCommentClick(c)}
+                          />
+                        )}
+                        <Text className={styles.commentTime}>
+                          {c.created ? new Date(c.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </Text>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                      <Text className={styles.commentBody}>{stripHtml(c.body)}</Text>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Ticket popup */}
       <Dialog

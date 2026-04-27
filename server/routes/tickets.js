@@ -25,6 +25,17 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/tickets/comments?date=YYYY-MM-DD — flattened comments across all tickets for a single date
+router.get('/comments', async (req, res) => {
+  try {
+    const result = await ticketService.getCommentsByDate(req.query.date);
+    res.json(result);
+  } catch (err) {
+    console.warn(err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // GET /api/tickets/:id
 router.get('/:id', async (req, res) => {
   try {

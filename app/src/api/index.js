@@ -343,6 +343,7 @@ export const ticketsApi = {
     return request(`/tickets${query ? `?${query}` : ''}`);
   },
   getById: (id) => request(`/tickets/${id}`),
+  getCommentsByDate: (date) => request(`/tickets/comments?date=${encodeURIComponent(date)}`),
   patch: (id, data) => request(`/tickets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   bulkImport: (data) => request('/tickets', { method: 'POST', body: JSON.stringify(data) }),
   refreshAll: () => request('/ticket-sources/refresh-all', { method: 'POST', body: '{}' }),

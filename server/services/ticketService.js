@@ -339,6 +339,40 @@ export async function patchTicket(id, data) {
 
 // ── Ticket queries ───────────────────────────────────────────────
 
+export async function getCommentsByDate(dateStr) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr || '')) {
+    throw new Error('date must be in YYYY-MM-DD format');
+  }
+
+  const allTickets = await tickets.find({});
+  const sources = await ticketSources.find({});
+  const sourceMap = {};
+  for (const s of sources) {
+    sourceMap[s._id] = { name: s.name, colour: s.colour };
+  }
+
+  const result = [];
+  for (const t of allTickets) {
+    if (!t.comments?.length) continue;
+    const source = sourceMap[t.sourceId] || {};
+    for (const c of t.comments) {
+      if (c.created && c.created.slice(0, 10) === dateStr) {
+        result.push({
+          ...c,
+          ticketId: t._id,
+          externalId: t.externalId,
+          ticketTitle: t.title,
+          sourceColour: source.colour || '#0078D4',
+          sourceName: source.name || 'Unknown',
+        });
+      }
+    }
+  }
+
+  result.sort((a, b) => (b.created || '').localeCompare(a.created || ''));
+  return result;
+}
+
 export async function getTickets(query = {}) {
   const baseFilter = {};
   if (query.sourceId) baseFilter.sourceId = query.sourceId;

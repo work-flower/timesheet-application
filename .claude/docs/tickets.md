@@ -16,9 +16,9 @@ Ticket integration from Jira and Azure DevOps. Users register ticket sources (wi
 | `server/services/providers/jiraProvider.js` | Jira REST API v3 integration — auth, fetch, fetchById, map to canonical shape |
 | `server/services/providers/azureDevOpsProvider.js` | Azure DevOps REST API integration — auth, WIQL, fetch, fetchById, map to canonical shape (includes `System.Rev`) |
 | `server/services/providers/index.js` | Provider factory: `getProvider(type)` |
-| `server/services/ticketService.js` | CRUD for sources, incremental sync, ticket queries, getTicketById, patchTicket, scheduler, credential masking |
+| `server/services/ticketService.js` | CRUD for sources, incremental sync, ticket queries, getTicketById, patchTicket, getCommentsByDate, scheduler, credential masking |
 | `server/routes/ticketSources.js` | CRUD + refresh + test connection endpoints |
-| `server/routes/tickets.js` | GET list, GET by ID, PATCH (extension data) endpoints |
+| `server/routes/tickets.js` | GET list, GET comments-by-date, GET by ID, PATCH (extension data) endpoints |
 | `server/index.js` | Route mounting + scheduler init |
 
 ### Admin App (Ticket Sources Management)
@@ -36,11 +36,12 @@ Ticket integration from Jira and Azure DevOps. Users register ticket sources (wi
 |------|---------|
 | `app/src/pages/Dashboard.jsx` | Renders TicketsCard (click copies URL to clipboard) |
 | `app/src/components/cards/TicketsCard.jsx` | Card grid of tickets on dashboard |
+| `app/src/components/cards/TicketsListCard.jsx` | Compact tickets list with backend search/state-filter/pagination + comments-by-date panel (used by daily plans) |
 | `app/src/pages/tickets/TicketList.jsx` | Ticket list page — DataGrid with source/state/type filters, search, pagination via `useODataList` |
 | `app/src/pages/tickets/TicketForm.jsx` | Ticket detail form — read-only source fields, editable extension comments |
 | `app/src/App.jsx` | Route registration: `/tickets`, `/tickets/:id` |
 | `app/src/layouts/AppLayout.jsx` | "External" nav group with "Tickets" child item |
-| `app/src/api/index.js` | `ticketsApi` client (getAll, getById, patch, refreshAll) |
+| `app/src/api/index.js` | `ticketsApi` client (getAll, getById, getCommentsByDate, patch, refreshAll) |
 
 ### MCP
 
@@ -120,6 +121,7 @@ Ticket integration from Jira and Azure DevOps. Users register ticket sources (wi
 | POST | `/api/ticket-sources/refresh-all` | Fetch & sync all enabled sources |
 | POST | `/api/ticket-sources/:id/test` | Test connection to source |
 | GET | `/api/tickets` | Unified canonical query (OData support) |
+| GET | `/api/tickets/comments?date=YYYY-MM-DD` | Flattened comments across all tickets posted on a single date (enriched with `ticketId`, `externalId`, `ticketTitle`, `sourceColour`, `sourceName`); registered before `/:id` to avoid route capture |
 | GET | `/api/tickets/:id` | Single ticket detail (enriched with source info) |
 | PATCH | `/api/tickets/:id` | Update extension data only (deep merge) |
 
@@ -152,6 +154,7 @@ Ticket integration from Jira and Azure DevOps. Users register ticket sources (wi
 |----------|------------------------|
 | `Dashboard.jsx` | Renders TicketsCard, navigates to ticket form on click |
 | `TicketsCard.jsx` | Fetches and displays ticket cards on dashboard |
+| `TicketsListCard.jsx` | Backend search/state-filter/pagination over `/api/tickets`; comments panel uses `/api/tickets/comments?date=…`. Used in `DailyPlanForm.jsx` |
 | `TicketForm.jsx` | Displays ticket detail, allows editing extension comments |
 | `server/routes/mcp.js` | `list_tickets` tool queries cached tickets |
 
@@ -179,3 +182,5 @@ Changes to ticket sources/tickets affect:
 - Jira search includes inline comments (last ~5 per ticket) — avoids extra API calls for most tickets. Only tickets with `total > returned` need a dedicated fetch
 - ADO has no expand/batch option for comments — one API call per ticket required, fetched in parallel via `Promise.allSettled`
 - MarkdownEditor component supports `preview` prop for read-only markdown rendering (uses `MDEditor.Markdown`)
+- `/api/tickets/comments?date=…` must be registered before `/api/tickets/:id` in [server/routes/tickets.js](../../server/routes/tickets.js); Express otherwise treats `comments` as an `:id` and the request hits `getTicketById`
+- `TicketsListCard` uses `storageKey` as a **prefix** (default `ticketsListCard`), with sibling sub-keys `${prefix}.search`, `${prefix}.page`, `${prefix}.stateFilter`. State filter buttons are populated by a separate "states discovery" fetch (`$select=state`, no `$top`/`$skip`, search filter applied) so toggle options stay coherent across pages
