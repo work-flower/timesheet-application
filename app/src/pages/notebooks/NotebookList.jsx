@@ -5,7 +5,7 @@ import {
 } from '@fluentui/react-components';
 import {
   SearchRegular, AddRegular, DocumentTextRegular, ArrowImportRegular, ArchiveRegular,
-  ArrowUploadRegular, ArrowDownloadRegular, NoteRegular,
+  ArrowUploadRegular, ArrowDownloadRegular, NoteRegular, LockClosedRegular,
 } from '@fluentui/react-icons';
 import CommandBar from '../../components/CommandBar.jsx';
 import PaginationControls from '../../components/PaginationControls.jsx';
@@ -405,7 +405,7 @@ export default function NotebookList() {
                 <div className={styles.cardBody}>
                   <div className={styles.cardHeader}>
                     <span className={styles.cardIcon}>
-                      <DocumentTextRegular />
+                      {notebook.isEncrypted ? <LockClosedRegular /> : <DocumentTextRegular />}
                     </span>
                     <Text className={styles.cardTitle}>{notebook.title || 'Untitled'}</Text>
                   </div>

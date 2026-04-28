@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useLocation, Navigate } from 'react-router-dom';
 import {
   makeStyles, tokens, Text, Spinner, MessageBar, MessageBarBody,
-  Badge, Button, Tooltip, Textarea,
+  Badge, Button, Tooltip, Textarea, Input, Field,
   Accordion, AccordionItem, AccordionHeader, AccordionPanel,
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions,
 } from '@fluentui/react-components';
@@ -10,7 +10,7 @@ import {
   ArrowLeftRegular, DeleteRegular, ArchiveRegular,
   ArrowUndoRegular, ArrowRedoRegular, PrintRegular,
   ArrowResetRegular, SendRegular, HistoryRegular,
-  InfoRegular,
+  InfoRegular, LockClosedRegular, LockOpenRegular, KeyRegular,
 } from '@fluentui/react-icons';
 import { notebooksApi } from '../../api/index.js';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -21,6 +21,12 @@ import EntitySearchDialog from '../../components/editors/EntitySearchDialog.jsx'
 import DiffViewer from '../../components/DiffViewer.jsx';
 import NotebookArtifactsPanel from './NotebookArtifactsPanel.jsx';
 import TextToSpeechButton from '../../components/TextToSpeechButton.jsx';
+import { encrypt, decrypt, WrongPasswordError } from '../../utils/notebookCrypto.js';
+import {
+  parseContentMeta,
+  extractEntityReferences,
+  extractFirstImageRef,
+} from '../../../../shared/notebookContentParse.js';
 
 const AUTO_SAVE_DELAY = 1500; // ms after last change
 
@@ -137,19 +143,72 @@ export default function NotebookForm() {
   // Snapshot of last saved content
   const lastSavedRef = useRef('');
 
+  // --- Encryption state ---
+  // sessionPassword: held in state so re-renders unlock the editor view.
+  // Lost on unmount / page refresh — user has to re-enter it next visit.
+  const [sessionPassword, setSessionPassword] = useState(null);
+  const [encryptedBytes, setEncryptedBytes] = useState(null);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [unlockError, setUnlockError] = useState(null);
+  const [unlocking, setUnlocking] = useState(false);
+
+  // Encrypt-action dialog
+  const [encryptOpen, setEncryptOpen] = useState(false);
+  const [encryptPassword, setEncryptPassword] = useState('');
+  const [encryptConfirm, setEncryptConfirm] = useState('');
+  const [encryptError, setEncryptError] = useState(null);
+  const [encrypting, setEncrypting] = useState(false);
+
+  // Decrypt-action confirm
+  const [decryptOpen, setDecryptOpen] = useState(false);
+
+  // Change-password dialog
+  const [changePwOpen, setChangePwOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [changePwError, setChangePwError] = useState(null);
+  const [changingPw, setChangingPw] = useState(false);
+
+  const isEncrypted = !!loadedData?.isEncrypted;
+  const isLocked = isEncrypted && !sessionPassword;
+
+  // Derive metadata from plaintext + encrypt + send. Used by autosave (encrypted
+  // path), the Encrypt action, and the Change-password action.
+  const sendEncryptedSave = useCallback(async (password, content) => {
+    const meta = parseContentMeta(content);
+    const refs = extractEntityReferences(content);
+    const firstImage = extractFirstImageRef(content);
+    const ciphertext = await encrypt(content, password);
+    await notebooksApi.updateEncryptedContent(id, {
+      ciphertext,
+      title: meta.title,
+      summary: meta.summary,
+      tags: meta.tags,
+      relatedProjects: refs.relatedProjects,
+      relatedClients: refs.relatedClients,
+      relatedTimesheets: refs.relatedTimesheets,
+      relatedTickets: refs.relatedTickets,
+      thumbnailSourceFilename: firstImage,
+    });
+  }, [id]);
+
   // Load data
   useEffect(() => {
     if (!id) return;
     const init = async () => {
       try {
-        const [data, md] = await Promise.all([
-          notebooksApi.getById(id),
-          notebooksApi.getContent(id),
-        ]);
+        const data = await notebooksApi.getById(id);
         setLoadedData(data);
-        setInitialContent(md || '');
-        contentRef.current = md || '';
-        lastSavedRef.current = md || '';
+
+        const contentResult = await notebooksApi.getContent(id);
+        if (contentResult.encrypted) {
+          setEncryptedBytes(contentResult.bytes);
+          // Editor stays empty until user unlocks
+        } else {
+          setInitialContent(contentResult.content || '');
+          contentRef.current = contentResult.content || '';
+          lastSavedRef.current = contentResult.content || '';
+        }
         setAudioUrl(notebooksApi.getAudioUrl(id));
       } catch (err) {
         setError(err.message);
@@ -160,16 +219,42 @@ export default function NotebookForm() {
     init();
   }, [id]);
 
+  const handleUnlock = async () => {
+    if (!unlockPassword || !encryptedBytes) return;
+    setUnlocking(true);
+    setUnlockError(null);
+    try {
+      const plaintext = await decrypt(encryptedBytes, unlockPassword);
+      setSessionPassword(unlockPassword);
+      setInitialContent(plaintext);
+      contentRef.current = plaintext;
+      lastSavedRef.current = plaintext;
+      setUnlockPassword('');
+    } catch (err) {
+      setUnlockError(err instanceof WrongPasswordError ? 'Wrong password' : err.message);
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
   // Auto-save function
   const doSave = useCallback(async () => {
     const currentContent = contentRef.current;
 
     if (currentContent === lastSavedRef.current) return;
 
+    // Encrypted notebook with no session password — should not happen because the
+    // editor isn't rendered while locked, but guard anyway.
+    if (isEncrypted && !sessionPassword) return;
+
     setSaveStatus('saving');
     try {
-      // Server derives title, summary, tags from content
-      await notebooksApi.updateContent(id, currentContent);
+      if (isEncrypted) {
+        await sendEncryptedSave(sessionPassword, currentContent);
+      } else {
+        // Server derives title, summary, tags from content
+        await notebooksApi.updateContent(id, currentContent);
+      }
       lastSavedRef.current = currentContent;
 
       // Refresh loaded data for status badges etc.
@@ -181,7 +266,7 @@ export default function NotebookForm() {
     } catch {
       setSaveStatus('error');
     }
-  }, [id]);
+  }, [id, isEncrypted, sessionPassword, sendEncryptedSave]);
 
   // Schedule auto-save on any change
   const scheduleSave = useCallback(() => {
@@ -349,13 +434,107 @@ export default function NotebookForm() {
       setLoadedData(data);
       setDiscardOpen(false);
 
-      // Reload content from server
-      const md = await notebooksApi.getContent(id);
-      setInitialContent(md || '');
-      contentRef.current = md || '';
-      lastSavedRef.current = md || '';
+      // Reload content — restored state may be encrypted or plain depending on
+      // what was last committed. Reset session password so user re-enters it
+      // (or never sees the prompt at all if reverted state is plain).
+      const contentResult = await notebooksApi.getContent(id);
+      setSessionPassword(null);
+      if (contentResult.encrypted) {
+        setEncryptedBytes(contentResult.bytes);
+        setInitialContent('');
+        contentRef.current = '';
+        lastSavedRef.current = '';
+      } else {
+        setEncryptedBytes(null);
+        setInitialContent(contentResult.content || '');
+        contentRef.current = contentResult.content || '';
+        lastSavedRef.current = contentResult.content || '';
+      }
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  // --- Encrypt / Decrypt / Change password actions ---
+
+  const handleEncrypt = async () => {
+    setEncryptError(null);
+    if (!encryptPassword) {
+      setEncryptError('Password is required');
+      return;
+    }
+    if (encryptPassword !== encryptConfirm) {
+      setEncryptError('Passwords do not match');
+      return;
+    }
+    setEncrypting(true);
+    try {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const currentContent = contentRef.current;
+      await sendEncryptedSave(encryptPassword, currentContent);
+      lastSavedRef.current = currentContent;
+      setSessionPassword(encryptPassword);
+      const data = await notebooksApi.getById(id);
+      setLoadedData(data);
+      setEncryptOpen(false);
+      setEncryptPassword('');
+      setEncryptConfirm('');
+    } catch (err) {
+      setEncryptError(err.message);
+    } finally {
+      setEncrypting(false);
+    }
+  };
+
+  const handleDecrypt = async () => {
+    try {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const currentContent = contentRef.current;
+      await notebooksApi.updateContent(id, currentContent);
+      lastSavedRef.current = currentContent;
+      setSessionPassword(null);
+      setEncryptedBytes(null);
+      const data = await notebooksApi.getById(id);
+      setLoadedData(data);
+      setDecryptOpen(false);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setChangePwError(null);
+    if (!newPassword) {
+      setChangePwError('New password is required');
+      return;
+    }
+    if (newPassword !== newPasswordConfirm) {
+      setChangePwError('Passwords do not match');
+      return;
+    }
+    setChangingPw(true);
+    try {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const currentContent = contentRef.current;
+      await sendEncryptedSave(newPassword, currentContent);
+      lastSavedRef.current = currentContent;
+      setSessionPassword(newPassword);
+      setChangePwOpen(false);
+      setNewPassword('');
+      setNewPasswordConfirm('');
+    } catch (err) {
+      setChangePwError(err.message);
+    } finally {
+      setChangingPw(false);
     }
   };
 
@@ -469,27 +648,31 @@ export default function NotebookForm() {
             <Button appearance="subtle" size="small" icon={<ArrowRedoRegular />}
               onClick={() => editorRef.current?.redo()} />
           </Tooltip>
-          <div className={styles.toolbarDivider} />
-          <Tooltip content="Export as PDF" relationship="label">
-            <Button appearance="subtle" size="small" icon={<PrintRegular />}
-              onClick={handlePrint} />
-          </Tooltip>
-          <Tooltip content="Version history" relationship="label">
-            <Button appearance="subtle" size="small" icon={<HistoryRegular />}
-              onClick={openHistory} />
-          </Tooltip>
-          <div className={styles.toolbarDivider} />
-          <TextToSpeechButton
-            text={contentRef.current}
-            backgroundMusic
-            audioUrl={audioUrl}
-            persistKey={`notebook-${id}`}
-            onAudioGenerated={(blob) => {
-              notebooksApi.saveAudio(id, blob).then(() => {
-                setAudioUrl(notebooksApi.getAudioUrl(id));
-              }).catch(() => {});
-            }}
-          />
+          {!isEncrypted && (
+            <>
+              <div className={styles.toolbarDivider} />
+              <Tooltip content="Export as PDF" relationship="label">
+                <Button appearance="subtle" size="small" icon={<PrintRegular />}
+                  onClick={handlePrint} />
+              </Tooltip>
+              <Tooltip content="Version history" relationship="label">
+                <Button appearance="subtle" size="small" icon={<HistoryRegular />}
+                  onClick={openHistory} />
+              </Tooltip>
+              <div className={styles.toolbarDivider} />
+              <TextToSpeechButton
+                text={contentRef.current}
+                backgroundMusic
+                audioUrl={audioUrl}
+                persistKey={`notebook-${id}`}
+                onAudioGenerated={(blob) => {
+                  notebooksApi.saveAudio(id, blob).then(() => {
+                    setAudioUrl(notebooksApi.getAudioUrl(id));
+                  }).catch(() => {});
+                }}
+              />
+            </>
+          )}
           {statusLabel && (
             <Text className={styles.statusText} style={saveStatus === 'error' ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
               {statusLabel}
@@ -497,6 +680,11 @@ export default function NotebookForm() {
           )}
         </div>
         <div className={styles.toolbarRight}>
+          {isEncrypted && (
+            <Badge appearance="tint" color="important" size="small" icon={<LockClosedRegular />}>
+              Encrypted
+            </Badge>
+          )}
           {isDraft && <Badge appearance="tint" color="warning" size="small">Draft</Badge>}
           {!isDraft && <Badge appearance="tint" color="success" size="small">Published</Badge>}
           {loadedData?.ragScore && (
@@ -506,6 +694,24 @@ export default function NotebookForm() {
           )}
           {isArchived && <Badge appearance="filled" color="subtle" size="small">Archived</Badge>}
           <div className={styles.toolbarDivider} />
+          {!isEncrypted && (
+            <Tooltip content="Encrypt with password" relationship="label">
+              <Button appearance="subtle" size="small" icon={<LockClosedRegular />}
+                onClick={() => { setEncryptError(null); setEncryptPassword(''); setEncryptConfirm(''); setEncryptOpen(true); }} />
+            </Tooltip>
+          )}
+          {isEncrypted && !isLocked && (
+            <>
+              <Tooltip content="Change password" relationship="label">
+                <Button appearance="subtle" size="small" icon={<KeyRegular />}
+                  onClick={() => { setChangePwError(null); setNewPassword(''); setNewPasswordConfirm(''); setChangePwOpen(true); }} />
+              </Tooltip>
+              <Tooltip content="Decrypt notebook" relationship="label">
+                <Button appearance="subtle" size="small" icon={<LockOpenRegular />}
+                  onClick={() => setDecryptOpen(true)} />
+              </Tooltip>
+            </>
+          )}
           {isDraft && (
             <Tooltip content="Publish (commit changes)" relationship="label">
               <Button appearance="subtle" size="small" icon={<SendRegular />}
@@ -570,14 +776,50 @@ export default function NotebookForm() {
             </Accordion>
 
             <div className={styles.editorWrap}>
-              <NotebookEditor
-                ref={editorRef}
-                defaultValue={initialContent}
-                onChange={handleContentChange}
-                readOnly={false}
-                onImageUpload={handleImageUpload}
-                onEntitySearch={handleEntitySearch}
-              />
+              {isLocked ? (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  minHeight: '300px', gap: '16px', padding: '48px 24px',
+                  border: `1px solid ${tokens.colorNeutralStroke3}`, borderRadius: '8px',
+                  backgroundColor: tokens.colorNeutralBackground2,
+                }}>
+                  <LockClosedRegular style={{ fontSize: 48, color: tokens.colorNeutralForeground3 }} />
+                  <Text weight="semibold" size={400}>This notebook is encrypted</Text>
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', maxWidth: '400px' }}>
+                    Enter the password to unlock the content. The password is not stored — you'll need to re-enter it next time.
+                  </Text>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', width: '100%', maxWidth: '400px', marginTop: '8px' }}>
+                    <Field style={{ flex: 1 }}>
+                      <Input
+                        type="password"
+                        value={unlockPassword}
+                        onChange={(e, data) => setUnlockPassword(data.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleUnlock(); }}
+                        autoFocus
+                        placeholder="Password"
+                      />
+                    </Field>
+                    <Button appearance="primary" onClick={handleUnlock}
+                      disabled={!unlockPassword || unlocking}>
+                      {unlocking ? 'Unlocking...' : 'Unlock'}
+                    </Button>
+                  </div>
+                  {unlockError && (
+                    <MessageBar intent="error" style={{ width: '100%', maxWidth: '400px' }}>
+                      <MessageBarBody>{unlockError}</MessageBarBody>
+                    </MessageBar>
+                  )}
+                </div>
+              ) : (
+                <NotebookEditor
+                  ref={editorRef}
+                  defaultValue={initialContent}
+                  onChange={handleContentChange}
+                  readOnly={false}
+                  onImageUpload={handleImageUpload}
+                  onEntitySearch={handleEntitySearch}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -744,6 +986,91 @@ export default function NotebookForm() {
             </DialogContent>
             <DialogActions>
               <Button appearance="secondary" onClick={() => setHistoryOpen(false)}>Close</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Encrypt Dialog */}
+      <Dialog open={encryptOpen} onOpenChange={(e, data) => { if (!data.open) setEncryptOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '480px' }}>
+          <DialogBody>
+            <DialogTitle>Encrypt Notebook</DialogTitle>
+            <DialogContent>
+              <MessageBar intent="warning" style={{ marginBottom: 16 }}>
+                <MessageBarBody>
+                  If you lose this password, the notebook content cannot be recovered.
+                </MessageBarBody>
+              </MessageBar>
+              <Field label="Password" required style={{ marginBottom: 12 }}>
+                <Input type="password" value={encryptPassword}
+                  onChange={(e, data) => setEncryptPassword(data.value)} autoFocus />
+              </Field>
+              <Field label="Confirm password" required>
+                <Input type="password" value={encryptConfirm}
+                  onChange={(e, data) => setEncryptConfirm(data.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleEncrypt(); }} />
+              </Field>
+              {encryptError && (
+                <MessageBar intent="error" style={{ marginTop: 12 }}>
+                  <MessageBarBody>{encryptError}</MessageBarBody>
+                </MessageBar>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setEncryptOpen(false)}>Cancel</Button>
+              <Button appearance="primary" icon={<LockClosedRegular />}
+                disabled={!encryptPassword || encrypting}
+                onClick={handleEncrypt}>
+                {encrypting ? 'Encrypting...' : 'Encrypt'}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Decrypt confirm */}
+      <ConfirmDialog
+        open={decryptOpen}
+        title="Decrypt Notebook"
+        message="Notebook content will be saved as plain text. Anyone with access to this app will be able to read it without a password."
+        onConfirm={handleDecrypt}
+        onClose={() => setDecryptOpen(false)}
+      />
+
+      {/* Change Password Dialog */}
+      <Dialog open={changePwOpen} onOpenChange={(e, data) => { if (!data.open) setChangePwOpen(false); }}>
+        <DialogSurface style={{ maxWidth: '480px' }}>
+          <DialogBody>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogContent>
+              <MessageBar intent="warning" style={{ marginBottom: 16 }}>
+                <MessageBarBody>
+                  Content will be re-encrypted with the new password. The old password will no longer work.
+                </MessageBarBody>
+              </MessageBar>
+              <Field label="New password" required style={{ marginBottom: 12 }}>
+                <Input type="password" value={newPassword}
+                  onChange={(e, data) => setNewPassword(data.value)} autoFocus />
+              </Field>
+              <Field label="Confirm new password" required>
+                <Input type="password" value={newPasswordConfirm}
+                  onChange={(e, data) => setNewPasswordConfirm(data.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleChangePassword(); }} />
+              </Field>
+              {changePwError && (
+                <MessageBar intent="error" style={{ marginTop: 12 }}>
+                  <MessageBarBody>{changePwError}</MessageBarBody>
+                </MessageBar>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setChangePwOpen(false)}>Cancel</Button>
+              <Button appearance="primary" icon={<KeyRegular />}
+                disabled={!newPassword || changingPw}
+                onClick={handleChangePassword}>
+                {changingPw ? 'Updating...' : 'Update'}
+              </Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

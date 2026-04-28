@@ -369,6 +369,9 @@ export const notebooksApi = {
   purge: (id) => request(`/notebooks/${id}/purge`, { method: 'DELETE' }),
   publish: (id, message) => request(`/notebooks/${id}/publish`, { method: 'POST', body: JSON.stringify({ message }) }),
   discard: (id) => request(`/notebooks/${id}/discard`, { method: 'POST', body: '{}' }),
+  // Returns { encrypted: false, content: string } for plain notebooks,
+  // or { encrypted: true, bytes: Uint8Array } for encrypted notebooks.
+  // The shape is determined from the response Content-Type header.
   getContent: async (id) => {
     const res = await fetch(`${BASE}/notebooks/${id}/content`, {
       headers: { 'X-Trace-Id': getTraceId() },
@@ -377,12 +380,30 @@ export const notebooksApi = {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `Request failed: ${res.status}`);
     }
-    return res.text();
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/octet-stream')) {
+      const buf = await res.arrayBuffer();
+      return { encrypted: true, bytes: new Uint8Array(buf) };
+    }
+    return { encrypted: false, content: await res.text() };
   },
   updateContent: (id, content) => request(`/notebooks/${id}/content`, {
     method: 'PUT',
     body: JSON.stringify({ content }),
   }),
+  // payload: { ciphertext (Uint8Array), title, summary, tags,
+  //   relatedProjects, relatedClients, relatedTimesheets, relatedTickets,
+  //   thumbnailSourceFilename }
+  updateEncryptedContent: (id, payload) => {
+    const { ciphertext, ...rest } = payload;
+    let binary = '';
+    for (let i = 0; i < ciphertext.byteLength; i++) binary += String.fromCharCode(ciphertext[i]);
+    const ciphertextB64 = btoa(binary);
+    return request(`/notebooks/${id}/content/encrypted`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...rest, ciphertext: ciphertextB64 }),
+    });
+  },
   getTags: () => request('/notebooks/tags'),
   uploadMedia: async (id, file) => {
     const formData = new FormData();

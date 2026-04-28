@@ -409,7 +409,9 @@ Knowledge base / notebook entries. Metadata in DB, content on disk as markdown f
 | relatedClients | Array of client IDs referenced in content (derived on save) |
 | relatedTimesheets | Array of timesheet IDs referenced in content (derived on save) |
 
-**Content** stored on disk at `DATA_DIR/notebooks/{notebookId}/content.md` — NOT in DB. Media files stored alongside in the same folder.
+**Computed field (returned by API, not stored):** `isEncrypted` — peeks at `content.md` first 4 bytes for the `NBEN` magic prefix. Single source of truth for encryption state.
+
+**Content** stored on disk at `DATA_DIR/notebooks/{notebookId}/content.md` — NOT in DB. May be plain markdown or an AES-256-GCM encrypted blob (see notebooks wiring doc → Encryption section). Media files stored alongside in the same folder, always plain.
 
 ### dailyPlans
 
@@ -473,6 +475,7 @@ Detailed business rules for each entity (golden rules, validation, computation, 
 - **Expenses** → `expenses.md` (VAT golden rule, credit notes, currency inheritance, receipt scanning)
 - **Invoices** → `invoices.md` (lifecycle, invoice number, line computation, consistency check, PDF generation, locking, payment tracking)
 - **Transactions & Import Jobs** → `transactions.md` (file upload, AI parsing, staged review, linking)
+- **Notebooks** → `notebooks.md` (content-derived metadata, git versioning, **per-notebook AES-256-GCM password encryption** — client-side via Web Crypto API, magic-prefix-on-disk as single source of truth, TTS/PDF/history hidden when encrypted)
 
 ### Query String Pre-fill
 

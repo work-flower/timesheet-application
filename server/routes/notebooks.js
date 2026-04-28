@@ -334,6 +334,9 @@ router.get('/:id/pdf', async (req, res) => {
   try {
     const existing = await notebookService.getById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.isEncrypted) {
+      return res.status(400).json({ error: 'PDF generation is not available for encrypted notebooks' });
+    }
 
     const { buffer } = await buildNotebookPdf(req.params.id);
 
@@ -350,9 +353,13 @@ router.get('/:id/pdf', async (req, res) => {
 
 router.get('/:id/content', async (req, res) => {
   try {
-    const content = await notebookService.getContent(req.params.id);
-    if (content === null) return res.status(404).json({ error: 'Not found' });
-    res.type('text/markdown').send(content);
+    const result = await notebookService.getContent(req.params.id);
+    if (result === null) return res.status(404).json({ error: 'Not found' });
+    if (result.encrypted) {
+      res.type('application/octet-stream').send(result.data);
+    } else {
+      res.type('text/markdown').send(result.data);
+    }
   } catch (err) {
     console.error('Failed to get notebook content:', err);
     res.status(500).json({ error: err.message });
@@ -372,6 +379,35 @@ router.put('/:id/content', async (req, res) => {
   }
 });
 
+// Encrypted content save. Body: { ciphertext (base64), title, summary, tags,
+// relatedProjects, relatedClients, relatedTimesheets, relatedTickets, thumbnailSourceFilename }.
+// Server cannot parse ciphertext, so the client must derive and send all metadata.
+router.put('/:id/content/encrypted', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.ciphertext || typeof body.ciphertext !== 'string') {
+      return res.status(400).json({ error: 'ciphertext (base64) is required' });
+    }
+    const ciphertext = Buffer.from(body.ciphertext, 'base64');
+    const result = await notebookService.updateEncryptedContent(req.params.id, {
+      ciphertext,
+      title: body.title,
+      summary: body.summary,
+      tags: body.tags,
+      relatedProjects: body.relatedProjects,
+      relatedClients: body.relatedClients,
+      relatedTimesheets: body.relatedTimesheets,
+      relatedTickets: body.relatedTickets,
+      thumbnailSourceFilename: body.thumbnailSourceFilename,
+    });
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.json(result);
+  } catch (err) {
+    console.warn('Failed to update encrypted notebook content:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // --- Audio (TTS) ---
 
 const audioUpload = multer({ storage: multer.memoryStorage() });
@@ -379,6 +415,12 @@ const audioUpload = multer({ storage: multer.memoryStorage() });
 // GET /api/notebooks/:id/audio — serve cached TTS audio
 router.get('/:id/audio', async (req, res) => {
   try {
+    const existing = await notebookService.getById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.isEncrypted) {
+      return res.status(400).json({ error: 'TTS is not available for encrypted notebooks' });
+    }
+
     const status = await notebookService.getAudioStatus(req.params.id);
     if (!status.hasAudio) return res.status(404).json({ error: 'No cached audio' });
 
@@ -394,6 +436,12 @@ router.get('/:id/audio', async (req, res) => {
 // POST /api/notebooks/:id/audio — upload generated TTS audio
 router.post('/:id/audio', audioUpload.single('file'), async (req, res) => {
   try {
+    const existing = await notebookService.getById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.isEncrypted) {
+      return res.status(400).json({ error: 'TTS is not available for encrypted notebooks' });
+    }
+
     if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
     await notebookService.saveAudio(req.params.id, req.file.buffer);
     res.json({ success: true });

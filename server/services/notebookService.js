@@ -3,9 +3,14 @@ import { buildQuery, parseFilter, applySelect, formatResponse } from '../odata.j
 import { parseFilter as parseFilterAst } from 'odata-filter-to-ast';
 import { fileURLToPath } from 'url';
 import { basename, dirname, join, extname } from 'path';
-import { mkdirSync, rmSync, renameSync, existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
+import { mkdirSync, rmSync, renameSync, existsSync, readFileSync, writeFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'fs';
 import sharp from 'sharp';
 import * as git from './notebookGitService.js';
+import {
+  parseContentMeta,
+  extractEntityReferences,
+  extractFirstImageRef,
+} from '../../shared/notebookContentParse.js';
 
 const CONTENTS_DIR = '.contents';
 
@@ -283,12 +288,13 @@ export async function getAll(query = {}) {
     notebooks, queryForDb, { updatedAt: -1 }, baseFilter
   );
 
-  // Enrich with media URL for thumbnail
+  // Enrich with media URL for thumbnail + virtual isEncrypted (peeks at content.md magic prefix)
   const withThumbnails = results.map((entry) => ({
     ...entry,
     thumbnailUrl: entry.thumbnailFilename
       ? `/notebooks/${entry._id}/.contents/${entry.thumbnailFilename}`
       : null,
+    isEncrypted: isNotebookEncrypted(entry),
   }));
 
   // Enrich with resolved entity names
@@ -310,6 +316,7 @@ export async function getById(id) {
     thumbnailUrl: entry.thumbnailFilename
       ? `/notebooks/${entry._id}/.contents/${entry.thumbnailFilename}`
       : null,
+    isEncrypted: isNotebookEncrypted(entry),
   };
 
   const [enriched] = await enrichEntityNames([withThumbnail]);
@@ -508,14 +515,44 @@ function getContentPath(dir) {
   return newPath; // default to new location
 }
 
+// Encrypted content.md files start with the 4-byte 'NBEN' magic prefix written by
+// the client-side crypto utility. The flag is derived from disk on every read so
+// it stays consistent through git operations (discard, pull) without DB sync.
+const ENCRYPTED_MAGIC = Buffer.from([0x4E, 0x42, 0x45, 0x4E]);
+
+function isContentEncrypted(filePath) {
+  if (!filePath || !existsSync(filePath)) return false;
+  let fd;
+  try {
+    fd = openSync(filePath, 'r');
+    const buf = Buffer.alloc(4);
+    const bytesRead = readSync(fd, buf, 0, 4, 0);
+    return bytesRead === 4 && buf.equals(ENCRYPTED_MAGIC);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch { /* ignore */ }
+    }
+  }
+}
+
+function isNotebookEncrypted(notebook) {
+  const dir = dirFromTitle(notebook.title);
+  return isContentEncrypted(getContentPath(dir));
+}
+
 export async function getContent(id) {
   const existing = await notebooks.findOne({ _id: id });
   if (!existing) return null;
 
   const dir = dirFromTitle(existing.title);
   const filePath = getContentPath(dir);
-  if (!existsSync(filePath)) return '';
-  return readFileSync(filePath, 'utf-8');
+  if (!existsSync(filePath)) return { encrypted: false, data: '' };
+  if (isContentEncrypted(filePath)) {
+    return { encrypted: true, data: readFileSync(filePath) };
+  }
+  return { encrypted: false, data: readFileSync(filePath, 'utf-8') };
 }
 
 export async function updateContent(id, markdown) {
@@ -583,6 +620,81 @@ export async function updateContent(id, markdown) {
   return { success: true };
 }
 
+// Encrypted save path. Server cannot parse ciphertext, so the client must derive
+// title/summary/tags/related entity IDs/thumbnail source filename from the plaintext
+// and pass them in the payload. Server writes the binary blob and persists the
+// supplied metadata as-is.
+export async function updateEncryptedContent(id, payload) {
+  const existing = await notebooks.findOne({ _id: id });
+  if (!existing) return null;
+
+  const {
+    ciphertext,
+    title,
+    summary,
+    tags,
+    relatedProjects,
+    relatedClients,
+    relatedTimesheets,
+    relatedTickets,
+    thumbnailSourceFilename,
+  } = payload || {};
+
+  if (!ciphertext || !Buffer.isBuffer(ciphertext) || ciphertext.length < ENCRYPTED_MAGIC.length) {
+    throw new Error('ciphertext is required');
+  }
+  if (!ciphertext.subarray(0, ENCRYPTED_MAGIC.length).equals(ENCRYPTED_MAGIC)) {
+    throw new Error('ciphertext is missing the encrypted magic prefix');
+  }
+
+  const newTitle = (title && title.trim()) || existing.title || 'Untitled';
+  const oldFolderName = git.sanitizeTitle(existing.title);
+  const newFolderName = git.sanitizeTitle(newTitle);
+
+  let dir = dirFromTitle(existing.title);
+
+  if (oldFolderName !== newFolderName) {
+    const newDir = join(getNotebooksDir(), newFolderName);
+    if (existsSync(newDir)) {
+      throw new Error(`A notebook with the title "${newTitle}" already exists`);
+    }
+    if (git.isTracked(oldFolderName)) {
+      git.mv(oldFolderName, newFolderName);
+    } else {
+      renameSync(dir, newDir);
+    }
+    dir = newDir;
+  }
+
+  const contentsDir = join(dir, CONTENTS_DIR);
+  mkdirSync(contentsDir, { recursive: true });
+
+  // Write encrypted bytes verbatim
+  writeFileSync(join(contentsDir, 'content.md'), ciphertext);
+
+  // Thumbnail: client tells us which file to thumbnail (or null to clear)
+  await generateThumbnailFromRef(id, dir, thumbnailSourceFilename || null);
+
+  const now = new Date().toISOString();
+  await notebooks.update({ _id: id }, {
+    $set: {
+      title: newTitle,
+      summary: typeof summary === 'string' ? summary : '',
+      tags: Array.isArray(tags) ? tags : [],
+      relatedProjects: Array.isArray(relatedProjects) ? relatedProjects : [],
+      relatedClients: Array.isArray(relatedClients) ? relatedClients : [],
+      relatedTimesheets: Array.isArray(relatedTimesheets) ? relatedTimesheets : [],
+      relatedTickets: Array.isArray(relatedTickets) ? relatedTickets : [],
+      updatedAt: now,
+    },
+  });
+
+  const folderName = git.sanitizeTitle(newTitle);
+  git.addAll(folderName);
+
+  return { success: true };
+}
+
 // --- Publish & Discard ---
 
 export async function publish(id, message) {
@@ -612,13 +724,23 @@ export async function discard(id) {
   // Restore to last committed state
   git.discard(folderName);
 
-  // Re-read restored content and re-derive DB metadata
   const dir = dirFromTitle(existing.title);
-  const content = readFileSync(getContentPath(dir), 'utf-8');
+  const contentPath = getContentPath(dir);
+  const now = new Date().toISOString();
+
+  // If reverted content is encrypted, server can't parse it to re-derive metadata —
+  // leave the DB record alone. Existing metadata stays accurate from the last
+  // encrypted save (client-derived) that produced this committed state.
+  if (!existsSync(contentPath) || isContentEncrypted(contentPath)) {
+    await notebooks.update({ _id: id }, { $set: { updatedAt: now } });
+    return getById(id);
+  }
+
+  // Plain content: re-derive DB metadata from the restored markdown
+  const content = readFileSync(contentPath, 'utf-8');
   const meta = parseContentMeta(content);
   const refs = extractEntityReferences(content);
 
-  const now = new Date().toISOString();
   await notebooks.update({ _id: id }, {
     $set: {
       title: meta.title || 'Untitled',
@@ -632,7 +754,6 @@ export async function discard(id) {
     },
   });
 
-  // Regenerate thumbnail
   await extractThumbnail(id, dir, content);
 
   return getById(id);
@@ -648,121 +769,18 @@ export async function listMedia(id) {
   );
 }
 
-// --- Entity reference extraction ---
-
-function extractEntityReferences(markdown) {
-  const relatedProjects = new Set();
-  const relatedClients = new Set();
-  const relatedTimesheets = new Set();
-  const relatedTickets = new Set();
-
-  const regex = /\[([^\]]*)\]\(\/(projects|clients|timesheets|tickets)\/([a-zA-Z0-9_-]+)\)/g;
-  let match;
-  while ((match = regex.exec(markdown || '')) !== null) {
-    const [, , entityType, entityId] = match;
-    if (entityType === 'projects') relatedProjects.add(entityId);
-    else if (entityType === 'clients') relatedClients.add(entityId);
-    else if (entityType === 'timesheets') relatedTimesheets.add(entityId);
-    else if (entityType === 'tickets') relatedTickets.add(entityId);
-  }
-
-  return {
-    relatedProjects: [...relatedProjects],
-    relatedClients: [...relatedClients],
-    relatedTimesheets: [...relatedTimesheets],
-    relatedTickets: [...relatedTickets],
-  };
-}
-
-// --- Content metadata extraction ---
-
-function parseContentMeta(markdown) {
-  const lines = (markdown || '').split('\n');
-  let title = '';
-  let summary = '';
-  let tags = [];
-
-  // Find first non-empty line index
-  let titleLineIdx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim().length > 0) {
-      titleLineIdx = i;
-      break;
-    }
-  }
-  if (titleLineIdx === -1) return { title, summary, tags };
-
-  // Title: heading line or first sentence
-  const titleLine = lines[titleLineIdx].trim();
-  if (/^#{1,6}\s+/.test(titleLine)) {
-    title = titleLine.replace(/^#{1,6}\s+/, '');
-  } else {
-    // First sentence ending with '.'
-    const dotIdx = titleLine.indexOf('.');
-    if (dotIdx >= 0) {
-      title = titleLine.slice(0, dotIdx + 1);
-    } else {
-      title = titleLine;
-    }
-  }
-  // Truncate at last space before 200 chars
-  if (title.length > 200) {
-    const cut = title.lastIndexOf(' ', 200);
-    title = cut > 0 ? title.slice(0, cut) : title.slice(0, 200);
-  }
-
-  // Summary: first paragraph after title (skip blank lines, collect until next blank line)
-  let summaryStart = -1;
-  for (let i = titleLineIdx + 1; i < lines.length; i++) {
-    if (lines[i].trim().length > 0) {
-      summaryStart = i;
-      break;
-    }
-  }
-  if (summaryStart >= 0) {
-    const paraLines = [];
-    for (let i = summaryStart; i < lines.length; i++) {
-      if (lines[i].trim().length === 0) break;
-      paraLines.push(lines[i].trim());
-    }
-    summary = paraLines.join(' ');
-
-    // Truncate at last space before 500 chars
-    if (summary.length > 500) {
-      const cut = summary.lastIndexOf(' ', 500);
-      summary = cut > 0 ? summary.slice(0, cut) : summary.slice(0, 500);
-    }
-
-    // Tags: the line immediately after the summary paragraph
-    const afterSummaryIdx = summaryStart + paraLines.length;
-    // Skip blank lines to find the tags line
-    for (let i = afterSummaryIdx; i < lines.length; i++) {
-      if (lines[i].trim().length > 0) {
-        const candidate = lines[i].trim();
-        // Extract all #hashtag tokens from the line
-        const found = candidate.match(/#[a-zA-Z0-9_-]+/g);
-        if (found) {
-          tags = found.map((t) => t.slice(1));
-        }
-        break;
-      }
-    }
-  }
-
-  return { title, summary, tags };
-}
-
 // --- Thumbnail extraction ---
 
 async function extractThumbnail(id, dir, markdown) {
-  // Find first image reference in markdown: ![...](filename)
-  const match = markdown.match(/!\[.*?\]\(([^)]+)\)/);
-  if (!match) {
+  return generateThumbnailFromRef(id, dir, extractFirstImageRef(markdown));
+}
+
+async function generateThumbnailFromRef(id, dir, imageRef) {
+  if (!imageRef) {
     await notebooks.update({ _id: id }, { $set: { thumbnailFilename: null } });
     return;
   }
 
-  const imageRef = match[1];
   const isDataUri = imageRef.startsWith('data:');
   const isExternal = imageRef.startsWith('http://') || imageRef.startsWith('https://');
 
@@ -1060,10 +1078,34 @@ async function syncDbWithDisk() {
       const contentPath = getContentPath(dir);
       if (!existsSync(contentPath)) continue;
 
+      const now = new Date().toISOString();
+
+      // Encrypted notebook from remote: server has no key to derive metadata.
+      // Use the folder name as a placeholder title; the user must unlock and
+      // save once to populate the rest of the metadata.
+      if (isContentEncrypted(contentPath)) {
+        const record = await notebooks.insert({
+          title: folderName,
+          summary: '',
+          tags: [],
+          status: 'active',
+          ragScore: null,
+          deletedAt: null,
+          thumbnailFilename: null,
+          relatedProjects: [],
+          relatedClients: [],
+          relatedTimesheets: [],
+          relatedTickets: [],
+          createdAt: now,
+          updatedAt: now,
+        });
+        imported.push({ id: record._id, title: folderName });
+        continue;
+      }
+
       const content = readFileSync(contentPath, 'utf-8');
       const meta = parseContentMeta(content);
       const refs = extractEntityReferences(content);
-      const now = new Date().toISOString();
 
       const record = await notebooks.insert({
         title: meta.title || folderName,

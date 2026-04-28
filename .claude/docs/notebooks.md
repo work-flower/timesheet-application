@@ -10,7 +10,9 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 |-------|------|-------|
 | **DB** | `server/db/index.js` | `notebooks` wrapped collection + `DATA_DIR/notebooks/` dir |
 | **Git Service** | `server/services/notebookGitService.js` | Git operations: publish, discard, history, push, pull, remote config |
-| **Service** | `server/services/notebookService.js` | CRUD, soft delete, content file I/O, media, thumbnail, git wrappers |
+| **Service** | `server/services/notebookService.js` | CRUD, soft delete, content file I/O, media, thumbnail, git wrappers, encrypted content writes |
+| **Shared parser** | `shared/notebookContentParse.js` | Pure functions: `parseContentMeta`, `extractEntityReferences`, `extractFirstImageRef` — used by server (plain saves) and client (encrypted saves) |
+| **Crypto utility** | `app/src/utils/notebookCrypto.js` | Browser-side AES-256-GCM + PBKDF2 (Web Crypto API). `encrypt`, `decrypt`, `isEncryptedBlob`, `WrongPasswordError` |
 | **Routes** | `server/routes/notebooks.js` | REST endpoints, multer for media upload |
 | **Server mount** | `server/index.js` | `app.use('/api/notebooks', notebookRoutes)` |
 | **API client** | `app/src/api/index.js` | `notebooksApi` export |
@@ -54,9 +56,11 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 | createdAt | string | ISO timestamp |
 | updatedAt | string | ISO timestamp |
 
-**Content** stored on disk at `DATA_DIR/notebooks/{notebookId}/content.md` — NOT in DB.
+**Content** stored on disk at `DATA_DIR/notebooks/{notebookId}/content.md` — NOT in DB. May be plain UTF-8 markdown or an encrypted binary blob (see Encryption section below).
 
-**Computed fields (returned by API, not stored):** `relatedProjectNames`, `relatedClientNames`, `relatedTimesheetLabels` — resolved from ID arrays via batch lookup.
+**Computed fields (returned by API, not stored):**
+- `relatedProjectNames`, `relatedClientNames`, `relatedTimesheetLabels` — resolved from ID arrays via batch lookup.
+- `isEncrypted` — peeks at the first 4 bytes of `content.md` and checks for the `NBEN` magic prefix. Single source of truth for encryption state — derived on every read so it stays consistent through git operations (discard, pull) without DB sync.
 
 ## File Storage
 
@@ -87,11 +91,12 @@ System files (`content.md`, thumbnails) live in `.contents/`. All other files in
 | `/api/notebooks/:id/archive` | POST | Archive |
 | `/api/notebooks/:id/unarchive` | POST | Unarchive |
 | `/api/notebooks/:id/purge` | DELETE | Permanent delete |
-| `/api/notebooks/:id/pdf` | GET | Generate PDF (returns application/pdf) — rendered via Puppeteer singleton |
-| `/api/notebooks/:id/audio` | GET | Serve cached TTS audio (audio/wav, 404 if stale or missing) |
-| `/api/notebooks/:id/audio` | POST | Upload generated TTS audio (multipart, memory storage) |
-| `/api/notebooks/:id/content` | GET | Get markdown (text/markdown) |
-| `/api/notebooks/:id/content` | PUT | Save markdown (derives title, summary, tags from content) |
+| `/api/notebooks/:id/pdf` | GET | Generate PDF (returns application/pdf) — rendered via Puppeteer singleton. Returns 400 if notebook is encrypted |
+| `/api/notebooks/:id/audio` | GET | Serve cached TTS audio (audio/wav, 404 if stale or missing). Returns 400 if notebook is encrypted |
+| `/api/notebooks/:id/audio` | POST | Upload generated TTS audio (multipart, memory storage). Returns 400 if notebook is encrypted |
+| `/api/notebooks/:id/content` | GET | Get content. Returns `text/markdown` for plain notebooks, `application/octet-stream` (encrypted blob) for encrypted notebooks |
+| `/api/notebooks/:id/content` | PUT | Save markdown (derives title, summary, tags from content). Sets `isEncrypted=false` implicitly (writes plain bytes) |
+| `/api/notebooks/:id/content/encrypted` | PUT | Save encrypted content. Body: `{ ciphertext (base64), title, summary, tags, relatedProjects, relatedClients, relatedTimesheets, relatedTickets, thumbnailSourceFilename }`. Server cannot parse ciphertext, so client derives all metadata from plaintext and sends it. Server validates magic prefix on ciphertext, writes binary to `content.md`, persists provided metadata as-is, regenerates thumbnail from supplied filename |
 | `/api/notebooks/:id/media` | POST | Upload file (multipart) |
 | `/api/notebooks/:id/media` | GET | List media files |
 | `/api/notebooks/:id/artifacts` | GET | List artifact files (name, size, mimeType, lastModified) |
@@ -134,6 +139,21 @@ System files (`content.md`, thumbnails) live in `.contents/`. All other files in
 - **Publish** → `git add -A` the entire folder + `git commit` (captures all staged changes)
 - **Discard** → `git checkout` + `git clean` (reverts all changes including artifacts)
 - **Purge** → `git rm` folder + `git commit` (must commit, not just stage, so deletion can be pushed)
+
+## Encryption (per-notebook password)
+
+A notebook can be encrypted with a user-chosen password. Only `content.md` is encrypted; all other files in the notebook folder (media, artifacts) remain plain on disk. The password is **never stored anywhere** — it lives in browser memory for the session only.
+
+- **Algorithm:** AES-256-GCM, key derived from the password via PBKDF2 (SHA-256, 600,000 iterations). All crypto runs client-side via the Web Crypto API ([app/src/utils/notebookCrypto.js](../../app/src/utils/notebookCrypto.js)). The server never sees the password or the plaintext.
+- **On-disk format:** `[magic(4)='NBEN' | salt(16) | iv(12) | ciphertext+gcmTag]`. Salt is regenerated per encryption; IV is regenerated per save. GCM auth tag doubles as a wrong-password detector.
+- **Single source of truth:** the 4-byte magic prefix on disk. The server's virtual `isEncrypted` field is computed by peeking at the first 4 bytes of `content.md` during `getAll`/`getById` enrichment — no DB flag, can never drift from disk state. Cost: one tiny file read per notebook in the API response (~0.5ms each on local SSD).
+- **Encrypted save flow:** server cannot parse ciphertext, so the client must derive title/summary/tags/related-entity IDs/first-image filename from plaintext and send them in the payload to `PUT /content/encrypted`. The server validates the magic prefix, writes binary, and persists the supplied metadata as-is. Thumbnail is still generated server-side from the unencrypted media file the client names.
+- **Form locked state:** when `isEncrypted=true` and the user has not entered the password yet (`sessionPassword === null`), the editor area is replaced with a centered password panel. TTS, PDF, and Version History buttons are hidden. Once unlocked, the editor renders normally and autosave continues to encrypt every save with the cached session password.
+- **Encrypt action:** dialog asks for password + confirmation, encrypts current plaintext, calls `PUT /content/encrypted`. The session password is set so editing continues without re-prompting.
+- **Decrypt action:** confirm dialog, then calls plain `PUT /content` with the current plaintext — the server flips back to plain by writing un-magic-prefixed bytes. Session password is cleared.
+- **Change password action:** dialog asks for new password + confirmation, re-encrypts current content with the new password (regenerates salt + IV), updates session password.
+- **Discard (git revert) handling:** after `git checkout`, the service peeks at the restored content's first 4 bytes. If encrypted, DB metadata is left alone (server can't re-derive from ciphertext). If plain, normal re-derivation runs.
+- **Pull (DB sync) handling:** when a new folder shows up on disk after pull, if its `content.md` is encrypted, a placeholder DB record is created using the folder name as title (no other metadata derivable). User must unlock and save once to populate the rest.
 
 ## Key Business Logic
 
@@ -186,3 +206,5 @@ System files (`content.md`, thumbnails) live in `.contents/`. All other files in
 - **Git hooks security:** The notebook git repo may contain user-writable `.git/hooks/`. During security testing, a pre-commit hook was created that curled an external URL on every publish. Always check for unexpected hooks if behaviour is anomalous. The console feature that enabled this was removed.
 - **Git timeout:** All git commands in `notebookGitService.js` have a 10-second timeout via `execSync`. Push/pull to slow remotes may need this increased.
 - **DB sync after pull:** `syncDbWithDisk()` compares disk folders against DB records. New folders → import (create DB record + thumbnail). Missing folders → remove orphan DB records. This runs automatically after every successful pull.
+- **Magic-prefix as single source of truth for encryption:** earlier design considered storing an `isEncrypted` boolean on the DB record. Dropped in favour of peeking at the file's first 4 bytes on every read because (a) the file is the authoritative state — git operations (discard, pull) change it without going through service writes, and (b) the cost (one tiny file read per notebook in API enrichment) is negligible on local SSD. Two-source designs invite drift bugs; one source can't drift.
+- **Content parsers extracted to `shared/`:** `parseContentMeta` and `extractEntityReferences` had to move from server to `shared/notebookContentParse.js` so the client could derive metadata from plaintext before encryption (server can't parse ciphertext). Single source of truth for both code paths — no risk of plain and encrypted saves drifting in how they extract title/tags/related entities.
