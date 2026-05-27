@@ -1,11 +1,15 @@
 import { WebSocketServer } from 'ws';
-import { spawn } from 'child_process';
+import { spawn, execFile } from 'child_process';
+import { promisify } from 'util';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { URL } from 'url';
 import { notebooks } from '../db/index.js';
 import { sanitizeTitle } from '../services/notebookGitService.js';
+import { getRawConfig } from '../services/aiConfigService.js';
+
+const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,6 +42,39 @@ async function resolveCwd(type, id) {
 }
 
 /**
+ * Check installed claude version against the latest published on npm.
+ * If they differ, install @latest. Failures are logged + surfaced to the
+ * terminal but never block spawn — a transient npm issue shouldn't lock
+ * the user out of chat.
+ */
+async function ensureClaudeUpToDate(ws) {
+  const send = (msg) => {
+    if (ws.readyState === ws.OPEN) ws.send(msg);
+  };
+  try {
+    const [installedRes, latestRes] = await Promise.all([
+      execFileAsync('claude', ['--version']),
+      execFileAsync('npm', ['view', '@anthropic-ai/claude-code', 'version']),
+    ]);
+    const installed = (installedRes.stdout.match(/\d+\.\d+\.\d+/) || [])[0];
+    const latest = latestRes.stdout.trim();
+    if (!installed || !latest) {
+      console.warn(`[claude-chat] Version check inconclusive (installed=${installed}, latest=${latest})`);
+      return;
+    }
+    if (installed === latest) return;
+
+    console.log(`[claude-chat] Updating claude ${installed} → ${latest}`);
+    send(`\r\nUpdating Claude Code (${installed} → ${latest})…\r\n`);
+    await execFileAsync('npm', ['install', '-g', '@anthropic-ai/claude-code@latest']);
+    send(`Done.\r\n`);
+  } catch (err) {
+    console.warn(`[claude-chat] Update check/install failed:`, err.message);
+    send(`\r\n[warn] Could not check for Claude Code updates: ${err.message}\r\n`);
+  }
+}
+
+/**
  * Attach Claude Chat WebSocket handler to an HTTP server.
  *
  * Uses the Linux `script` command to wrap Claude CLI in a real PTY
@@ -66,16 +103,31 @@ export function attachClaudeChatWs(server) {
       return;
     }
 
-    const claudeDir = join(cwd, '.claude');
-    const hasClaudeDir = existsSync(claudeDir);
-    const claudeArgs = hasClaudeDir ? '--continue' : '--init';
+    const aiConfig = await getRawConfig();
+    const apiKey = aiConfig?.apiKey;
+    if (!apiKey) {
+      ws.send(`\r\nError: No Claude API key configured. Set one in Admin → System → AI.\r\n`);
+      ws.close();
+      return;
+    }
 
-    console.log(`[claude-chat] Spawning claude ${claudeArgs} in ${cwd}`);
+    await ensureClaudeUpToDate(ws);
+    if (ws.readyState !== ws.OPEN) return;
+
+    const hasClaudeDir = existsSync(join(cwd, '.claude'));
+    const claudeCmd = hasClaudeDir ? 'claude --continue' : 'claude';
+
+    console.log(`[claude-chat] Spawning ${claudeCmd} in ${cwd}`);
 
     // Use `script -qc` to wrap claude in a real PTY (no native modules)
-    const child = spawn('script', ['-qc', `claude ${claudeArgs}`, '/dev/null'], {
+    const child = spawn('script', ['-qc', claudeCmd, '/dev/null'], {
       cwd,
-      env: { ...process.env, TERM: 'xterm-256color', FORCE_COLOR: '1' },
+      env: {
+        ...process.env,
+        ANTHROPIC_API_KEY: apiKey,
+        TERM: 'xterm-256color',
+        FORCE_COLOR: '1',
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

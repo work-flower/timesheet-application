@@ -5,7 +5,6 @@ services:
       - PORT=${PORT:-3001}
       - LOG_DIR=/app/logs
       - LOG_LEVEL=${LOG_LEVEL:-error}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     ports:
       - "${PORT:-3001}:${PORT:-3001}"
     volumes:
