@@ -3,6 +3,7 @@ import { submitBatch, checkBatch } from './aiBatchService.js';
 import * as dailyPlanService from './dailyPlanService.js';
 import * as todoService from './todoService.js';
 import * as calendarService from './calendarService.js';
+import * as ticketService from './ticketService.js';
 import * as timesheetService from './timesheetService.js';
 import { notebooks, tickets, settings } from '../db/index.js';
 import { getTimezoneLabel, DEFAULT_TIMEZONE } from '../../shared/timezones.js';
@@ -343,7 +344,15 @@ export async function generateBriefing(planId, selectedDates, { userTimezone } =
   }
 
   try {
-    // 1. Carry forward incomplete todos from scoped days into current plan
+    // 1. Refresh calendar and ticket caches so the briefing sees the latest data for today.
+    // fetchAll captures per-source errors internally — never throws.
+    console.log(`[generateBriefing ${planId}] refreshing calendar and ticket sources`);
+    const [calRes, tktRes] = await Promise.all([calendarService.fetchAll(), ticketService.fetchAll()]);
+    const calFailed = calRes.filter(r => r.error).length;
+    const tktFailed = tktRes.filter(r => r.error).length;
+    console.log(`[generateBriefing ${planId}] refresh complete — calendar: ${calRes.length - calFailed}/${calRes.length}, tickets: ${tktRes.length - tktFailed}/${tktRes.length}`);
+
+    // 2. Carry forward incomplete todos from scoped days into current plan
     const currentPlan = await dailyPlanService.getById(planId);
     const existingTodoIds = new Set(currentPlan?.todos || []);
     for (const date of selectedDates) {
@@ -359,7 +368,7 @@ export async function generateBriefing(planId, selectedDates, { userTimezone } =
       }
     }
 
-    // 2. Read recap content and timesheet data from each selected date
+    // 3. Read recap content and timesheet data from each selected date
     const recapSections = [];
     for (const date of selectedDates) {
       const d = new Date(date + 'T00:00:00');

@@ -60,7 +60,8 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | -------- | ---- | ------------ | ------ |
 | **todoService** | `todoService.js` | Todos are standalone records linked via `todos` array | Read/write |
 | **timesheetService** | `timesheetService.js` | Timesheets linked by date + `timesheetIds` array. AI context reads timesheets for recap/briefing. | Read-only |
-| **calendarService** | `calendarService.js` | Calendar events fetched by date for recap AI context and timeline card | Read-only |
+| **calendarService** | `calendarService.js` | Calendar events fetched by date for recap AI context and timeline card. `fetchAll()` invoked as the first step of `generateBriefing` to refresh sources before context build. | Read-only (read/refresh) |
+| **ticketService** | `ticketService.js` | Tickets read for briefing/recap AI context (comments, updates, user notes on the plan's date). `fetchAll()` invoked as the first step of `generateBriefing` to refresh sources before context build. | Read-only (read/refresh) |
 | **notebookService** | `notebookService.js` | Meeting notes and related notebooks link to notebooks. Content read for recap AI context. Related notebooks displayed as badges in form. | Read/write |
 | **notebookGitService** | `notebookGitService.js` | `sanitizeTitle` used to find notebook content on disk | Read-only |
 | **ticketsApi** | `ticketsApi` (frontend) | TicketsListCard fetches tickets for display in form | Read-only |
@@ -77,6 +78,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 5. **Content auto-save** — Milkdown editor content is debounce-saved to disk, not to the DB. Content is read/written via dedicated API endpoints.
 6. **Recap staleness** — Determined by comparing `recap.md` mtime against `plan.updatedAt`. If plan was updated after recap was generated, recap is stale.
 7. **Briefing todo carry-forward** — `generateBriefing` carries forward incomplete todos from all scoped days into the current plan via `addTodo`.
+8. **Briefing refreshes external sources** — As the very first step of `generateBriefing`, calendar and ticket sources are refreshed in parallel via `calendarService.fetchAll()` and `ticketService.fetchAll()`. This ensures the AI's date-scoped queries for today's calendar events, ticket comments, ticket updates, and user notes see the freshest upstream data. Per-source failures are captured internally and logged but never block the briefing.
 8. **Timesheet description** — Deterministic (no AI): bullet list of meeting titles + completed todos. Passed to timesheet form via query string pre-fill.
 
 ## Key Business Logic
@@ -86,7 +88,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | Create-on-open | `DailyPlanList.jsx` — navigates to date; `dailyPlans.js` POST creates if needed |
 | Content auto-save | `DailyPlanForm.jsx` — debounced write via `dailyPlansApi.updateContent` |
 | Recap generation | `dailyPlanAiService.generateRecap` — buildContext + callClaude + file write |
-| Briefing generation | `dailyPlanAiService.generateBriefing` — todo carry-forward + recap collection + callClaude |
+| Briefing generation | `dailyPlanAiService.generateBriefing` — refresh calendar + ticket sources, then todo carry-forward + recap collection + callClaude |
 | Recap status detection | `dailyPlanService.getRecapStatus` — checks recap.md existence, mtime, error file |
 | Briefing day check | `dailyPlanAiService.checkBriefingDays` — returns days with plan existence + recap status |
 | Meeting note lifecycle | `DailyPlanForm.jsx` — calendar event click creates/opens notebook, stores link in meetingNotes. On creation: AI generates summary + hashtags, attendees grouped by role (Organiser/Attendees/Optional/Room). |
