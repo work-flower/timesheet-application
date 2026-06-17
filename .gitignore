@@ -4,3 +4,4 @@ node_modules
 dist
 dist-admin
 .env
+.DS_Store
