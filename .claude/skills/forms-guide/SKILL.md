@@ -300,6 +300,12 @@ useEffect(() => {
 }, [isDirty, saveForm, registerGuard]);
 ```
 
+`onSave` returns `{ ok }` (or a bare boolean). On `ok`, the guard neutralizes `isDirty` and runs the navigation the user asked for; otherwise it cancels it.
+
+**Optional `{ ok: true, stay: true }`** — the save succeeded, but keep the user on the form instead of navigating (e.g. there is a MessageBar to show that navigating would unmount before it paints). The guard still neutralizes `isDirty`; only the pending navigation is dropped. Used by `ExpenseForm` when a receipt photo fails to attach after create.
+
+**Never signal "stay" with `{ ok: false }`.** That means *the save failed*, so the guard leaves `isDirty` set — and on a create form the record already exists, so the next Save creates a **duplicate**. If a form self-navigates in `onSave` (e.g. off `/new` after a create), it must still report `ok: true`.
+
 ## Record Locking
 
 Every form must support locking. Derive lock state from loaded data:

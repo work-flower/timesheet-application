@@ -1,5 +1,10 @@
 import { getRawConfig, DEFAULT_EXPENSE_SYSTEM_PROMPT } from './aiConfigService.js';
 
+// Image media types the Claude API accepts in an `image` content block.
+// The route only checks `mimetype.startsWith('image/')`, so anything else the
+// browser labels as an image (e.g. image/heic from an iPhone) reaches us here.
+const SUPPORTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
 export async function parseReceipt(fileBuffer, filename, mimeType) {
   const config = await getRawConfig();
   if (!config.apiKey) {
@@ -11,15 +16,22 @@ export async function parseReceipt(fileBuffer, filename, mimeType) {
 
   const systemPrompt = config.expenseSystemPrompt || DEFAULT_EXPENSE_SYSTEM_PROMPT;
 
-  // Build content block — use document type for all files (better for document understanding)
+  // The content block type must match the file's media type. A `document` block
+  // with a base64 source accepts application/pdf only — putting an image in one
+  // is rejected by the API.
   const content = [];
-  if (mimeType === 'application/pdf' || mimeType.startsWith('image/')) {
+  if (mimeType === 'application/pdf') {
     content.push({
       type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: fileBuffer.toString('base64') },
+    });
+  } else if (SUPPORTED_IMAGE_TYPES.has(mimeType)) {
+    content.push({
+      type: 'image',
       source: { type: 'base64', media_type: mimeType, data: fileBuffer.toString('base64') },
     });
   } else {
-    throw new Error(`Unsupported file type: ${mimeType}. Please upload an image or PDF.`);
+    throw new Error(`Unsupported file type: ${mimeType}. Supported: JPEG, PNG, GIF, WebP, or PDF.`);
   }
 
   content.push({ type: 'text', text: `Parse this receipt/invoice. Filename: ${filename}` });

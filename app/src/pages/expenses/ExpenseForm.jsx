@@ -37,9 +37,11 @@ import {
   createTableColumn,
   SearchBox,
 } from '@fluentui/react-components';
-import { LinkRegular, LinkMultipleRegular, LinkDismissRegular, WarningFilled, ReceiptRegular } from '@fluentui/react-icons';
+import { LinkRegular, LinkMultipleRegular, LinkDismissRegular, WarningFilled, ReceiptRegular, CameraRegular, DismissRegular } from '@fluentui/react-icons';
 import { expensesApi, projectsApi, clientsApi, transactionsApi } from '../../api/index.js';
 import InvoicePickerDialog from '../../components/InvoicePickerDialog.jsx';
+import ReceiptScanDialog from './ReceiptScanDialog.jsx';
+import { isCameraSupported, CAMERA_UNSUPPORTED_MESSAGE } from './CameraCapturePane.jsx';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -81,6 +83,22 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase400,
     marginBottom: '8px',
+  },
+  pendingCapture: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+    width: 'fit-content',
+  },
+  pendingCaptureThumb: {
+    width: '48px',
+    height: '48px',
+    objectFit: 'cover',
+    borderRadius: tokens.borderRadiusSmall,
   },
   balanceSection: {
     fontFamily: tokens.fontFamilyMonospace,
@@ -179,6 +197,15 @@ export default function ExpenseForm() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Receipt scanning
+  const [scanOpen, setScanOpen] = useState(false);
+  // On a new expense there is no id to attach to yet, so the captured photo is
+  // held here and uploaded right after the first successful save.
+  const [pendingCapture, setPendingCapture] = useState(null);
+  const [pendingCaptureUrl, setPendingCaptureUrl] = useState(null);
+  const [attachWarning, setAttachWarning] = useState(null);
+  const cameraSupported = useMemo(() => isCameraSupported(), []);
 
   // Transaction picker state
   const [txPickerOpen, setTxPickerOpen] = useState(false);
@@ -282,16 +309,35 @@ export default function ExpenseForm() {
     setSaving(true);
     setError(null);
     setSuccess(false);
+    setAttachWarning(null);
     try {
       if (isNew) {
         const created = await expensesApi.create(form);
+
+        // Attach before the transaction-link loop: a link failure throws to the
+        // outer catch, and the photo is the one thing the user cannot redo.
+        let attachFailed = false;
+        if (pendingCapture) {
+          try {
+            await expensesApi.uploadAttachments(created._id, [pendingCapture]);
+          } catch {
+            // Non-fatal — the expense exists. Failing the save here would strand
+            // the user on a form whose record is already saved, inviting a
+            // duplicate on the next Save. Reported via attachFailed so callers
+            // don't navigate somewhere the warning can't be seen.
+            attachFailed = true;
+            setAttachWarning('Expense saved, but the receipt photo could not be attached. Re-scan it, or attach it manually below.');
+          }
+          setPendingCapture(null);
+        }
+
         if (sourceTransactionIds.length > 0) {
           for (const txId of sourceTransactionIds) {
             await expensesApi.linkTransaction(created._id, txId);
             await transactionsApi.updateMapping(txId, { status: 'matched' });
           }
         }
-        return { ok: true, id: created._id };
+        return { ok: true, id: created._id, attachFailed };
       } else {
         const updated = await expensesApi.update(id, form);
         setAttachments(updated.attachments || []);
@@ -304,7 +350,7 @@ export default function ExpenseForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, resetBase, today, sourceTransactionIds]);
+  }, [form, isNew, id, resetBase, today, sourceTransactionIds, pendingCapture]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -322,10 +368,41 @@ export default function ExpenseForm() {
   const handleSaveAndClose = async () => {
     const result = await saveForm();
     if (result.ok) {
+      if (result.attachFailed) {
+        // Don't close: navigating to the list unmounts the form before the
+        // warning renders, and the photo is already gone. Land on the saved
+        // record instead — the warning survives the reconcile, and the user can
+        // re-scan or attach manually from there. Going to the edit route (not
+        // staying on /new) also stops a second Save creating a duplicate.
+        //
+        // Notify 'save', not 'saveAndClose': an embedded host tears its iframe
+        // down on saveAndClose, which would unmount the form before the warning
+        // paints — the very failure this branch exists to prevent. 'save' lets
+        // the host refresh while leaving the form open.
+        notifyParent('save', base, form);
+        navigateUnguarded(`/expenses/${result.id}`, { replace: true });
+        return;
+      }
       notifyParent('saveAndClose', base, form);
       navigateUnguarded('/expenses');
     }
   };
+
+  // The navigation-guard dialog's Save runs saveForm and then navigates wherever
+  // the user was headed, which would unmount the form before the attach warning
+  // paints — the same silent photo loss as above, via a different exit. `stay`
+  // keeps the user here to read it. It must NOT be `{ok:false}`: that reads as
+  // "the save failed", so the guard would leave isDirty set and a later Save
+  // could create a duplicate. We still move off /new ourselves for the same
+  // reason.
+  const guardSave = useCallback(async () => {
+    const result = await saveForm();
+    if (result.ok && result.attachFailed) {
+      navigateUnguarded(`/expenses/${result.id}`, { replace: true });
+      return { ...result, stay: true };
+    }
+    return result;
+  }, [saveForm, navigateUnguarded]);
 
   const handleDelete = async () => {
     try {
@@ -358,9 +435,33 @@ export default function ExpenseForm() {
     }
   };
 
+  // Apply scanned fields. `entries` arrive in dependency order from the dialog —
+  // amount before vatAmount — and must be applied sequentially through
+  // handleChange so the VAT and currency side effects fire as they do for user
+  // input. setForm is a functional updater, so these compose within one batch.
+  // Do not reorder, and do not route around handleChange.
+  const handleScanApply = (entries, file) => {
+    for (const [key, value] of entries) handleChange(key)(null, { value });
+
+    if (file) {
+      if (isNew) setPendingCapture(file); // held until the first successful save
+      else handleUpload([file]);          // saved expense — attach now
+    }
+    setScanOpen(false);
+  };
+
+  // Preview thumbnail for a capture that is waiting on the first save.
   useEffect(() => {
-    return registerGuard({ isDirty, onSave: saveForm });
-  }, [isDirty, saveForm, registerGuard]);
+    if (!pendingCapture) { setPendingCaptureUrl(null); return undefined; }
+    const url = URL.createObjectURL(pendingCapture);
+    setPendingCaptureUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [pendingCapture]);
+
+  useEffect(() => {
+    // A held capture is unsaved work even if every scanned field was unticked.
+    return registerGuard({ isDirty: isDirty || !!pendingCapture, onSave: guardSave });
+  }, [isDirty, pendingCapture, guardSave, registerGuard]);
 
   // --- Refresh expense data helper ---
   const refreshExpense = useCallback(async () => {
@@ -474,6 +575,28 @@ export default function ExpenseForm() {
         saving={saving}
         locked={isLocked}
       >
+        {/* FormCommandBar renders children even when locked, so gate here. */}
+        {!isLocked && (
+          <Tooltip
+            content={cameraSupported ? 'Scan a receipt with the camera' : CAMERA_UNSUPPORTED_MESSAGE}
+            // "description", not "label": a label relationship overwrites the
+            // trigger's aria-label, replacing the button's visible name.
+            relationship="description"
+            withArrow
+          >
+            <Button
+              appearance="outline"
+              icon={<CameraRegular />}
+              size="small"
+              // disabledFocusable, not disabled: a disabled Fluent Button fires no
+              // mouse events, so the tooltip explaining *why* would never show.
+              disabledFocusable={!cameraSupported}
+              onClick={() => { if (cameraSupported) setScanOpen(true); }}
+            >
+              Scan
+            </Button>
+          </Tooltip>
+        )}
         {!isNew && !isLocked && (
           <Button
             appearance="outline"
@@ -513,6 +636,7 @@ export default function ExpenseForm() {
 
         {error && <MessageBar intent="error" className={styles.message}><MessageBarBody>{error}</MessageBarBody></MessageBar>}
         {success && <MessageBar intent="success" className={styles.message}><MessageBarBody>Expense saved successfully.</MessageBarBody></MessageBar>}
+        {attachWarning && <MessageBar intent="warning" className={styles.message}><MessageBarBody>{attachWarning}</MessageBarBody></MessageBar>}
         {isLocked && <MessageBar intent="warning" className={styles.message}><MessageBarBody>{lockReason || 'This record is locked.'}</MessageBarBody></MessageBar>}
 
         <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
@@ -626,9 +750,26 @@ export default function ExpenseForm() {
         <div className={styles.attachments}>
           <Text className={styles.sectionTitle} block>Attachments</Text>
           {isNew ? (
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              Save the expense first to add attachments.
-            </Text>
+            pendingCapture ? (
+              <div className={styles.pendingCapture}>
+                {pendingCaptureUrl && (
+                  <img src={pendingCaptureUrl} alt="Captured receipt" className={styles.pendingCaptureThumb} />
+                )}
+                <Text size={200}>This photo will be attached when you save.</Text>
+                <Tooltip content="Discard the captured photo" relationship="label" withArrow>
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    icon={<DismissRegular />}
+                    onClick={() => setPendingCapture(null)}
+                  />
+                </Tooltip>
+              </div>
+            ) : (
+              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                Save the expense first to add attachments, or use Scan to capture one now.
+              </Text>
+            )
           ) : (
             <AttachmentGallery
               expenseId={id}
@@ -802,6 +943,12 @@ export default function ExpenseForm() {
         onConfirm={handleUnlinkTx}
         title="Unlink Transaction"
         message={`Are you sure you want to unlink "${unlinkTarget?.label}" from this expense?`}
+      />
+      <ReceiptScanDialog
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        current={form}
+        onApply={handleScanApply}
       />
       <InvoicePickerDialog
         open={invoicePickerOpen}

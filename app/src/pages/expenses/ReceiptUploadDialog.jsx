@@ -14,11 +14,13 @@ import {
   MessageBar,
   MessageBarBody,
   Text,
+  Tooltip,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
-import { DismissRegular } from '@fluentui/react-icons';
+import { DismissRegular, CameraRegular } from '@fluentui/react-icons';
 import { expensesApi } from '../../api/index.js';
+import CameraCapturePane, { isCameraSupported, CAMERA_UNSUPPORTED_MESSAGE } from './CameraCapturePane.jsx';
 
 const useStyles = makeStyles({
   form: {
@@ -30,6 +32,29 @@ const useStyles = makeStyles({
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     gap: '12px',
+  },
+  sourceRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
+  fileList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    maxHeight: '140px',
+    overflowY: 'auto',
+    padding: '4px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  fileRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    padding: '2px 6px',
   },
   spinner: {
     display: 'flex',
@@ -123,7 +148,11 @@ const useStyles = makeStyles({
 export default function ReceiptUploadDialog({ open, onClose, onCreated, projects }) {
   const styles = useStyles();
   const [phase, setPhase] = useState('upload'); // upload | parsing | preview | creating
-  const [files, setFiles] = useState([]);       // File objects from input
+  const [files, setFiles] = useState([]);       // File objects from the picker and/or camera
+  // The camera is a sub-mode of the upload phase, not a peer of it — making it a
+  // phase would displace the Parse button.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const cameraSupported = useMemo(() => isCameraSupported(), []);
   const [projectId, setProjectId] = useState('');
   const [error, setError] = useState(null);
   const [items, setItems] = useState([]);        // Array of { filename, file, ...parsedFields, error? }
@@ -167,12 +196,22 @@ export default function ReceiptUploadDialog({ open, onClose, onCreated, projects
   const handleClose = () => {
     setPhase('upload');
     setFiles([]);
+    setCameraOpen(false);
     setProjectId('');
     setError(null);
     setItems([]);
     setProgress('');
     setSelectedIndex(0);
     onClose();
+  };
+
+  const handleCameraCapture = (file) => {
+    // Append, so captures accumulate and coexist with picked files.
+    setFiles((prev) => [...prev, file]);
+  };
+
+  const removeFile = (index) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleParse = async () => {
@@ -182,6 +221,11 @@ export default function ReceiptUploadDialog({ open, onClose, onCreated, projects
     try {
       const results = await expensesApi.parseReceipts(files);
       const parsed = results.map((r, i) => ({
+        // Stable identity for this item. Filenames are NOT unique — the picker
+        // appends, so the same file can be chosen twice — so anything keyed by
+        // filename would smear one item's error across its namesakes. Survives
+        // updateItem (spread) and removeItem (filter).
+        uid: i,
         filename: r.filename || files[i].name,
         file: files[i],
         date: r.date || '',
@@ -222,7 +266,7 @@ export default function ReceiptUploadDialog({ open, onClose, onCreated, projects
       const amount = parseFloat(item.amount);
       const vatAmount = parseFloat(item.vatAmount) || 0;
       if (isNaN(amount) || amount === 0) {
-        createFailures.push({ filename: item.filename, error: 'Amount must be a non-zero number.' });
+        createFailures.push({ uid: item.uid, error: 'Amount must be a non-zero number.' });
         continue;
       }
       try {
@@ -243,12 +287,12 @@ export default function ReceiptUploadDialog({ open, onClose, onCreated, projects
           // Non-fatal — expense created, attachment failed
         }
       } catch (err) {
-        createFailures.push({ filename: item.filename, error: err.message });
+        createFailures.push({ uid: item.uid, error: err.message });
       }
     }
     if (createFailures.length > 0) {
       setItems((prev) => prev.map((item) => {
-        const failure = createFailures.find((f) => f.filename === item.filename);
+        const failure = createFailures.find((f) => f.uid === item.uid);
         return failure ? { ...item, error: `Create failed: ${failure.error}` } : item;
       }));
       setPhase('preview');
@@ -303,15 +347,73 @@ export default function ReceiptUploadDialog({ open, onClose, onCreated, projects
 
             {phase === 'upload' && (
               <div className={styles.form}>
-                <Field label="Receipt files" required hint="Select one or more receipt images or PDFs.">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    multiple
-                    onChange={(e) => setFiles(Array.from(e.target.files || []))}
-                    style={{ fontSize: tokens.fontSizeBase300 }}
-                  />
+                <Field label="Receipt files" required hint="Choose one or more receipt images or PDFs, and/or take photos.">
+                  <div className={styles.sourceRow}>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      multiple
+                      onChange={(e) => {
+                        // Append, not replace: replacing would silently discard
+                        // any photos already captured in this session.
+                        setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
+                        // Clear so the same file can be re-picked after removal,
+                        // and so the native "N files selected" label stops
+                        // contradicting the list below.
+                        e.target.value = '';
+                      }}
+                      style={{ fontSize: tokens.fontSizeBase300 }}
+                    />
+                    {!cameraOpen && (
+                      <Tooltip
+                        content={cameraSupported ? 'Take a photo of a receipt' : CAMERA_UNSUPPORTED_MESSAGE}
+                        // "description", not "label": a label relationship
+                        // overwrites the button's visible accessible name.
+                        relationship="description"
+                        withArrow
+                      >
+                        <Button
+                          appearance="outline"
+                          icon={<CameraRegular />}
+                          size="small"
+                          disabledFocusable={!cameraSupported}
+                          onClick={() => { if (cameraSupported) setCameraOpen(true); }}
+                        >
+                          Use camera
+                        </Button>
+                      </Tooltip>
+                    )}
+                  </div>
                 </Field>
+
+                {cameraOpen && (
+                  <CameraCapturePane
+                    onCapture={handleCameraCapture}
+                    onCancel={() => setCameraOpen(false)}
+                    captureLabel="Use photo"
+                    height={300}
+                    hint={`${files.length} file${files.length === 1 ? '' : 's'} ready — keep capturing, or press Done.`}
+                  />
+                )}
+
+                {files.length > 0 && (
+                  <div className={styles.fileList}>
+                    {files.map((f, i) => (
+                      <div key={`${f.name}-${i}`} className={styles.fileRow}>
+                        <Text size={200} truncate wrap={false}>{f.name}</Text>
+                        <Button
+                          appearance="subtle"
+                          icon={<DismissRegular />}
+                          size="small"
+                          onClick={() => removeFile(i)}
+                          title={`Remove ${f.name}`}
+                          aria-label={`Remove ${f.name}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <Field label="Project" required>
                   <Select value={projectId} onChange={(e, data) => setProjectId(data.value)}>
                     <option value="">Select project...</option>
@@ -359,7 +461,7 @@ export default function ReceiptUploadDialog({ open, onClose, onCreated, projects
                       const isSelected = index === selectedIndex;
                       return (
                         <div
-                          key={index}
+                          key={item.uid}
                           className={isSelected ? styles.receiptCardSelected : styles.receiptCard}
                           onClick={() => setSelectedIndex(index)}
                         >

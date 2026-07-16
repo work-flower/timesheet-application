@@ -45,13 +45,19 @@ export function UnsavedChangesProvider({ children }) {
     if (!guard) return;
     const result = await guard.onSave();
     const ok = typeof result === 'object' ? result.ok : result;
+    // `stay: true` means the save succeeded but the form wants the user kept in
+    // place — e.g. it has a warning to show that navigating away would discard.
+    // The guard must still be neutralized (the record IS saved); only the
+    // pending navigation is dropped.
+    const stay = typeof result === 'object' && result.stay === true;
     setDialogOpen(false);
     if (ok) {
       // Neutralize guard before navigating — React hasn't flushed setBase()
       // yet so isDirty is stale. Without this, popstate handler re-triggers
       // the dialog and a second save creates a duplicate record.
       if (guardRef.current) guardRef.current.isDirty = false;
-      runPending();
+      if (stay) pendingRef.current = null;
+      else runPending();
     } else {
       pendingRef.current = null;
     }
