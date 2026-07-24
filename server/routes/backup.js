@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import {
   getConfig,
   updateConfig,
@@ -20,7 +21,7 @@ router.get('/config', async (req, res) => {
     res.json(config);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -32,7 +33,7 @@ router.put('/config', async (req, res) => {
     res.json(config);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -43,7 +44,7 @@ router.post('/test-connection', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -54,7 +55,7 @@ router.post('/create', (req, res) => {
     res.status(202).json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -65,7 +66,7 @@ router.get('/list', async (req, res) => {
     res.json(backups);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -77,7 +78,7 @@ router.post('/restore', (req, res) => {
     res.status(202).json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -95,7 +96,7 @@ router.delete('/:key(*)', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 

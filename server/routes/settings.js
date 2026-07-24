@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import { settings, clients } from '../db/index.js';
 
 const router = Router();
@@ -11,7 +12,7 @@ router.get('/', async (req, res) => {
     res.json(docs[0] || null);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -64,7 +65,7 @@ router.put('/', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 

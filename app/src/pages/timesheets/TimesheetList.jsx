@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -231,6 +232,7 @@ function deriveRange(startDate, endDate) {
 export default function TimesheetList() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { canCreate } = useCurrentUser();
 
   // --- OData-driven data flow ---
   const {
@@ -327,7 +329,7 @@ export default function TimesheetList() {
         <Text className={styles.title}>Timesheets</Text>
       </div>
       <CommandBar
-        onNew={() => navigate('/timesheets/new')}
+        onNew={canCreate('timesheets') ? () => navigate('/timesheets/new') : undefined}
         newLabel="New Entry"
         onDelete={selectedId ? () => setDeleteTarget(selectedId) : undefined}
         deleteDisabled={!selectedId}

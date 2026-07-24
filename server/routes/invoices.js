@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
+import { requireAction } from '../pipeline/authorisation.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
 import * as invoiceService from '../services/invoiceService.js';
 import { buildInvoicePdf } from '../services/invoicePdfService.js';
 import { createPrinter } from '../services/pdfRenderer.js';
@@ -11,7 +14,7 @@ router.get('/', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -22,7 +25,7 @@ router.get('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -32,7 +35,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -43,7 +46,7 @@ router.put('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -53,37 +56,47 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
-router.post('/:id/confirm', async (req, res) => {
+// Lifecycle actions: requireAction gates by role; the caller's scoped getById
+// proves visibility; the operation itself runs under system identity because it
+// performs privileged cross-entity writes (locks on timesheets/expenses,
+// invoice number seed) that individual table grants shouldn't have to cover.
+router.post('/:id/confirm', requireAction('invoices', 'confirm'), async (req, res) => {
   try {
-    const result = await invoiceService.confirm(req.params.id);
+    const invoice = await invoiceService.getById(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    const result = await runAsSystem(() => invoiceService.confirm(req.params.id));
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
-router.post('/:id/post', async (req, res) => {
+router.post('/:id/post', requireAction('invoices', 'post'), async (req, res) => {
   try {
-    const result = await invoiceService.post(req.params.id);
+    const invoice = await invoiceService.getById(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    const result = await runAsSystem(() => invoiceService.post(req.params.id));
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
-router.post('/:id/unconfirm', async (req, res) => {
+router.post('/:id/unconfirm', requireAction('invoices', 'unconfirm'), async (req, res) => {
   try {
-    const result = await invoiceService.unconfirm(req.params.id);
+    const invoice = await invoiceService.getById(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    const result = await runAsSystem(() => invoiceService.unconfirm(req.params.id));
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -93,7 +106,7 @@ router.post('/:id/add-line', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -103,7 +116,7 @@ router.post('/:id/recalculate', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -113,17 +126,19 @@ router.post('/:id/consistency-check', async (req, res) => {
     res.json({ conflicts });
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
-router.put('/:id/payment', async (req, res) => {
+router.put('/:id/payment', requireAction('invoices', 'updatePayment'), async (req, res) => {
   try {
-    const result = await invoiceService.updatePayment(req.params.id, req.body);
+    const invoice = await invoiceService.getById(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    const result = await runAsSystem(() => invoiceService.updatePayment(req.params.id, req.body));
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -133,7 +148,7 @@ router.post('/:id/link-transaction', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -143,7 +158,7 @@ router.post('/:id/unlink-transaction', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -156,7 +171,7 @@ router.get('/:id/file', async (req, res) => {
     res.sendFile(invoice.pdfPath);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -172,7 +187,7 @@ router.get('/:id/pdf', async (req, res) => {
     pdfDoc.end();
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 

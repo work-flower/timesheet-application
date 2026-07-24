@@ -13,9 +13,13 @@ Service → wrapped collection (Proxy) → checkAccess → pre-hooks → NeDB ad
 ```text
 server/pipeline/
   index.js          — wrapCollection(), Proxy handler, method routing
-  context.js        — buildContext() reads ALS store, builds canonical context object
+  context.js        — buildContext() reads ALS store (incl. auth), builds canonical context object
   hooks.js          — HookRegistry class, register() and run() methods
-  authorisation.js  — checkAccess() stub (ready for implementation)
+  authorisation.js  — checkAccess() (IMPLEMENTED), enforceWriteScope(), requireAction()
+  attribution.js    — wildcard pre-hooks stamping createdBy/updatedBy (AUTH_ENABLED only)
+  identity.js       — Express middleware resolving Cloudflare identity → user + grants → ALS
+  systemContext.js  — runAsSystem() for background/engine execution
+  authFlag.js       — isAuthEnabled() (AUTH_ENABLED env gate)
   cursorProxy.js    — CursorProxy class, defers post-hooks until cursor is evaluated
 
 server/logging/asyncContext.js  — AsyncLocalStorage instance (shared with logging)
@@ -23,15 +27,19 @@ server/index.js                 — Express middleware that populates ALS store 
 server/db/index.js              — wrapCollection() called for every collection at boot
 ```
 
+See `.claude/docs/authorisation.md` for the full authorisation wiring (grants, macros, lifecycle).
+
 ## How It Works
 
 ### Method Routing
 
 | Method type | Methods | Behaviour |
 | ----------- | ------- | --------- |
-| Cursor | `find`, `findOne`, `count` | Returns CursorProxy (defers post-hooks until `.exec()` / `.then()`) |
-| Async | `insert`, `update`, `remove` | Awaits operation, runs post-hooks, returns result |
+| Cursor | `find`, `findOne`, `count` | checkAccess (sync) → pre-hooks (NOT awaited) → CursorProxy (defers post-hooks until `.exec()` / `.then()`) |
+| Async | `insert`, `update`, `remove` | checkAccess → `await enforceWriteScope` (post-image) → awaited pre-hooks → operation → post-hooks |
 | Pass-through | Everything else (EventEmitter, load, etc.) | Proxied directly to NeDB |
+
+**Cursor-path constraint:** `checkAccess` must stay synchronous (a chainable cursor must be returned immediately) and read pre-hooks are fire-and-forget — ALL read-side logic lives in `checkAccess`, which works by mutating `context.args[0]` (the same array reference spread into the real call). Async enforcement is only possible on the write path.
 
 ### Context Object
 
@@ -44,6 +52,7 @@ Built by `buildContext(collection, operation, args)` from ALS store:
   source        — derived from URL path (e.g. 'timesheets', 'invoices')
   method        — HTTP verb
   path          — request path
+  auth          — { system?, superuser?, user?, grants? } stamped by identity middleware / runAsSystem
   collection    — collection name (e.g. 'timesheets')
   operation     — DB operation (e.g. 'find', 'insert', 'update', 'remove')
   args          — original arguments to the DB operation
@@ -70,14 +79,17 @@ hooks.run(phase, collection, operation, context, data?)
   — executes matching hooks sequentially
 ```
 
-**Current state:** No hooks registered. Infrastructure complete, ready for audit logging, computed fields, field masking, etc.
+**Current state:** First hooks registered — `pipeline/attribution.js` (wildcard pre-hooks on insert/update stamping `createdBy`/`updatedBy` when AUTH_ENABLED), registered by side-effect import in `db/index.js`.
 
 ### Authorization (`server/pipeline/authorisation.js`)
 
-`checkAccess(context)` — currently a pass-through stub. Designed for:
-- Phase 1: URL access checks
-- Phase 2: Collection access checks
-- Phase 3: Record scoping
+`checkAccess(context)` — IMPLEMENTED (see `.claude/docs/authorisation.md`):
+- Phase 0: bypass — `!AUTH_ENABLED` / system / superuser
+- Phase 1: identity — unauthenticated / pending / disabled → ForbiddenError with code
+- Phase 2: collection privilege — operation mapped to read/create/update/delete; default deny
+- Phase 3: record scoping — role filter merged into the selector via `context.args[0] = {$and:[filter, query]}`
+
+Plus `enforceWriteScope(context, rawDatastore)` (async post-image check for filtered updates + upsert create requirement) and `requireAction(table, action)` (Express middleware for named lifecycle actions).
 
 ### CursorProxy (`server/pipeline/cursorProxy.js`)
 
@@ -107,8 +119,17 @@ All collections wrapped at boot in `server/db/index.js`:
 | `transactions` | `transactions.db` | transactionService, expenseService, invoiceService, dashboardService |
 | `importJobs` | `importJobs.db` | importJobService, dashboardService |
 | `stagedTransactions` | `stagedTransactions.db` | stagedTransactionService, importJobService |
+| `notebooks` | `notebooks.db` | notebookService, dailyPlanService, dailyPlanAiService |
+| `dailyPlans` | `dailyPlans.db` | dailyPlanService |
+| `todos` | `todos.db` | todoService, dailyPlanService |
+| `users` | `users.db` | userService, identity middleware (via runAsSystem) |
+| `roles` | `roles.db` | roleService, accessService (via runAsSystem) |
+| `calendarSources` | `calendar-sources.db` | calendarService |
+| `calendarEvents` | `calendar-events.db` | calendarService, dailyPlanService |
+| `ticketSources` | `ticket-sources.db` | ticketService |
+| `tickets` | `tickets.db` | ticketService, notebookService, dailyPlanAiService |
 
-**Not wrapped** (separate DB files, own management): `backupConfig.db`, `logConfig.db`, `ai-config.db`
+**Not wrapped** (separate DB files, own management, config-only): `backupConfig.db`, `logConfig.db`, `ai-config.db`, `gemini-config.db`, `mcp-auth.db`
 
 ## Key Design Decisions
 
@@ -146,4 +167,7 @@ All collections wrapped at boot in `server/db/index.js`:
 
 ## Lessons Learned
 
-(Empty — will be populated as issues are encountered)
+- **Cursor-path pre-hooks are fire-and-forget** — `hooks.run('pre', ...)` is not awaited on `find/findOne/count`. Any read-side behaviour that must complete before the query belongs in the synchronous `checkAccess`, not in a pre-hook.
+- **`context.args` is the live argument array** — mutating `context.args[0]` in a sync hook/checkAccess changes what the real datastore call receives (this is how filter injection works). Treat with care.
+- **Background execution needs `runAsSystem`** — interval/cron callbacks (calendar/ticket schedulers, backup cron, log uploader, import AI parsing, seed) run with an empty ALS store; without the system identity wrapper they are denied when AUTH_ENABLED is on.
+- **NeDB refuses to load datastores containing `$`-prefixed or dotted keys** — stored role filters must go through `shared/authz/filterCodec.js` (see authorisation.md Lessons).

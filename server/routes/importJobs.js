@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync, renameSync, existsSync, rmSync } from 'fs';
-import als from '../logging/asyncContext.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
+import { requireAction } from '../pipeline/authorisation.js';
 import * as importJobService from '../services/importJobService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,7 +22,7 @@ router.get('/', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -31,7 +33,7 @@ router.get('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -59,12 +61,12 @@ router.post('/', upload.single('file'), async (req, res) => {
     const { importJobs } = await import('../db/index.js');
     await importJobs.update({ _id: job._id }, { $set: { filePath: destPath } });
 
-    // Fire background processing (no await)
-    als.run({ source: 'import_parser', importJobId: job._id }, () => {
+    // Fire background processing (no await) — system identity, outlives the request
+    runAsSystem(() => {
       importJobService.processFile(job._id).catch((err) => {
         console.error(`processFile error for job ${job._id}:`, err);
       });
-    });
+    }, { source: 'import_parser', importJobId: job._id });
 
     const updated = await importJobService.getById(job._id);
     res.status(201).json(updated);
@@ -74,7 +76,7 @@ router.post('/', upload.single('file'), async (req, res) => {
       rmSync(req.file.path, { force: true });
     }
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -110,12 +112,12 @@ router.put('/:id', upload.single('file'), async (req, res) => {
         },
       });
 
-      // Fire background processing
-      als.run({ source: 'import_parser', importJobId: req.params.id }, () => {
+      // Fire background processing — system identity, outlives the request
+      runAsSystem(() => {
         importJobService.processFile(req.params.id).catch((err) => {
           console.error(`processFile error for job ${req.params.id}:`, err);
         });
-      });
+      }, { source: 'import_parser', importJobId: req.params.id });
 
       const updated = await importJobService.getById(req.params.id);
       return res.json(updated);
@@ -135,7 +137,7 @@ router.put('/:id', upload.single('file'), async (req, res) => {
       rmSync(req.file.path, { force: true });
     }
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -145,17 +147,20 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
-router.post('/:id/abandon', async (req, res) => {
+router.post('/:id/abandon', requireAction('importJobs', 'abandon'), async (req, res) => {
   try {
-    const result = await importJobService.abandon(req.params.id);
+    // Visibility check under caller's scope, then privileged lifecycle execution
+    const existing = await importJobService.getById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Import job not found' });
+    const result = await runAsSystem(() => importJobService.abandon(req.params.id));
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 

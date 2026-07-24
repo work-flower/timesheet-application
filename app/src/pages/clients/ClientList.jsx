@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -123,6 +124,7 @@ const columns = [
 export default function ClientList() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { canCreate } = useCurrentUser();
 
   // --- OData-driven data flow ---
   const {
@@ -175,7 +177,7 @@ export default function ClientList() {
         <Text className={styles.title}>Clients</Text>
       </div>
       <CommandBar
-        onNew={() => navigate('/clients/new')}
+        onNew={canCreate('clients') ? () => navigate('/clients/new') : undefined}
         newLabel="New Client"
         onDelete={selectedId ? () => setDeleteTarget(selectedId) : undefined}
         deleteDisabled={!selectedId}

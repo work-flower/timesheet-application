@@ -30,7 +30,7 @@ Auto-upload:
 | Log uploader | `server/logging/logUploader.js` | Auto-upload cycle, initUploader() called at server startup |
 | Config DB | `server/db/logConfig.js` | Separate NeDB file (`log-config.db`), not included in backups |
 | Service | `server/services/logService.js` | Config CRUD, search (OData), local file ops, R2 upload/download/delete |
-| Route | `server/routes/logs.js` | 11 endpoints: config, search, file list/read, upload/download/delete, R2 list, pageview |
+| Route | `server/routes/logs.js` | 11 endpoints: config, search, file list/read, upload/download/delete, R2 list (all mounted at `/admin/api/logs` — admin surface, see authorisation.md) + `pageviewRouter` (named export) mounted at `/api/logs` for the cross-app beacon |
 | ALS middleware | `server/index.js` `als.run()` block | Sets requestId, traceId, source, method, path per request |
 | Request logging | `server/index.js` `res.on('finish')` handler | Logs HTTP status line, optional payload logging |
 

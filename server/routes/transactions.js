@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import * as transactionService from '../services/transactionService.js';
 
 const router = Router();
@@ -13,7 +14,7 @@ router.get('/accounts', async (req, res) => {
     res.json(accounts);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -23,7 +24,7 @@ router.get('/', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -34,7 +35,7 @@ router.get('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -44,7 +45,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -55,7 +56,7 @@ router.put('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -66,7 +67,7 @@ router.put('/:id/mapping', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -76,7 +77,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 

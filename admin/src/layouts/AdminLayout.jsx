@@ -13,6 +13,8 @@ import {
 } from '@fluentui/react-components';
 import {
   PersonRegular,
+  PeopleRegular,
+  PeopleTeamRegular,
   MoneyRegular,
   BrainCircuitRegular,
   KeyRegular,
@@ -222,6 +224,15 @@ const navItems = [
     ],
   },
   {
+    label: 'Access Control',
+    icon: <PeopleTeamRegular />,
+    prefix: '/access',
+    children: [
+      { to: '/access/users', label: 'Users', icon: <PeopleRegular /> },
+      { to: '/access/roles', label: 'Roles', icon: <KeyRegular /> },
+    ],
+  },
+  {
     label: 'Infrastructure',
     icon: <ServerRegular />,
     prefix: '/infra',
@@ -283,6 +294,9 @@ export default function AdminLayout() {
   const [systemExpanded, setSystemExpanded] = useState(
     () => isChildRouteActive('/system'),
   );
+  const [accessExpanded, setAccessExpanded] = useState(
+    () => isChildRouteActive('/access'),
+  );
   const [infraExpanded, setInfraExpanded] = useState(
     () => isChildRouteActive('/infra'),
   );
@@ -295,6 +309,7 @@ export default function AdminLayout() {
   const expandState = {
     'Business Config': [configExpanded, setConfigExpanded],
     'System Config': [systemExpanded, setSystemExpanded],
+    'Access Control': [accessExpanded, setAccessExpanded],
     'Infrastructure': [infraExpanded, setInfraExpanded],
     'Admin Reports': [reportsExpanded, setReportsExpanded],
   };

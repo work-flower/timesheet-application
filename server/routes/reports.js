@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import { buildTimesheetPdf } from '../services/reportService.js';
 import { buildExpensePdf } from '../services/expenseReportService.js';
 import { combinePdfs } from '../services/pdfCombineService.js';
@@ -24,7 +25,7 @@ router.get('/timesheet-pdf', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -44,7 +45,7 @@ router.get('/expense-pdf', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -105,7 +106,7 @@ router.post('/combined-pdf', async (req, res) => {
     res.send(combined);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -123,7 +124,7 @@ router.get('/income-expense-pdf', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -140,7 +141,7 @@ router.get('/income-expense-csv', async (req, res) => {
     res.send(csv);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -158,7 +159,7 @@ router.get('/vat-pdf', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -175,7 +176,7 @@ router.get('/vat-csv', async (req, res) => {
     res.send(csv);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 

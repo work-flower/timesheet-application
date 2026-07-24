@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import multer from 'multer';
 import * as expenseService from '../services/expenseService.js';
 import * as attachmentService from '../services/expenseAttachmentService.js';
@@ -32,7 +33,7 @@ router.post('/parse-receipts', upload.any(), async (req, res) => {
     res.json(results);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -43,7 +44,7 @@ router.get('/types', async (req, res) => {
     res.json(types);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -53,7 +54,7 @@ router.get('/', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -64,7 +65,7 @@ router.get('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -74,7 +75,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -85,7 +86,7 @@ router.put('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -95,7 +96,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -105,7 +106,7 @@ router.post('/:id/link-transaction', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -115,7 +116,7 @@ router.post('/:id/unlink-transaction', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -129,7 +130,7 @@ router.post('/:id/attachments', upload.array('files', 10), async (req, res) => {
     res.json(attachments);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -139,11 +140,20 @@ router.delete('/:id/attachments/:filename', async (req, res) => {
     res.json(attachments);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
-router.get('/:id/attachments/:filename', (req, res) => {
+// File serving does a pipeline-scoped lookup first: an expense the caller's
+// role filter excludes behaves as not-found, so its files are unreachable.
+router.get('/:id/attachments/:filename', async (req, res) => {
+  try {
+    const expense = await expenseService.getById(req.params.id);
+    if (!expense) return res.status(404).json({ error: 'File not found' });
+  } catch (err) {
+    console.warn(err.message);
+    return respondError(res, err, 400);
+  }
   const filePath = attachmentService.getFilePath(req.params.id, req.params.filename);
   res.sendFile(filePath, (err) => {
     if (err && !res.headersSent) {
@@ -152,7 +162,14 @@ router.get('/:id/attachments/:filename', (req, res) => {
   });
 });
 
-router.get('/:id/attachments/:filename/thumbnail', (req, res) => {
+router.get('/:id/attachments/:filename/thumbnail', async (req, res) => {
+  try {
+    const expense = await expenseService.getById(req.params.id);
+    if (!expense) return res.status(404).json({ error: 'Thumbnail not found' });
+  } catch (err) {
+    console.warn(err.message);
+    return respondError(res, err, 400);
+  }
   const thumbPath = attachmentService.getThumbnailPath(req.params.id, req.params.filename);
   res.sendFile(thumbPath, (err) => {
     if (err && !res.headersSent) {

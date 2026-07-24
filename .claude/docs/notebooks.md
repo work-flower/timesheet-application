@@ -109,9 +109,10 @@ System files (`content.md`, thumbnails) live in `.contents/`. All other files in
 | `/api/notebooks/:id/history` | GET | Commit log for notebook folder |
 | `/api/notebooks/:id/history/:hash` | GET | Show diff for a single commit (text/plain) |
 | `/api/notebooks/:id/compare/:from/:to` | GET | Diff between two commits (text/plain) |
-| `/api/notebooks/git/config` | GET | Git remote URL + author identity |
-| `/api/notebooks/git/config` | PUT | Set git remote + identity (stored in .git/config) |
-| `/api/notebooks/git/test-connection` | POST | Test remote connectivity (git ls-remote) |
+| `/admin/api/notebooks/git/config` | GET | Git remote URL + author identity (**admin surface** — moved off `/api`, see authorisation.md) |
+| `/admin/api/notebooks/git/config` | PUT | Set git remote + identity (stored in .git/config) (**admin surface**) |
+| `/admin/api/notebooks/git/test-connection` | POST | Test remote connectivity (git ls-remote) (**admin surface**) |
+| `/admin/api/notebooks/git/branches` | GET | List remote branches (**admin surface**) |
 | `/api/notebooks/git/has-remote` | GET | Check if origin remote is configured |
 | `/api/notebooks/git/push/prepare` | POST | Fetch + return unpushed commits, affected notebooks, conflicts |
 | `/api/notebooks/git/push/execute` | POST | Push to origin (optional force) |

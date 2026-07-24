@@ -98,6 +98,7 @@ function interceptWrite(chunk, encoding, callback) {
     ...(store.traceId && { traceId: store.traceId }),
     ...(store.toolName && { toolName: store.toolName }),
     ...(store.importJobId && { importJobId: store.importJobId }),
+    ...(store.user && { user: store.user }),
   };
 
   try {
@@ -136,6 +137,7 @@ function interceptStderrWrite(chunk, encoding, callback) {
     ...(store.traceId && { traceId: store.traceId }),
     ...(store.toolName && { toolName: store.toolName }),
     ...(store.importJobId && { importJobId: store.importJobId }),
+    ...(store.user && { user: store.user }),
   };
 
   try {

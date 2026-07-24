@@ -1,6 +1,7 @@
 import { ticketSources, tickets } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { getProvider } from './providers/index.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
 
 const MASK = '••••••••';
 
@@ -417,7 +418,8 @@ function scheduleSource(source) {
   if (source.enabled && source.refreshIntervalMinutes && source.refreshIntervalMinutes > 0) {
     const ms = source.refreshIntervalMinutes * 60 * 1000;
     const handle = setInterval(() => {
-      fetchAndCache(source._id).catch((err) => {
+      // Interval callbacks run outside any request — system identity required
+      runAsSystem(() => fetchAndCache(source._id), { source: 'ticket_scheduler' }).catch((err) => {
         console.warn(`Ticket refresh failed for "${source.name}": ${err.message}`);
       });
     }, ms);
@@ -426,7 +428,7 @@ function scheduleSource(source) {
 }
 
 export async function initTicketScheduler() {
-  const sources = await ticketSources.find({ enabled: true });
+  const sources = await runAsSystem(() => ticketSources.find({ enabled: true }));
   for (const source of sources) {
     scheduleSource(source);
   }

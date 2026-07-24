@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -108,6 +109,7 @@ const columns = [
 export default function ProjectList() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { canCreate } = useCurrentUser();
 
   // --- OData-driven data flow ---
   const {
@@ -173,7 +175,7 @@ export default function ProjectList() {
         <Text className={styles.title}>Projects</Text>
       </div>
       <CommandBar
-        onNew={() => navigate('/projects/new')}
+        onNew={canCreate('projects') ? () => navigate('/projects/new') : undefined}
         newLabel="New Project"
         onDelete={selectedId ? () => {
           if (selectedProject?.isDefault) {

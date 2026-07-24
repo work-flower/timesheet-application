@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -214,6 +215,7 @@ const columns = [
 export default function InvoiceList() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { canCreate } = useCurrentUser();
 
   // --- OData-driven data flow ---
   const {
@@ -276,7 +278,7 @@ export default function InvoiceList() {
         <Text className={styles.title}>Invoices</Text>
       </div>
       <CommandBar
-        onNew={() => navigate('/invoices/new')}
+        onNew={canCreate('invoices') ? () => navigate('/invoices/new') : undefined}
         newLabel="New Invoice"
         onDelete={canDelete ? () => setDeleteTarget(selectedId) : undefined}
         deleteDisabled={!canDelete}

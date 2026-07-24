@@ -1,6 +1,7 @@
 import ical from 'node-ical';
 import { calendarSources, calendarEvents } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
 
 // Store active refresh intervals keyed by sourceId
 const refreshIntervals = new Map();
@@ -278,7 +279,8 @@ function scheduleSource(source) {
   if (source.enabled && source.refreshIntervalMinutes && source.refreshIntervalMinutes > 0) {
     const ms = source.refreshIntervalMinutes * 60 * 1000;
     const handle = setInterval(() => {
-      fetchAndCache(source._id).catch((err) => {
+      // Interval callbacks run outside any request — system identity required
+      runAsSystem(() => fetchAndCache(source._id), { source: 'calendar_scheduler' }).catch((err) => {
         console.warn(`Calendar refresh failed for "${source.name}": ${err.message}`);
       });
     }, ms);
@@ -287,7 +289,7 @@ function scheduleSource(source) {
 }
 
 export async function initCalendarScheduler() {
-  const sources = await calendarSources.find({ enabled: true });
+  const sources = await runAsSystem(() => calendarSources.find({ enabled: true }));
   for (const source of sources) {
     scheduleSource(source);
   }

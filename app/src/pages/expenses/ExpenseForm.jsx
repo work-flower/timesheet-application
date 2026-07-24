@@ -52,6 +52,7 @@ import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import { deriveVatFromPercent, deriveVatFromAmount } from '../../../../shared/expenseVatCalc.js';
 import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
@@ -174,6 +175,7 @@ export default function ExpenseForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
+  const { canCreate, canUpdate } = useCurrentUser();
   const sourceTransactionIds = useMemo(() => {
     if (!isNew) return [];
     const raw = new URLSearchParams(window.location.search).get('transactionId');
@@ -558,7 +560,7 @@ export default function ExpenseForm() {
     }
   }, [unlinkTarget, id, refreshExpense]);
 
-  const isLocked = !isNew && loadedData?.isLocked;
+  const isLocked = (!isNew && loadedData?.isLocked) || (isNew ? !canCreate('expenses') : !canUpdate('expenses'));
   const lockReason = loadedData?.isLockedReason;
 
   return (

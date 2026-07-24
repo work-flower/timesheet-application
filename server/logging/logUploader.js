@@ -1,5 +1,5 @@
 import { readdirSync } from 'fs';
-import als from './asyncContext.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
 import { LOG_DIR } from './logHook.js';
 
 let intervalHandle = null;
@@ -49,7 +49,7 @@ export function startUploader(intervalMinutes) {
 
   const ms = intervalMinutes * 60 * 1000;
   intervalHandle = setInterval(() => {
-    als.run({ source: 'log_uploader' }, uploadCycle);
+    runAsSystem(uploadCycle, { source: 'log_uploader' });
   }, ms);
   console.log(`[LogUploader] Started with ${intervalMinutes} minute interval`);
 }

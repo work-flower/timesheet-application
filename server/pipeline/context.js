@@ -11,6 +11,7 @@ export function buildContext(collection, operation, args) {
     source: store.source || null,
     method: store.method || null,
     path: store.path || null,
+    auth: store.auth || null,
     collection,
     operation,
     args,

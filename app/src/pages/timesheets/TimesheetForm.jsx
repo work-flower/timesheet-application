@@ -28,6 +28,7 @@ import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 import DayTimelineCard from '../../components/cards/DayTimelineCard.jsx';
@@ -90,6 +91,7 @@ export default function TimesheetForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
+  const { canCreate, canUpdate } = useCurrentUser();
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -237,7 +239,7 @@ export default function TimesheetForm() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
-  const isLocked = !isNew && loadedData?.isLocked;
+  const isLocked = (!isNew && loadedData?.isLocked) || (isNew ? !canCreate('timesheets') : !canUpdate('timesheets'));
   const lockReason = loadedData?.isLockedReason;
 
   return (

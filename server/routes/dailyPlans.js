@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import { resolve } from 'path';
 import multer from 'multer';
 import * as dailyPlanService from '../services/dailyPlanService.js';
@@ -14,7 +15,7 @@ router.get('/', async (req, res) => {
     const result = await dailyPlanService.getAll(req.query);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -25,7 +26,7 @@ router.get('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -36,7 +37,7 @@ router.get('/:id/content', async (req, res) => {
     if (content === null) return res.status(404).json({ error: 'Not found' });
     res.json({ content });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -46,7 +47,7 @@ router.post('/', async (req, res) => {
     const result = await dailyPlanService.create(req.body);
     res.status(201).json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -57,7 +58,7 @@ router.put('/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -68,7 +69,7 @@ router.put('/:id/content', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -80,7 +81,7 @@ router.delete('/:id', async (req, res) => {
     await dailyPlanService.remove(req.params.id);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -90,7 +91,7 @@ router.put('/:id/change-date', async (req, res) => {
     const result = await dailyPlanService.changeDate(req.params.id, req.body.newDate);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -102,7 +103,7 @@ router.post('/:id/todos', async (req, res) => {
     const result = await dailyPlanService.addTodo(req.params.id, req.body.todoId);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -112,7 +113,7 @@ router.delete('/:id/todos/:todoId', async (req, res) => {
     const result = await dailyPlanService.removeTodo(req.params.id, req.params.todoId);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -122,7 +123,7 @@ router.delete('/:id/todos/:todoId/permanent', async (req, res) => {
     await dailyPlanService.deleteTodo(req.params.id, req.params.todoId);
     res.json({ success: true });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -132,7 +133,7 @@ router.get('/:id/todos/:todoId/ref-count', async (req, res) => {
     const count = await dailyPlanService.countPlansWithTodo(req.params.todoId);
     res.json({ count });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -142,7 +143,7 @@ router.post('/:id/timesheets', async (req, res) => {
     const result = await dailyPlanService.addTimesheet(req.params.id, req.body.timesheetId);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -152,7 +153,7 @@ router.post('/:id/notebooks', async (req, res) => {
     const result = await dailyPlanService.addNotebook(req.params.id, req.body.notebookId);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -162,7 +163,7 @@ router.delete('/:id/notebooks/:notebookId', async (req, res) => {
     const result = await dailyPlanService.removeNotebook(req.params.id, req.params.notebookId);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -173,7 +174,7 @@ router.post('/:id/meeting-notes', async (req, res) => {
     const result = await dailyPlanService.addMeetingNote(req.params.id, notebookId, calendarEventUid, eventSummary);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -187,7 +188,7 @@ router.post('/:id/meeting-summary', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Meeting summary generation failed:', err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -199,7 +200,7 @@ router.post('/:id/recap', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Recap submission failed:', err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -210,7 +211,7 @@ router.get('/:id/recap', async (req, res) => {
     if (content === null) return res.status(404).json({ error: 'No recap found' });
     res.json({ content });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -241,7 +242,7 @@ router.get('/:id/recap/status', async (req, res) => {
       error: recap.error,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -254,7 +255,7 @@ router.get('/:id/briefing/check-days', async (req, res) => {
     const result = await dailyPlanAiService.checkBriefingDays(req.params.id, days);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -269,7 +270,7 @@ router.post('/:id/briefing', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Briefing submission failed:', err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -280,7 +281,7 @@ router.get('/:id/briefing', async (req, res) => {
     if (content === null) return res.status(404).json({ error: 'No briefing found' });
     res.json({ content });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -296,7 +297,7 @@ router.get('/:id/briefing/status', async (req, res) => {
     const status = dailyPlanService.getBriefingStatus(req.params.id);
     res.json(status);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -312,7 +313,7 @@ router.get('/:id/briefing/audio', (req, res) => {
     res.sendFile(audioPath);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -324,7 +325,7 @@ router.post('/:id/briefing/audio', audioUpload.single('file'), (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -339,7 +340,7 @@ router.get('/:id/recap/audio', (req, res) => {
     res.sendFile(audioPath);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -351,7 +352,7 @@ router.post('/:id/recap/audio', audioUpload.single('file'), (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 

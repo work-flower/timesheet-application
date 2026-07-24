@@ -4,6 +4,7 @@ import useAppNavigate from '../hooks/useAppNavigate.js';
 import { newTraceId, getTraceId } from '../api/traceId.js';
 import { settingsApi, clientsApi } from '../api/index.js';
 import { useEmbedded } from '../contexts/EmbeddedContext.jsx';
+import { useCurrentUser } from '../contexts/CurrentUserContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -272,6 +273,31 @@ const navItems = [
   },
 ];
 
+// Table each nav route needs read access to (multiuser authorisation).
+// Unlisted routes (e.g. '/', '/help') are always visible; gating is cosmetic —
+// the server pipeline enforces regardless.
+const NAV_TABLES = {
+  '/dashboards/reconciliation': 'transactions',
+  '/dashboards/financial': 'invoices',
+  '/daily-plans': 'dailyPlans',
+  '/clients': 'clients',
+  '/projects': 'projects',
+  '/timesheets': 'timesheets',
+  '/expenses': 'expenses',
+  '/invoices': 'invoices',
+  '/transactions': 'transactions',
+  '/banking/transaction-reconciliation': 'transactions',
+  '/import-jobs': 'importJobs',
+  '/staged-transactions': 'stagedTransactions',
+  '/notebooks': 'notebooks',
+  '/notebooks/bin': 'notebooks',
+  '/tickets': 'tickets',
+  '/reports/timesheets': 'timesheets',
+  '/reports/expenses': 'expenses',
+  '/reports/income-expense': 'invoices',
+  '/reports/vat': 'invoices',
+};
+
 export default function AppLayout() {
   const styles = useStyles();
   const location = useLocation();
@@ -280,6 +306,16 @@ export default function AppLayout() {
   const [appTitle, setAppTitle] = useState('');
 
   const isEmbedded = useEmbedded();
+  const { canRead } = useCurrentUser();
+
+  const navVisible = (item) => !NAV_TABLES[item.to] || canRead(NAV_TABLES[item.to]);
+  const visibleNavItems = navItems
+    .map((item) =>
+      item.children
+        ? { ...item, children: item.children.filter(navVisible) }
+        : item
+    )
+    .filter((item) => (item.children ? item.children.length > 0 : navVisible(item)));
 
   useEffect(() => {
     if (isEmbedded) return;
@@ -449,7 +485,7 @@ export default function AppLayout() {
           className={styles.sidebar}
           style={{ width: collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_WIDTH }}
         >
-          {navItems.map((item) =>
+          {visibleNavItems.map((item) =>
             item.children ? renderParentItem(item) : renderNavLink(item)
           )}
         </nav>

@@ -1,7 +1,7 @@
 import { buildContext } from './context.js';
 import { CursorProxy } from './cursorProxy.js';
 import { hooks } from './hooks.js';
-import { checkAccess } from './authorisation.js';
+import { checkAccess, enforceWriteScope } from './authorisation.js';
 
 // Methods that return cursors (thenable, chainable)
 const CURSOR_METHODS = new Set(['find', 'findOne', 'count']);
@@ -34,6 +34,7 @@ export function wrapCollection(name, datastore) {
         return async (...args) => {
           const context = buildContext(name, prop, args);
           checkAccess(context);
+          await enforceWriteScope(context, target);
           await hooks.run('pre', name, prop, context);
           const result = await target[prop](...args);
           await hooks.run('post', name, prop, context, result);

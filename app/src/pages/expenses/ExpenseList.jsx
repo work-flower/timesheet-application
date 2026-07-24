@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -235,6 +236,7 @@ function deriveRange(startDate, endDate) {
 export default function ExpenseList() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { canCreate } = useCurrentUser();
 
   // --- OData-driven data flow ---
   const {
@@ -333,7 +335,7 @@ export default function ExpenseList() {
         <Text className={styles.title}>Expenses</Text>
       </div>
       <CommandBar
-        onNew={() => navigate('/expenses/new')}
+        onNew={canCreate('expenses') ? () => navigate('/expenses/new') : undefined}
         newLabel="New Expense"
         onDelete={selectedId ? () => setDeleteTarget(selectedId) : undefined}
         deleteDisabled={!selectedId}

@@ -1,6 +1,8 @@
 import readline from 'readline';
-import { clients, projects, timesheets, settings, expenses, invoices, transactions, importJobs, stagedTransactions } from './index.js';
+import { clients, projects, timesheets, settings, expenses, invoices, transactions, importJobs, stagedTransactions, users, roles } from './index.js';
 import aiConfig from './aiConfig.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
+import { encodePrivileges } from '../../shared/authz/filterCodec.js';
 
 async function seed() {
   // Block unless explicitly in development
@@ -40,6 +42,53 @@ async function seed() {
   await importJobs.remove({}, { multi: true });
   await stagedTransactions.remove({}, { multi: true });
   await aiConfig.remove({}, { multi: true });
+  await users.remove({}, { multi: true });
+  await roles.remove({}, { multi: true });
+
+  // Example authorisation roles (no users — they appear pending on first visit)
+  const roleNow = new Date().toISOString();
+  await roles.insert({
+    name: 'Contractor',
+    description: 'Full day-to-day access: operational tables + invoice lifecycle',
+    privileges: encodePrivileges({
+      clients: { read: true },
+      projects: { read: true },
+      settings: { read: true },
+      timesheets: { read: true, create: true, update: true, delete: true },
+      expenses: { read: true, create: true, update: true, delete: true },
+      invoices: { read: true, create: true, update: true, delete: true, actions: ['confirm', 'post', 'unconfirm', 'updatePayment'] },
+      documents: { read: true, create: true, update: true, delete: true },
+      transactions: { read: true, update: true },
+      importJobs: { read: true, create: true, update: true, delete: true, actions: ['abandon'] },
+      stagedTransactions: { read: true, create: true, update: true, delete: true, actions: ['submit'] },
+      notebooks: { read: true, create: true, update: true, delete: true },
+      dailyPlans: { read: true, create: true, update: true, delete: true },
+      todos: { read: true, create: true, update: true, delete: true },
+      calendarSources: { read: true, actions: ['refresh'] },
+      calendarEvents: { read: true },
+      ticketSources: { read: true, actions: ['refresh'] },
+      tickets: { read: true },
+    }),
+    userIds: [],
+    createdAt: roleNow,
+    updatedAt: roleNow,
+  });
+  await roles.insert({
+    name: 'Read Only',
+    description: 'Current-year read access to core financial tables',
+    privileges: encodePrivileges({
+      clients: { read: true },
+      projects: { read: true },
+      settings: { read: true },
+      timesheets: { read: { date: { $gte: '$$startOfYear' } } },
+      expenses: { read: { date: { $gte: '$$startOfYear' } } },
+      invoices: { read: true },
+      documents: { read: true },
+    }),
+    userIds: [],
+    createdAt: roleNow,
+    updatedAt: roleNow,
+  });
 
   // Seed business client (created before settings so we can reference its ID)
   const businessClient = await clients.insert({
@@ -395,7 +444,7 @@ async function seed() {
   });
 
   console.log('Seed complete!');
-  console.log(`Created: 3 clients, 4 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice, 1 import job, 4 transactions, 1 AI config`);
+  console.log(`Created: 3 clients, 4 projects, ${5 + 3} timesheet entries, 4 expenses, 1 invoice, 1 import job, 4 transactions, 1 AI config, 2 roles (Contractor, Read Only — no users)`);
 }
 
-seed().catch(console.error);
+runAsSystem(() => seed(), { source: 'seed' }).catch(console.error);

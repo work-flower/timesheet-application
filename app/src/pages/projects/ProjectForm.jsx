@@ -32,6 +32,7 @@ import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
@@ -180,6 +181,7 @@ export default function ProjectForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
+  const { canCreate, canUpdate } = useCurrentUser();
 
   const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
@@ -311,7 +313,7 @@ export default function ProjectForm() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
-  const isLocked = !isNew && projectData?.isLocked;
+  const isLocked = (!isNew && projectData?.isLocked) || (isNew ? !canCreate('projects') : !canUpdate('projects'));
   const lockReason = projectData?.isLockedReason;
 
   // Compute placeholder for rate

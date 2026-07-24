@@ -32,7 +32,7 @@ If a change spans multiple areas (e.g. adding a new entity end-to-end), load ALL
 2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
 3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
 
-Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`, `notebooks.md`, `daily-plans.md`, `todos.md`
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`, `notebooks.md`, `daily-plans.md`, `todos.md`, `authorisation.md`
 
 ### Keeping Wiring Docs Up to Date (MANDATORY)
 
@@ -76,12 +76,13 @@ When the user requests an audit, systematically verify the entity's documentatio
 - **Calendar:** `node-ical` (ICS feed fetching and parsing)
 - **Tickets:** Native `fetch` with Basic auth (Jira REST API v3, Azure DevOps REST API)
 - **Notebook Editor:** `@milkdown/kit` + `@milkdown/react` (WYSIWYG markdown editor for knowledge base, wrapped in swappable `NotebookEditor.jsx`)
-- **Other:** `@uiw/react-md-editor` (markdown notes), `multer` + `sharp` (expense attachments + thumbnails), `@aws-sdk/client-s3` + `archiver` + `tar` + `node-cron` (R2 cloud backup), `dotenv`
+- **Other:** `@uiw/react-md-editor` (markdown notes), `multer` + `sharp` (expense attachments + thumbnails), `@aws-sdk/client-s3` + `archiver` + `tar` + `node-cron` (R2 cloud backup), `jose` (Cloudflare Access JWT verification for the admin surface), `dotenv`
 
 ## Configuration
 
 - `DATA_DIR` env var — database/documents path (default: `./data`)
 - `PORT` env var — Express port (default: `3001`)
+- `AUTH_ENABLED` env var — `true` enables multiuser authorisation (Cloudflare-offloaded authentication, role-based enforcement, attribution). Unset/false = legacy single-user behaviour. Only meaningful behind the Cloudflare tunnel — see `.claude/docs/authorisation.md`
 - `npm run dev` — runs Express + both Vite dev servers (main on 5173, admin on 5174) concurrently; Vite proxies `/api` to Express
 - `npm run build` — builds both apps (`dist/` + `dist-admin/`)
 - `npm start` — Express serves API + both built frontends (main at `/`, admin at `/admin/`)
@@ -448,6 +449,31 @@ One plan per date. `_id` IS the date (`YYYY-MM-DD`). Content and AI-generated fi
 - `timesheetsData` — enriched timesheet objects for the plan's date (with `projectName`, `clientName`)
 - `notebooksData` — notebook objects with `_id`, `title`, `summary`
 
+### users
+
+Multiuser authorisation identities (see `.claude/docs/authorisation.md`). Included in backups.
+
+| Field | Description |
+|-------|-------------|
+| email | Unique, lowercased. Identity from Cloudflare Access header/JWT |
+| status | `pending` (JIT default, no access) / `active` / `disabled` |
+| roleIds | Array of role ids (bidirectional with role.userIds, synced via `syncMembership`) |
+
+**Computed field (returned by API, not stored):** `roleNames`.
+
+### roles
+
+Granular permission roles. Each role holds per-table privileges with optional pre-filter queries. Included in backups.
+
+| Field | Description |
+|-------|-------------|
+| name | Required |
+| description | Optional |
+| privileges | `{ [table]: { read: filter\|bool, create: bool, update: filter\|bool, delete: filter\|bool, actions: [names] } }`. Filters are Mongo-style NeDB queries supporting macros (`$$user.*`, `$$today`, …). Stored key-escaped on disk (NeDB constraint), decoded on read |
+| userIds | Array of member user ids (managed via `syncMembership` only) |
+
+**Computed field (returned by API, not stored):** `userCount`.
+
 ### todos
 
 Standalone to-do items. Referenced by daily plans via their `todos` array. A single todo can be linked to multiple plans.
@@ -485,6 +511,17 @@ All forms support URL query string pre-fill via `QueryStringPrefill` (`src/compo
 
 All VAT calculations MUST use `shared/expenseVatCalc.js` (`deriveVatFromPercent`, `deriveVatFromAmount`). Never duplicate VAT logic in form code.
 
+### Authorisation (multiuser, AUTH_ENABLED)
+
+Full wiring in `.claude/docs/authorisation.md`. Cross-cutting rules:
+
+1. Authentication is Cloudflare Access's job (tunnel); the app enforces **granular, default-deny, role-based authorisation** at the execution-pipeline choke point by merging role pre-filter queries into every NeDB operation. No ownership fields on records; `createdBy`/`updatedBy` are audit-only and never used in filters.
+2. Provisioning is **JIT-pending**: unknown authenticated emails auto-create a `pending` user with no access; admins assign roles to activate. Role changes take effect on the next request (no caching).
+3. Every functional role needs the **baseline reads** (`clients`, `projects`, `settings`) or list enrichment 403s — deliberate, no graceful degradation.
+4. Non-CRUD lifecycle endpoints are gated by **named action privileges** (`requireAction`); after the gate + a caller-scoped visibility check they execute under system identity.
+5. Background jobs (schedulers, AI parsing, backup, seed) must run under `runAsSystem` or they are denied when enforcement is on.
+6. With `AUTH_ENABLED` unset the app behaves exactly as the legacy single-user build.
+
 ### Record Locking
 
 1. Any record can have `isLocked` (boolean) and `isLockedReason` (string). These are protected — cannot be set via regular updates, only by invoice lifecycle methods.
@@ -511,6 +548,8 @@ Full logging infrastructure is documented in `logging.md` wiring doc. Key cross-
 ## API
 
 All endpoints prefixed with `/api`. All list endpoints support OData-style query parameters (`$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`) alongside entity-specific query params. Standard CRUD per entity.
+
+**Admin API surface (`/admin/api/*`)**: routers backed by unwrapped config stores live ONLY here — backup, ai-config, mcp-auth, logs (except the `POST /api/logs/pageview` beacon), gemini-config config verbs, notebook git config — plus users/roles. Guarded by `adminSurfaceMiddleware` (Cloudflare Access JWT signature + `aud` verification via `jose`; superuser, bypasses the role engine; requires `CF_TEAM_DOMAIN` + `CF_ADMIN_AUD` when `AUTH_ENABLED`). Wrapped-collection routers (settings, clients, calendar-sources, ticket-sources) are dual-mounted: engine-protected on `/api`, superuser-open on `/admin/api`. The admin SPA's API client points at `/admin/api`.
 
 Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods) for clients, projects, timesheets, expenses, invoices, transactions, and calendar sources are documented in their wiring docs at `.claude/docs/`.
 
@@ -612,6 +651,8 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/system/mcp-auth` | McpAuthPage (OAuth config) |
 | `/system/calendars` | CalendarSourcesPage (ICS feed management) |
 | `/system/ticket-sources` | TicketSourcesPage (Jira & Azure DevOps ticket source management) |
+| `/access/users` | UsersPage (user activation, role assignment, status) |
+| `/access/roles` | RolesPage (granular role editor: per-table privileges + filters + actions) |
 | `/infra/backup` | BackupPage (R2 config, backup/restore) |
 | `/infra/logging` | LoggingPage (log config, R2 upload) |
 | `/reports/logs` | LogViewer (search, filters, detail drawer) |
@@ -687,6 +728,7 @@ Clears all data and creates:
 - **Timesheets:** Up to 5 entries for current week on Payment Platform Migration (8h/day, £700) + 3 entries for last week on HMRC (7.5h/day, £600). Only creates entries for non-future dates.
 - **Expenses:** Travel (£45.60, billable) and Mileage (£32.40, billable) on Payment Platform Migration this week, Equipment (£24.99 + £4.17 VAT, non-billable) on Payment Platform Migration, Travel (£28.50, billable) on HMRC last week.
 - **AI Config:** Default config with empty API key, default model, and default system prompt for bank statement parsing.
+- **Roles:** 2 example authorisation roles — Contractor (full operational access + lifecycle actions) and Read Only (current-year reads on core financial tables). No users are seeded — they appear pending on first authenticated visit.
 - **Import Job:** 1 ready_for_review job (natwest-jan-2026.csv) + 4 linked transactions (matched, unmatched, ignored statuses).
 
 ## Docker
@@ -697,6 +739,9 @@ Multi-stage Dockerfile: Stage 1 builds both frontends (`dist/` + `dist-admin/`),
 |----------|---------|-------------|
 | `PORT` | `3001` | Express server port |
 | `DATA_DIR` | `./data` | Host path for database files + PDFs (mounted into container) |
+| `AUTH_ENABLED` | unset (off) | Enables multiuser authorisation. Only enable behind Cloudflare Access (identity headers are forgeable on a directly-exposed deployment) |
+| `CF_TEAM_DOMAIN` | — | Cloudflare Zero Trust team name (admin-surface JWT verification; required when `AUTH_ENABLED`) |
+| `CF_ADMIN_AUD` | — | Audience (AUD) tag of the admin Cloudflare Access application (required when `AUTH_ENABLED`) |
 
 Container stores no data — all `.db` files and PDFs live on the host volume.
 

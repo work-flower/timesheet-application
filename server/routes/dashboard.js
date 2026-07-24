@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import {
   getOperationsSummary,
   getInvoiceCoverage,
@@ -15,7 +16,7 @@ router.get('/operations', async (req, res) => {
     res.json(summary);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -30,7 +31,7 @@ router.get('/invoice-coverage', async (req, res) => {
     res.json(coverage);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -42,7 +43,7 @@ router.get('/reconciliation', async (req, res) => {
     res.json(summary);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -57,7 +58,7 @@ router.get('/financial', async (req, res) => {
     res.json(summary);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 

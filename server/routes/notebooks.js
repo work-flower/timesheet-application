@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import multer from 'multer';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
@@ -37,7 +38,7 @@ router.get('/', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Failed to list notebooks:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -47,7 +48,7 @@ router.get('/tags', async (_req, res) => {
     res.json(tags);
   } catch (err) {
     console.error('Failed to get tags:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -63,7 +64,7 @@ router.post('/import', importUpload.array('files'), async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.warn('Failed to import notebook:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -74,7 +75,7 @@ router.get('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Failed to get notebook:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -84,7 +85,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.warn('Failed to create notebook:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -95,7 +96,7 @@ router.put('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to update notebook:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -106,7 +107,7 @@ router.delete('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Failed to delete notebook:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -119,7 +120,7 @@ router.post('/:id/restore', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to restore notebook:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -130,7 +131,7 @@ router.post('/:id/archive', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to archive notebook:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -141,7 +142,7 @@ router.post('/:id/unarchive', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to unarchive notebook:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -152,48 +153,53 @@ router.delete('/:id/purge', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Failed to purge notebook:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
-// --- Git Config ---
+// --- Git Config (ADMIN SURFACE ONLY) ---
+// Exposes the git remote/credentials configuration — mounted at
+// /admin/api/notebooks behind the Cloudflare-verified superuser check, NOT on
+// /api. Feature git ops (push/pull/has-remote/operation) stay on the main router.
 
-router.get('/git/config', async (_req, res) => {
+export const notebookGitConfigRouter = Router();
+
+notebookGitConfigRouter.get('/git/config', async (_req, res) => {
   try {
     const config = notebookService.getGitConfig();
     res.json(config);
   } catch (err) {
     console.error('Failed to get git config:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
-router.put('/git/config', async (req, res) => {
+notebookGitConfigRouter.put('/git/config', async (req, res) => {
   try {
     const config = notebookService.setGitConfig(req.body);
     res.json(config);
   } catch (err) {
     console.warn('Failed to set git config:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
-router.post('/git/test-connection', async (_req, res) => {
+notebookGitConfigRouter.post('/git/test-connection', async (_req, res) => {
   try {
     const result = notebookService.testGitConnection();
     res.json(result);
   } catch (err) {
     console.error('Failed to test git connection:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
-router.get('/git/branches', async (_req, res) => {
+notebookGitConfigRouter.get('/git/branches', async (_req, res) => {
   try {
     const branches = notebookService.listGitBranches();
     res.json(branches);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -201,7 +207,7 @@ router.get('/git/has-remote', async (_req, res) => {
   try {
     res.json({ hasRemote: notebookService.hasGitRemote() });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -214,7 +220,7 @@ router.get('/:id/history', async (req, res) => {
     res.json(history);
   } catch (err) {
     console.error('Failed to get notebook history:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -224,7 +230,7 @@ router.get('/:id/history/:hash', async (req, res) => {
     res.type('text/plain').send(diff);
   } catch (err) {
     console.error('Failed to get commit diff:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -234,7 +240,7 @@ router.get('/:id/compare/:from/:to', async (req, res) => {
     res.type('text/plain').send(diff);
   } catch (err) {
     console.error('Failed to get compare diff:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -246,7 +252,7 @@ router.post('/git/push/prepare', async (_req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Failed to prepare push:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -257,7 +263,7 @@ router.post('/git/push/execute', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Failed to push:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -267,7 +273,7 @@ router.post('/git/pull/prepare', async (_req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Failed to prepare pull:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -278,7 +284,7 @@ router.post('/git/pull/execute', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Failed to pull:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -287,7 +293,7 @@ router.get('/git/operation', async (_req, res) => {
     const status = notebookService.getOperationStatus();
     res.json(status || { status: 'idle' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -296,7 +302,7 @@ router.post('/git/operation/clear', async (_req, res) => {
     notebookService.clearOperation();
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -313,7 +319,7 @@ router.post('/:id/publish', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to publish notebook:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -324,7 +330,7 @@ router.post('/:id/discard', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to discard changes:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -345,7 +351,7 @@ router.get('/:id/pdf', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error('Failed to generate notebook PDF:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -362,7 +368,7 @@ router.get('/:id/content', async (req, res) => {
     }
   } catch (err) {
     console.error('Failed to get notebook content:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -375,7 +381,7 @@ router.put('/:id/content', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to update notebook content:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -404,7 +410,7 @@ router.put('/:id/content/encrypted', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to update encrypted notebook content:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -429,7 +435,7 @@ router.get('/:id/audio', async (req, res) => {
     res.sendFile(audioPath);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -447,7 +453,7 @@ router.post('/:id/audio', audioUpload.single('file'), async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -464,7 +470,7 @@ router.post('/:id/media', upload.single('file'), async (req, res) => {
     });
   } catch (err) {
     console.error('Failed to upload media:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -474,7 +480,7 @@ router.get('/:id/media', async (req, res) => {
     res.json(files);
   } catch (err) {
     console.error('Failed to list media:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -486,7 +492,7 @@ router.get('/:id/artifacts', async (req, res) => {
     res.json(artifacts);
   } catch (err) {
     console.error('Failed to list artifacts:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -503,7 +509,7 @@ router.post('/:id/artifacts', upload.single('file'), async (req, res) => {
     });
   } catch (err) {
     console.error('Failed to upload artifact:', err);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -513,7 +519,7 @@ router.get('/:id/artifacts/:filename/content', async (req, res) => {
     res.type('text/plain').send(content);
   } catch (err) {
     console.warn('Failed to read artifact:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -523,7 +529,7 @@ router.delete('/:id/artifacts/:filename', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to delete artifact:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -535,7 +541,7 @@ router.put('/:id/artifacts/:filename', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn('Failed to rename artifact:', err);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 

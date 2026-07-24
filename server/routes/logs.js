@@ -1,8 +1,14 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import als from '../logging/asyncContext.js';
 import * as logService from '../services/logService.js';
 
+// Admin surface router (config/files/R2 ops — unwrapped log store, superuser only).
+// The pageview beacon is the one endpoint BOTH SPAs post to, so it lives on its
+// own router that stays mounted at /api/logs (hardcoded in both frontends and in
+// the logging middleware's skip check).
 const router = Router();
+export const pageviewRouter = Router();
 
 // GET /api/logs/config
 router.get('/config', async (req, res) => {
@@ -11,7 +17,7 @@ router.get('/config', async (req, res) => {
     res.json(config);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -22,7 +28,7 @@ router.put('/config', async (req, res) => {
     res.json(config);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -33,7 +39,7 @@ router.post('/test-connection', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -44,7 +50,7 @@ router.get('/files', (req, res) => {
     res.json(files);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -62,7 +68,7 @@ router.get('/files/:filename', (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -73,12 +79,12 @@ router.get('/search', (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
-// POST /api/logs/pageview — client-side navigation tracking
-router.post('/pageview', (req, res) => {
+// POST /api/logs/pageview — client-side navigation tracking (both SPAs)
+pageviewRouter.post('/pageview', (req, res) => {
   const { path, method, traceId } = req.body;
   if (path) {
     const store = als.getStore();
@@ -101,7 +107,7 @@ router.post('/upload/:filename', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -112,7 +118,7 @@ router.delete('/files/:filename', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -123,7 +129,7 @@ router.post('/download/:filename', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -134,7 +140,7 @@ router.get('/r2', async (req, res) => {
     res.json(logs);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 

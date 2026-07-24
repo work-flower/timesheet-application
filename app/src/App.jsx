@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { theme } from './theme.js';
 import { UnsavedChangesProvider } from './contexts/UnsavedChangesContext.jsx';
 import { EmbeddedProvider } from './contexts/EmbeddedContext.jsx';
+import { CurrentUserProvider } from './contexts/CurrentUserContext.jsx';
 import AppLayout from './layouts/AppLayout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import ClientList from './pages/clients/ClientList.jsx';
@@ -44,6 +45,8 @@ export default function App() {
     <FluentProvider theme={theme}>
       <BrowserRouter>
         <EmbeddedProvider>
+        {/* Above the layout so the awaiting-access gate also covers embedded iframes */}
+        <CurrentUserProvider>
         <UnsavedChangesProvider>
           <Routes>
             <Route path="/expenses/:id/attachments/upload" element={<ExpenseAttachmentUpload />} />
@@ -91,6 +94,7 @@ export default function App() {
             </Route>
           </Routes>
         </UnsavedChangesProvider>
+        </CurrentUserProvider>
         </EmbeddedProvider>
       </BrowserRouter>
     </FluentProvider>

@@ -33,6 +33,7 @@ import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
@@ -187,6 +188,7 @@ export default function ClientForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
+  const { canCreate, canUpdate } = useCurrentUser();
 
   const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
@@ -280,7 +282,7 @@ export default function ClientForm() {
     return registerGuard({ isDirty, onSave: saveForm });
   }, [isDirty, saveForm, registerGuard]);
 
-  const isLocked = !isNew && clientData?.isLocked;
+  const isLocked = (!isNew && clientData?.isLocked) || (isNew ? !canCreate('clients') : !canUpdate('clients'));
   const lockReason = clientData?.isLockedReason;
 
   return (

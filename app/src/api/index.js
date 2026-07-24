@@ -2,6 +2,18 @@ import { getTraceId } from './traceId.js';
 
 const BASE = '/api';
 
+// Error carrying the HTTP status and the server's machine-readable code
+// (e.g. 403 + 'pending'/'forbidden') so callers can react to authorisation
+// outcomes instead of parsing message strings.
+export class ApiError extends Error {
+  constructor(message, status, code) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
@@ -9,10 +21,15 @@ async function request(path, options = {}) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed: ${res.status}`);
+    throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
   }
   return res.json();
 }
+
+// Current user + permission hints (multiuser authorisation)
+export const meApi = {
+  get: () => request('/me'),
+};
 
 // Clients
 export const clientsApi = {
@@ -75,7 +92,7 @@ export const reportsApi = {
     const res = await fetch(`${BASE}/reports/timesheet-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Download failed: ${res.status}`);
+      throw new ApiError(body.error || `Download failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -84,7 +101,7 @@ export const reportsApi = {
     const res = await fetch(`${BASE}/reports/timesheet-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+      throw new ApiError(body.error || `PDF generation failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -93,7 +110,7 @@ export const reportsApi = {
     const res = await fetch(`${BASE}/reports/expense-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+      throw new ApiError(body.error || `PDF generation failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -102,7 +119,7 @@ export const reportsApi = {
     const res = await fetch(`${BASE}/reports/income-expense-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+      throw new ApiError(body.error || `PDF generation failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -111,7 +128,7 @@ export const reportsApi = {
     const res = await fetch(`${BASE}/reports/income-expense-csv?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `CSV generation failed: ${res.status}`);
+      throw new ApiError(body.error || `CSV generation failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -120,7 +137,7 @@ export const reportsApi = {
     const res = await fetch(`${BASE}/reports/vat-pdf?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+      throw new ApiError(body.error || `PDF generation failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -129,7 +146,7 @@ export const reportsApi = {
     const res = await fetch(`${BASE}/reports/vat-csv?${params}`, { headers: { 'X-Trace-Id': getTraceId() } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `CSV generation failed: ${res.status}`);
+      throw new ApiError(body.error || `CSV generation failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -141,7 +158,7 @@ export const reportsApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Combined PDF generation failed: ${res.status}`);
+      throw new ApiError(body.error || `Combined PDF generation failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -191,7 +208,7 @@ export const expensesApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Parse failed: ${res.status}`);
+      throw new ApiError(body.error || `Parse failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -207,7 +224,7 @@ export const expensesApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Upload failed: ${res.status}`);
+      throw new ApiError(body.error || `Upload failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -281,7 +298,7 @@ export const importJobsApi = {
     const res = await fetch(`${BASE}/import-jobs`, { method: 'POST', headers: { 'X-Trace-Id': getTraceId() }, body: formData });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -291,7 +308,7 @@ export const importJobsApi = {
       const res = await fetch(`${BASE}/import-jobs/${id}`, { method: 'PUT', headers: { 'X-Trace-Id': getTraceId() }, body: data });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Request failed: ${res.status}`);
+        throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
       }
       return res.json();
     }
@@ -378,7 +395,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/octet-stream')) {
@@ -415,7 +432,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Upload failed: ${res.status}`);
+      throw new ApiError(body.error || `Upload failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -431,7 +448,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Upload failed: ${res.status}`);
+      throw new ApiError(body.error || `Upload failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -441,7 +458,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Read failed: ${res.status}`);
+      throw new ApiError(body.error || `Read failed: ${res.status}`, res.status, body.code);
     }
     return res.text();
   },
@@ -456,7 +473,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `PDF generation failed: ${res.status}`);
+      throw new ApiError(body.error || `PDF generation failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },
@@ -467,7 +484,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     return res.text();
   },
@@ -477,7 +494,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     return res.text();
   },
@@ -499,7 +516,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -511,7 +528,7 @@ export const notebooksApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Import failed: ${res.status}`);
+      throw new ApiError(body.error || `Import failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -537,7 +554,7 @@ export const dailyPlansApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     const data = await res.json();
     return data.content;
@@ -567,7 +584,7 @@ export const dailyPlansApi = {
     if (!res.ok) {
       if (res.status === 404) return null;
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     const data = await res.json();
     return data.content;
@@ -585,7 +602,7 @@ export const dailyPlansApi = {
     if (!res.ok) {
       if (res.status === 404) return null;
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     const data = await res.json();
     return data.content;
@@ -602,7 +619,7 @@ export const dailyPlansApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -617,7 +634,7 @@ export const dailyPlansApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     return res.json();
   },
@@ -650,7 +667,7 @@ export const ttsApi = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed: ${res.status}`);
+      throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
     }
     return res.blob();
   },

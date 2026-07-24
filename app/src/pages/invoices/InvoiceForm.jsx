@@ -67,6 +67,7 @@ import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
@@ -392,6 +393,7 @@ export default function InvoiceForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
+  const { canCreate, canUpdate, canAction } = useCurrentUser();
 
   const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker({ lines: [] });
   const notifyParent = useNotifyParent();
@@ -435,7 +437,7 @@ export default function InvoiceForm() {
 
   const status = invoiceData?.status || 'draft';
   const isPosted = status === 'posted';
-  const isLocked = !!invoiceData?.isLocked;
+  const isLocked = !!invoiceData?.isLocked || (isNew ? !canCreate('invoices') : !canUpdate('invoices'));
   const lockReason = invoiceData?.isLockedReason;
   const isReadOnly = isPosted || isLocked;
 
@@ -1122,9 +1124,11 @@ export default function InvoiceForm() {
             {status === 'draft' && (
               <>
                 <ToolbarDivider />
-                <Button appearance="outline" icon={<CheckmarkRegular />} onClick={() => setConfirmAction('confirm')} size="small">
-                  Confirm
-                </Button>
+                {canAction('invoices', 'confirm') && (
+                  <Button appearance="outline" icon={<CheckmarkRegular />} onClick={() => setConfirmAction('confirm')} size="small">
+                    Confirm
+                  </Button>
+                )}
                 <Button appearance="subtle" icon={<DeleteRegular />} onClick={() => setDeleteConfirm(true)} size="small">
                   Delete
                 </Button>
@@ -1133,12 +1137,16 @@ export default function InvoiceForm() {
             {status === 'confirmed' && (
               <>
                 <ToolbarDivider />
-                <Button appearance="outline" icon={<ArrowUploadRegular />} onClick={() => setConfirmAction('post')} size="small">
-                  Post
-                </Button>
-                <Button appearance="subtle" icon={<ArrowUndoRegular />} onClick={() => setConfirmAction('unconfirm')} size="small">
-                  Unconfirm
-                </Button>
+                {canAction('invoices', 'post') && (
+                  <Button appearance="outline" icon={<ArrowUploadRegular />} onClick={() => setConfirmAction('post')} size="small">
+                    Post
+                  </Button>
+                )}
+                {canAction('invoices', 'unconfirm') && (
+                  <Button appearance="subtle" icon={<ArrowUndoRegular />} onClick={() => setConfirmAction('unconfirm')} size="small">
+                    Unconfirm
+                  </Button>
+                )}
               </>
             )}
             <ToolbarDivider />

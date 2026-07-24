@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import { createRequire } from 'module';
 import * as documentService from '../services/documentService.js';
 import { buildTimesheetPdf } from '../services/reportService.js';
@@ -24,7 +25,7 @@ router.get('/', async (req, res) => {
     res.json(docs);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -36,7 +37,7 @@ router.get('/:id', async (req, res) => {
     res.json(doc);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -50,7 +51,7 @@ router.get('/:id/file', async (req, res) => {
     res.sendFile(doc.filePath);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -88,7 +89,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(doc);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -99,7 +100,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 

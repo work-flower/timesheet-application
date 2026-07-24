@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
 import { basename, join } from 'path';
 import multer from 'multer';
 import {
@@ -16,7 +17,12 @@ import {
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-const router = Router();
+// Two surfaces: feature endpoints (TTS, status, background music playback) are used
+// by the MAIN app and stay on /api; config endpoints (API key, test, uploads) are
+// backed by the unwrapped gemini-config store, so they live ONLY on the admin
+// surface (/admin/api) where the Cloudflare-verified superuser check applies.
+const router = Router(); // admin surface — full set
+export const geminiFeatureRouter = Router(); // main surface — feature subset
 
 // GET /api/gemini-config
 router.get('/', async (req, res) => {
@@ -25,7 +31,7 @@ router.get('/', async (req, res) => {
     res.json(config);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -36,7 +42,7 @@ router.put('/', async (req, res) => {
     res.json(config);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -47,7 +53,7 @@ router.post('/test-connection', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -57,18 +63,20 @@ router.get('/defaults', (req, res) => {
 });
 
 // GET /api/gemini-config/status — lightweight check for main app
-router.get('/status', async (req, res) => {
+const statusHandler = async (req, res) => {
   try {
     const status = await getStatus();
     res.json(status);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
-});
+};
+router.get('/status', statusHandler);
+geminiFeatureRouter.get('/status', statusHandler);
 
 // POST /api/gemini-config/tts
-router.post('/tts', async (req, res) => {
+const ttsHandler = async (req, res) => {
   try {
     const { text } = req.body;
     if (!text || !text.trim()) {
@@ -83,9 +91,11 @@ router.post('/tts', async (req, res) => {
     res.send(wavBuffer);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
-});
+};
+router.post('/tts', ttsHandler);
+geminiFeatureRouter.post('/tts', ttsHandler);
 
 // POST /api/gemini-config/background-music — upload music file
 router.post('/background-music', upload.single('file'), async (req, res) => {
@@ -95,7 +105,7 @@ router.post('/background-music', upload.single('file'), async (req, res) => {
     res.json(config);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -106,26 +116,30 @@ router.delete('/background-music', async (req, res) => {
     res.json(config);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
 // GET /api/gemini-config/background-music/:filename — serve music file
-router.get('/background-music/:filename', (req, res) => {
+const backgroundMusicFileHandler = (req, res) => {
   const filename = basename(req.params.filename);
   const filePath = join(getBackgroundMusicPath(), filename);
   res.sendFile(filePath);
-});
+};
+router.get('/background-music/:filename', backgroundMusicFileHandler);
+geminiFeatureRouter.get('/background-music/:filename', backgroundMusicFileHandler);
 
 // GET /api/gemini-config/background-music-settings — public settings for main app
-router.get('/background-music-settings', async (req, res) => {
+const backgroundMusicSettingsHandler = async (req, res) => {
   try {
     const settings = await getBackgroundMusicSettings();
     res.json(settings);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
-});
+};
+router.get('/background-music-settings', backgroundMusicSettingsHandler);
+geminiFeatureRouter.get('/background-music-settings', backgroundMusicSettingsHandler);
 
 export default router;

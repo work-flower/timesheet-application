@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { respondError } from '../utils/errors.js';
+import { requireAction } from '../pipeline/authorisation.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
 import * as ticketService from '../services/ticketService.js';
 
 const router = Router();
@@ -10,7 +13,7 @@ router.get('/', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -22,7 +25,7 @@ router.get('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -33,7 +36,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -45,7 +48,7 @@ router.put('/:id', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
@@ -57,29 +60,29 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
 // POST /api/ticket-sources/:id/refresh
-router.post('/:id/refresh', async (req, res) => {
+router.post('/:id/refresh', requireAction('ticketSources', 'refresh'), async (req, res) => {
   try {
-    const result = await ticketService.fetchAndCache(req.params.id);
+    const result = await runAsSystem(() => ticketService.fetchAndCache(req.params.id));
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 
 // POST /api/ticket-sources/refresh-all
-router.post('/refresh-all', async (req, res) => {
+router.post('/refresh-all', requireAction('ticketSources', 'refresh'), async (req, res) => {
   try {
-    const results = await ticketService.fetchAll();
+    const results = await runAsSystem(() => ticketService.fetchAll());
     res.json(results);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: err.message });
+    respondError(res, err, 500);
   }
 });
 
@@ -90,7 +93,7 @@ router.post('/:id/test', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.warn(err.message);
-    res.status(400).json({ error: err.message });
+    respondError(res, err, 400);
   }
 });
 

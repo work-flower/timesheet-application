@@ -1,6 +1,18 @@
 import { getTraceId } from './traceId.js';
 
-const BASE = '/api';
+// Admin surface API — served behind the admin Cloudflare Access application's
+// path scope and the server-side JWT aud check (see cfAccessJwt.js).
+const BASE = '/admin/api';
+
+// Error carrying the HTTP status and machine-readable code from the server
+export class ApiError extends Error {
+  constructor(message, status, code) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -9,7 +21,7 @@ async function request(path, options = {}) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed: ${res.status}`);
+    throw new ApiError(body.error || `Request failed: ${res.status}`, res.status, body.code);
   }
   return res.json();
 }
@@ -141,3 +153,21 @@ export const logApi = {
   listR2: () => request('/logs/r2'),
 };
 
+
+// Users (Access Control)
+export const usersApi = {
+  getAll: () => request('/users'),
+  getById: (id) => request(`/users/${id}`),
+  create: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+};
+
+// Roles (Access Control)
+export const rolesApi = {
+  getAll: () => request('/roles'),
+  getById: (id) => request(`/roles/${id}`),
+  create: (data) => request('/roles', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/roles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/roles/${id}`, { method: 'DELETE' }),
+};

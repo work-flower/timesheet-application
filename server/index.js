@@ -7,6 +7,8 @@ import { basename, dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import als from './logging/asyncContext.js';
 import { getLogPayloads } from './logging/logHook.js';
+import { identityMiddleware } from './pipeline/identity.js';
+import { respondError } from './utils/errors.js';
 import clientRoutes from './routes/clients.js';
 import projectRoutes from './routes/projects.js';
 import timesheetRoutes from './routes/timesheets.js';
@@ -29,11 +31,16 @@ import calendarSourceRoutes from './routes/calendarSources.js';
 import calendarEventRoutes from './routes/calendarEvents.js';
 import ticketSourceRoutes from './routes/ticketSources.js';
 import ticketRoutes from './routes/tickets.js';
-import notebookRoutes from './routes/notebooks.js';
+import notebookRoutes, { notebookGitConfigRouter } from './routes/notebooks.js';
 import dailyPlanRoutes from './routes/dailyPlans.js';
 import todoRoutes from './routes/todos.js';
 import assetsRoutes from './routes/assets.js';
-import geminiConfigRoutes from './routes/geminiConfig.js';
+import geminiConfigRoutes, { geminiFeatureRouter } from './routes/geminiConfig.js';
+import { pageviewRouter } from './routes/logs.js';
+import userRoutes from './routes/users.js';
+import roleRoutes from './routes/roles.js';
+import meRoutes from './routes/me.js';
+import { adminSurfaceMiddleware } from './services/cfAccessJwt.js';
 import { isChromiumAvailable, closeBrowser } from './services/puppeteerBrowser.js';
 
 import { getWellKnownMetadata } from './services/mcpAuthService.js';
@@ -55,14 +62,25 @@ app.use(express.json({ limit: '10mb' }));
 // AsyncLocalStorage middleware — enriches all requests with context
 app.use((req, res, next) => {
   const requestId = randomUUID();
-  // Extract source from path: /api/invoices/abc123 → invoices, /mcp → mcp
+  // Extract source from path: /api/invoices/abc123 → invoices, /mcp → mcp,
+  // /admin/api/users → admin_users
   const pathParts = req.path.split('/').filter(Boolean);
-  let source = pathParts[0] === 'api' ? (pathParts[1] || 'api') : (pathParts[0] || 'root');
+  let source;
+  if (pathParts[0] === 'admin' && pathParts[1] === 'api') {
+    source = 'admin_' + (pathParts[2] || 'admin');
+  } else {
+    source = pathParts[0] === 'api' ? (pathParts[1] || 'api') : (pathParts[0] || 'root');
+  }
   // Normalize hyphenated route names
   source = source.replace(/-/g, '_');
   const traceId = req.headers['x-trace-id'] || randomUUID();
   als.run({ requestId, traceId, source, method: req.method, path: req.path }, () => next());
 });
+
+// Identity resolution (AUTH_ENABLED only) — resolves the Cloudflare-authenticated
+// caller to an app user + grants and stamps them into the ALS store for the
+// pipeline's checkAccess. Must run inside the ALS scope (i.e. after als.run above).
+app.use(identityMiddleware);
 
 // Mask field values whose names suggest sensitive content
 const SENSITIVE_KEY = /secret|password|apikey/i;
@@ -114,24 +132,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// API routes
-app.use('/api/logs', logRoutes);
+// API routes (main surface — identity middleware + pipeline enforcement)
+app.use('/api/me', meRoutes);
+app.use('/api/logs', pageviewRouter); // pageview beacon only; log admin ops live on /admin/api/logs
 app.use('/api/clients', clientRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/timesheets', timesheetRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/documents', documentRoutes);
-app.use('/api/backup', backupRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/import-jobs', importJobRoutes);
 app.use('/api/staged-transactions', stagedTransactionRoutes);
-app.use('/api/ai-config', aiConfigRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/mcp', mcpRoutes);
-app.use('/api/mcp-auth', mcpAuthRoutes);
 app.use('/api/help', helpRoutes);
 app.use('/api/calendar-sources', calendarSourceRoutes);
 app.use('/api/calendar-events', calendarEventRoutes);
@@ -141,7 +157,31 @@ app.use('/api/notebooks', notebookRoutes);
 app.use('/api/daily-plans', dailyPlanRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/assets', assetsRoutes);
-app.use('/api/gemini-config', geminiConfigRoutes);
+app.use('/api/gemini-config', geminiFeatureRouter); // feature subset; config verbs on /admin/api
+
+// ── Admin API surface (/admin/api/*) ─────────────────────────────────────────
+// Covered by the admin Cloudflare Access application's /admin path scope.
+// adminSurfaceMiddleware verifies the Access JWT (signature + aud) and stamps
+// the caller as superuser — these routers bypass the role engine entirely.
+// Routers backed by UNWRAPPED config stores (backup, ai-config, mcp-auth, logs,
+// gemini config, notebook git config) exist ONLY here; wrapped-collection
+// routers (settings, clients, sources, users, roles) are engine-protected on
+// /api and superuser-open here.
+const adminApi = express.Router();
+adminApi.use(adminSurfaceMiddleware);
+adminApi.use('/settings', settingsRoutes);
+adminApi.use('/clients', clientRoutes);
+adminApi.use('/ai-config', aiConfigRoutes);
+adminApi.use('/gemini-config', geminiConfigRoutes);
+adminApi.use('/mcp-auth', mcpAuthRoutes);
+adminApi.use('/backup', backupRoutes);
+adminApi.use('/calendar-sources', calendarSourceRoutes);
+adminApi.use('/ticket-sources', ticketSourceRoutes);
+adminApi.use('/logs', logRoutes);
+adminApi.use('/notebooks', notebookGitConfigRouter);
+adminApi.use('/users', userRoutes);
+adminApi.use('/roles', roleRoutes);
+app.use('/admin/api', adminApi);
 
 
 // .well-known OAuth discovery endpoints (must be unauthenticated)
@@ -213,6 +253,14 @@ const distPath = join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
 app.get('*', (req, res) => {
   res.sendFile(join(distPath, 'index.html'));
+});
+
+// Central error handler — safety net mapping typed errors (e.g. ForbiddenError
+// escaping a route without a catch) to their status instead of a generic 500.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  respondError(res, err, 500);
 });
 
 // Ensure notebooks git repo exists before starting
