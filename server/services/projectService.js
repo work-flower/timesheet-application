@@ -1,7 +1,33 @@
+import { randomUUID } from 'node:crypto';
 import { clients, projects, timesheets, documents, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
 import { assertNotLocked } from './lockCheck.js';
+
+// Resource items are stored embedded on the project. dailyRate and userEmail are
+// snapshots taken at add/edit time — they do not track later project-rate or
+// user-email changes.
+function normalizeResources(input) {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const r of input) {
+    if (!r || typeof r !== 'object' || !r.userId) continue;
+    const userId = String(r.userId);
+    if (seen.has(userId)) continue;
+    seen.add(userId);
+    const rate = r.dailyRate == null || r.dailyRate === '' ? null : Number(r.dailyRate);
+    out.push({
+      id: typeof r.id === 'string' && r.id ? r.id : randomUUID(),
+      userId,
+      userEmail: typeof r.userEmail === 'string' ? r.userEmail : '',
+      dailyRate: Number.isFinite(rate) ? rate : null,
+      engagement: r.engagement === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME',
+      description: typeof r.description === 'string' ? r.description : '',
+    });
+  }
+  return out;
+}
 
 export async function getAll(query = {}) {
   const { results, totalCount } = await buildQuery(projects, query, { name: 1 });
@@ -87,6 +113,7 @@ export async function create(data) {
     workingHoursPerDay: data.workingHoursPerDay != null && data.workingHoursPerDay !== ''
       ? Number(data.workingHoursPerDay) : null,
     vatPercent: data.vatPercent != null && data.vatPercent !== '' ? Number(data.vatPercent) : null,
+    resources: normalizeResources(data.resources),
     isDefault: false,
     status: data.status || 'active',
     notes: data.notes || '',
@@ -125,6 +152,11 @@ export async function update(id, data) {
     updateData.vatPercent = null;
   } else if (updateData.vatPercent != null) {
     updateData.vatPercent = Number(updateData.vatPercent);
+  }
+
+  // Only normalize when present so partial PUTs don't wipe the array
+  if ('resources' in updateData) {
+    updateData.resources = normalizeResources(updateData.resources);
   }
 
   await projects.update({ _id: id }, { $set: updateData });

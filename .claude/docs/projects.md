@@ -10,7 +10,8 @@ ProjectForm.jsx → projectsApi (api/index.js) → routes/projects.js → projec
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Form | `app/src/pages/projects/ProjectForm.jsx` | Tabs: General, Timesheets, Expenses, Documents, Invoices. Rate/hours show "Inherited from client: £X" placeholder when null. Uses `useNotifyParent` for embedded mode |
+| Form | `app/src/pages/projects/ProjectForm.jsx` | Tabs: General, Resources, Timesheets, Expenses, Documents, Invoices. Rate/hours show "Inherited from client: £X" placeholder when null. Uses `useNotifyParent` for embedded mode. Resources tab: read-only DataGrid + Add/Edit dialog, deferred save (array rides the form's normal Save) |
+| Resource dialog | `app/src/pages/projects/ResourceDialog.jsx` | Add/Edit dialog for one resource. Owns the `usersApi.getAll()` fetch, prefills dailyRate from `projectData.effectiveRate` on add, dedupes already-assigned users, injects a snapshot `<option>` when the user record is missing |
 | List | `app/src/pages/projects/ProjectList.jsx` | showArchived toggle, columns: name, client, IR35, effectiveRate, status |
 | API client | `app/src/api/index.js` (projectsApi) | 5 methods: getAll, getById, create, update, delete |
 
@@ -33,6 +34,30 @@ Computed in `projectService.js` getAll/getById:
 - `effectiveRate = project.rate != null ? project.rate : (client.defaultRate || 0)`
 - `effectiveWorkingHours = project.workingHoursPerDay != null ? project.workingHoursPerDay : (client.workingHoursPerDay || 8)`
 
+## Resources (embedded 1:N)
+
+Projects hold an embedded `resources` array — people (users) assigned to the project. Managed exclusively on the project form's Resources tab (main app); no separate collection, routes, or API client methods.
+
+**Object shape (per item, whitelisted by `normalizeResources` in `projectService.js`):**
+
+```js
+{
+  id: string,             // crypto.randomUUID(), row key (client-generated; server fallback for direct-API payloads)
+  userId: string,         // users._id — required; items without it are dropped
+  userEmail: string,      // SNAPSHOT of the user's email at add/edit time — display label
+  dailyRate: number|null, // SNAPSHOT of project effectiveRate at add-time, then independent
+  engagement: 'FULL_TIME' | 'PART_TIME',
+  description: string
+}
+```
+
+**Snapshot semantics (golden rule):**
+- `dailyRate` is copied from the project's effective rate when the resource is added (`ResourceDialog` prefill) and is thereafter independent — later changes to project.rate or client.defaultRate do NOT propagate.
+- `userEmail` is captured at add/edit time (users have no display-name field). It does NOT auto-update if the user's email changes or the user is deleted; re-selecting the user in the edit dialog refreshes it. This is deliberate: the grid renders without needing the `users.read` grant and rows survive user deletion.
+- Server-side, `normalizeResources` runs on create (whitelist) and on update only when `resources` is present in the payload (so partial PUTs don't wipe the array). It drops items lacking `userId`, dedupes by `userId`, and coerces `dailyRate` (`''`/NaN → null).
+
+**Authorisation / legacy mode:** `resources` is a field on `projects` — enforced by existing `projects` grants, no registry change. The dialog's user picker needs `users.read` (+ `roles.read` for enrichment); on 403 it shows a warning MessageBar and the snapshot labels still render. With `AUTH_ENABLED` off the users collection is empty, so the picker only offers the placeholder — the tab itself is always visible and editable (deliberate, no `enabled &&` gating).
+
 ## Null Coercion Pattern
 
 Both `projectService.create` and `projectService.update` convert empty strings to null for rate, workingHoursPerDay, and vatPercent. This enables inheritance — a null value means "use client's value."
@@ -54,6 +79,7 @@ Frontend mirrors this: `ProjectForm.jsx` saveForm converts `form.rate !== '' ? N
 | **Reports** | `reportService.js`, `expenseReportService.js` | Groups by project for PDF generation, shows project name/rate | PDF layout |
 | **MCP list_projects** | `server/routes/mcp.js` | Lists active projects with effectiveWorkingHours (rate excluded for confidentiality) | Read-only |
 | **Documents** | `documentService.js` | Documents reference projectId, shown in project Documents tab | FK reference |
+| **User picker (resources)** | `ResourceDialog.jsx` | Reads `usersApi.getAll()` to populate the resource user dropdown (`users.read` + `roles.read` gated; empty array in legacy mode) | 403 shown in-dialog; grid unaffected (email snapshots) |
 
 ## Key Business Logic (where it lives)
 
@@ -66,6 +92,7 @@ Frontend mirrors this: `ProjectForm.jsx` saveForm converts `form.rate !== '' ? N
 | Cascade delete | `projectService.js` remove | Deletes timesheets, expenses (with attachment cleanup) |
 | VAT config | `project.vatPercent` | null = exempt, 0 = zero-rated, 20 = standard. Used by invoice lines |
 | Lock protection | `projectService.update/remove` | `assertNotLocked()` before mutation |
+| Resource rate snapshot | `ResourceDialog.jsx` (prefill) + `projectService.js` normalizeResources | dailyRate copied from effectiveRate at add-time, then independent; array normalized on write |
 
 ## Blast Radius
 
@@ -87,12 +114,16 @@ Frontend mirrors this: `ProjectForm.jsx` saveForm converts `form.rate !== '' ? N
 
 **If you change project data shape:**
 - Update: projectService create/update (null coercion, field handling)
+- Update: `normalizeResources` per-item whitelist if the resource shape changes
 - Update: ProjectForm useFormTracker keys + inheritance placeholders
 - Update: ProjectList columns
 - Update: timesheetService enrichment (projectName, effective values)
 - Update: expenseService enrichment (projectName)
 - Update: invoiceService clientProjects enrichment
 - Update: MCP tool response fields
+
+**If you change user email/deletion semantics:**
+- Check: resource `userEmail` snapshots do not auto-update — grid labels and the edit dialog's injected snapshot option rely on them
 
 ## Lessons Learned
 

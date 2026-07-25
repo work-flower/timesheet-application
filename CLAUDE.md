@@ -151,6 +151,7 @@ Contractor profile + invoicing configuration.
 | vatPercent | `20` = standard, `0` = zero-rated, `null` = VAT exempt |
 | isDefault | Auto-created default project flag |
 | status | `active` or `archived` |
+| resources | Embedded array of `{ id, userId, userEmail, dailyRate, engagement, description }` — users assigned to the project (userId → users collection). `dailyRate` and `userEmail` are snapshots taken at add/edit time (rate prefilled from effectiveRate, then independent). `engagement` is `FULL_TIME` or `PART_TIME`. Managed on the project form's Resources tab — see `projects.md` |
 | notes | Markdown, internal |
 
 **Computed fields (returned by API, not stored):**
@@ -612,7 +613,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/clients/:id` | Client form (tabs: General, Projects, Timesheets, Expenses, Invoices) |
 | `/projects` | Project list |
 | `/projects/new` | Project create form |
-| `/projects/:id` | Project form (tabs: General, Timesheets, Expenses, Documents, Invoices) |
+| `/projects/:id` | Project form (tabs: General, Resources, Timesheets, Expenses, Documents, Invoices) |
 | `/timesheets` | Timesheet list |
 | `/timesheets/new` | Timesheet create form |
 | `/timesheets/:id` | Timesheet edit form |

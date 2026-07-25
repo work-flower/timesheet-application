@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   makeStyles,
@@ -10,6 +10,7 @@ import {
   Select,
   Tab,
   TabList,
+  Button,
   MessageBar,
   MessageBarBody,
   Breadcrumb,
@@ -25,9 +26,12 @@ import {
   TableCellLayout,
   createTableColumn,
 } from '@fluentui/react-components';
+import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { projectsApi, clientsApi, documentsApi, invoicesApi } from '../../api/index.js';
 import { FormSection, FormField } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
+import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import ResourceDialog from './ResourceDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
@@ -153,6 +157,54 @@ const invoiceColumns = [
   }),
 ];
 
+const makeResourceColumns = (onDelete, isLocked) => [
+  createTableColumn({
+    columnId: 'userEmail',
+    renderHeaderCell: () => 'User',
+    renderCell: (item) => <TableCellLayout>{item.userEmail || item.userId}</TableCellLayout>,
+  }),
+  createTableColumn({
+    columnId: 'dailyRate',
+    renderHeaderCell: () => 'Daily Rate',
+    renderCell: (item) => (
+      <TableCellLayout>
+        {item.dailyRate != null
+          ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.dailyRate)
+          : '—'}
+      </TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'engagement',
+    renderHeaderCell: () => 'Engagement',
+    renderCell: (item) => (
+      <TableCellLayout>{item.engagement === 'PART_TIME' ? 'Part-time' : 'Full-time'}</TableCellLayout>
+    ),
+  }),
+  createTableColumn({
+    columnId: 'description',
+    renderHeaderCell: () => 'Description',
+    renderCell: (item) => <TableCellLayout>{item.description}</TableCellLayout>,
+  }),
+  ...(isLocked ? [] : [
+    createTableColumn({
+      columnId: '_remove',
+      renderHeaderCell: () => '',
+      renderCell: (item) => (
+        <Button
+          appearance="subtle"
+          icon={<DeleteRegular />}
+          aria-label="Remove resource"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(item);
+          }}
+        />
+      ),
+    }),
+  ]),
+];
+
 const documentColumns = [
   createTableColumn({
     columnId: 'period',
@@ -183,7 +235,7 @@ export default function ProjectForm() {
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
   const { canCreate, canUpdate } = useCurrentUser();
 
-  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
+  const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker({ resources: [] });
   const notifyParent = useNotifyParent();
   const [initialized, setInitialized] = useState(false);
 
@@ -192,6 +244,7 @@ export default function ProjectForm() {
     rate: data.rate != null ? String(data.rate) : '',
     workingHoursPerDay: data.workingHoursPerDay != null ? String(data.workingHoursPerDay) : '',
     vatPercent: data.vatPercent != null ? String(data.vatPercent) : '',
+    resources: Array.isArray(data.resources) ? data.resources : [],
   });
 
   const [projectData, setProjectData] = useState(null);
@@ -202,6 +255,9 @@ export default function ProjectForm() {
   const [tab, setTab] = useState('general');
   const [documents, setDocuments] = useState([]);
   const [projectInvoices, setProjectInvoices] = useState([]);
+  const [resourceDialogOpen, setResourceDialogOpen] = useState(false);
+  const [editingResource, setEditingResource] = useState(null);
+  const [resourceToDelete, setResourceToDelete] = useState(null);
 
   useEffect(() => {
     const init = async () => {
@@ -230,10 +286,10 @@ export default function ProjectForm() {
             clientId: firstClient._id, ir35Status: 'OUTSIDE_IR35',
             rate: firstClient.defaultRate != null ? String(firstClient.defaultRate) : '',
             workingHoursPerDay: firstClient.workingHoursPerDay != null ? String(firstClient.workingHoursPerDay) : '',
-            vatPercent: '20', status: 'active',
+            vatPercent: '20', status: 'active', resources: [],
           });
         } else {
-          resetBase({ ir35Status: 'OUTSIDE_IR35', vatPercent: '20', status: 'active' });
+          resetBase({ ir35Status: 'OUTSIDE_IR35', vatPercent: '20', status: 'active', resources: [] });
         }
       } catch (err) {
         setError(err.message);
@@ -258,6 +314,34 @@ export default function ProjectForm() {
       }
       return next;
     });
+  };
+
+  const openAddResource = () => {
+    setEditingResource(null);
+    setResourceDialogOpen(true);
+  };
+
+  const openEditResource = (item) => {
+    setEditingResource(item);
+    setResourceDialogOpen(true);
+  };
+
+  // Immutable updates only — useFormTracker detects changes by reference
+  const handleResourceSubmit = (values) => {
+    setForm((prev) => {
+      const list = prev.resources || [];
+      return editingResource
+        ? { ...prev, resources: list.map((r) => (r.id === editingResource.id ? { ...r, ...values } : r)) }
+        : { ...prev, resources: [...list, { id: crypto.randomUUID(), ...values }] };
+    });
+  };
+
+  const handleResourceDelete = () => {
+    setForm((prev) => ({
+      ...prev,
+      resources: (prev.resources || []).filter((r) => r.id !== resourceToDelete.id),
+    }));
+    setResourceToDelete(null);
   };
 
   const saveForm = useCallback(async () => {
@@ -316,6 +400,8 @@ export default function ProjectForm() {
   const isLocked = (!isNew && projectData?.isLocked) || (isNew ? !canCreate('projects') : !canUpdate('projects'));
   const lockReason = projectData?.isLockedReason;
 
+  const resourceColumns = useMemo(() => makeResourceColumns(setResourceToDelete, !!isLocked), [isLocked]);
+
   // Compute placeholder for rate
   const selectedClient = allClients.find((c) => c._id === form.clientId);
   const ratePlaceholder = selectedClient ? `Inherited from client: £${selectedClient.defaultRate}/day` : 'Enter rate or leave blank to inherit';
@@ -355,6 +441,7 @@ export default function ProjectForm() {
         {!isNew && (
           <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
             <Tab value="general">General</Tab>
+            <Tab value="resources">Resources ({(form.resources || []).length})</Tab>
             <Tab value="timesheets">Timesheets ({projectData?.timesheets?.length || 0})</Tab>
             <Tab value="expenses">Expenses ({projectData?.expenses?.length || 0})</Tab>
             <Tab value="documents">Documents ({documents.length})</Tab>
@@ -456,6 +543,56 @@ export default function ProjectForm() {
                 </div>
               </FormField>
             </fieldset>
+          )}
+
+          {tab === 'resources' && (
+            <>
+              <div style={{ marginBottom: '12px' }}>
+                <Button
+                  appearance="outline"
+                  size="small"
+                  icon={<AddRegular />}
+                  onClick={openAddResource}
+                  disabled={!!isLocked}
+                >
+                  Add resource
+                </Button>
+              </div>
+              {(form.resources || []).length === 0 ? (
+                <div className={styles.empty}>
+                  <Text>No resources assigned to this project.</Text>
+                </div>
+              ) : (
+                <DataGrid
+                  items={form.resources || []}
+                  columns={resourceColumns}
+                  sortable
+                  getRowId={(item) => item.id}
+                  style={{ width: '100%' }}
+                >
+                  <DataGridHeader>
+                    <DataGridRow>
+                      {({ renderHeaderCell }) => (
+                        <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>
+                      )}
+                    </DataGridRow>
+                  </DataGridHeader>
+                  <DataGridBody>
+                    {({ item, rowId }) => (
+                      <DataGridRow
+                        key={rowId}
+                        className={isLocked ? undefined : styles.row}
+                        onClick={() => {
+                          if (!isLocked) openEditResource(item);
+                        }}
+                      >
+                        {({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}
+                      </DataGridRow>
+                    )}
+                  </DataGridBody>
+                </DataGrid>
+              )}
+            </>
           )}
 
           {tab === 'timesheets' && projectData && (
@@ -599,6 +736,25 @@ export default function ProjectForm() {
           )}
         </div>
       </div>
+
+      <ResourceDialog
+        open={resourceDialogOpen}
+        onClose={() => {
+          setResourceDialogOpen(false);
+          setEditingResource(null);
+        }}
+        onSubmit={handleResourceSubmit}
+        resource={editingResource}
+        assignedUserIds={(form.resources || []).filter((r) => r.id !== editingResource?.id).map((r) => r.userId)}
+        defaultDailyRate={projectData?.effectiveRate}
+      />
+      <ConfirmDialog
+        open={!!resourceToDelete}
+        onClose={() => setResourceToDelete(null)}
+        onConfirm={handleResourceDelete}
+        title="Remove Resource"
+        message={`Remove ${resourceToDelete?.userEmail || 'this resource'} from this project? This takes effect when you save.`}
+      />
     </div>
     </>
   );
