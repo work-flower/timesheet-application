@@ -76,9 +76,11 @@ router.post('/impersonate', async (req, res) => {
       });
     }
     // Session cookie (no Max-Age) — dies with the browser; SameSite=Lax rides on
-    // every same-origin request incl. <img>/iframe loads; no Secure so local
-    // http dev works (the tunnel is https at the edge).
-    res.cookie('impersonate', target.email, { httpOnly: true, sameSite: 'lax', path: '/' });
+    // every same-origin request incl. <img>/iframe loads. Secure is set when the
+    // request reached the edge over https (Cloudflare sets X-Forwarded-Proto), so
+    // the tunnelled deployment gets Secure while local http dev still works.
+    const secure = req.headers['x-forwarded-proto'] === 'https';
+    res.cookie('impersonate', target.email, { httpOnly: true, sameSite: 'lax', path: '/', secure });
     console.log(`Impersonation started: ${auth.user.email} -> ${target.email}`);
     res.json({ impersonating: { email: target.email, by: auth.user.email } });
   } catch (err) {

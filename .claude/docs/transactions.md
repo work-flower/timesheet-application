@@ -112,6 +112,7 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 - Check: Field mapping transforms correctly to transaction schema
 - Check: transactionService.create receives all required fields
 - Check: Duplicate detection uses same composite hash
+- Check: The caller-scoped visibility check (`importJobService.getById` → 404) still runs BEFORE `runAsSystem` — see Lessons Learned
 
 **If you change linking (expense/invoice ↔ transaction):**
 - Check: Both sides of the link are updated (expense.transactions[] and transaction enrichment)
@@ -120,4 +121,4 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 
 ## Lessons Learned
 
-(Empty — will be populated as issues are encountered)
+- **`stagedTransactions.submit` must scope-check the caller BEFORE `runAsSystem`.** Named-action lifecycle routes (`requireAction` gate → `runAsSystem` execution) must first prove the caller can see the target under their own grants — a caller-scoped `importJobService.getById(importJobId)` returning 404 if invisible — because `runAsSystem` bypasses the read-filter merge. Without it, a user holding the `stagedTransactions.submit` action but with scoped `importJobs`/`stagedTransactions` reads could commit a job's staged rows into locked transactions by supplying its id, despite not being able to see the job. This mirrors the invoice (`confirm`/`post`/`unconfirm`/`updatePayment`) and importJob (`abandon`) routes — keep all named-action routes consistent on this pattern.

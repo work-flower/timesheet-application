@@ -3,6 +3,7 @@ import { respondError } from '../utils/errors.js';
 import { requireAction } from '../pipeline/authorisation.js';
 import { runAsSystem } from '../pipeline/systemContext.js';
 import * as stagedTransactionService from '../services/stagedTransactionService.js';
+import * as importJobService from '../services/importJobService.js';
 
 const router = Router();
 
@@ -53,7 +54,11 @@ router.post('/submit', requireAction('stagedTransactions', 'submit'), async (req
     const { importJobId, fieldMapping } = req.body;
     if (!importJobId) return res.status(400).json({ error: 'importJobId is required' });
     if (!fieldMapping) return res.status(400).json({ error: 'fieldMapping is required' });
-    // Commits staged rows into locked transactions — privileged lifecycle execution
+    // Visibility check under caller's scope, then privileged lifecycle execution.
+    // Proves the caller can see the job under their own grants before the submit
+    // commits staged rows into locked transactions under system identity.
+    const existing = await importJobService.getById(importJobId);
+    if (!existing) return res.status(404).json({ error: 'Import job not found' });
     const result = await runAsSystem(() => stagedTransactionService.submit(importJobId, fieldMapping));
     res.json(result);
   } catch (err) {
