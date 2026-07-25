@@ -519,6 +519,7 @@ Full wiring in `.claude/docs/authorisation.md`. Cross-cutting rules:
 2. Provisioning is **JIT-pending**: unknown authenticated emails auto-create a `pending` user with no access; admins assign roles to activate. Role changes take effect on the next request (no caching).
 3. Every functional role needs the **baseline reads** (`clients`, `projects`, `settings`) or list enrichment 403s — deliberate, no graceful degradation.
 4. Non-CRUD lifecycle endpoints are gated by **named action privileges** (`requireAction`); after the gate + a caller-scoped visibility check they execute under system identity.
+5. **Impersonation**: users holding the `users.impersonate` action can act as another user (full write-through, per-request cookie-driven identity swap; `impersonatedBy` stamped on writes; impersonation-capable users cannot themselves be impersonated). See the Impersonation section of `authorisation.md`.
 5. Background jobs (schedulers, AI parsing, backup, seed) must run under `runAsSystem` or they are denied when enforcement is on.
 6. With `AUTH_ENABLED` unset the app behaves exactly as the legacy single-user build.
 

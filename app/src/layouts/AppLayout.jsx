@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import useAppNavigate from '../hooks/useAppNavigate.js';
 import { newTraceId, getTraceId } from '../api/traceId.js';
-import { settingsApi, clientsApi } from '../api/index.js';
+import { settingsApi, clientsApi, usersApi, meApi } from '../api/index.js';
 import { useEmbedded } from '../contexts/EmbeddedContext.jsx';
 import { useCurrentUser } from '../contexts/CurrentUserContext.jsx';
 import {
@@ -11,6 +11,16 @@ import {
   Text,
   Button,
   Tooltip,
+  Spinner,
+  MessageBar,
+  MessageBarBody,
+  Dialog,
+  DialogTrigger,
+  DialogSurface,
+  DialogTitle,
+  DialogBody,
+  DialogContent,
+  DialogActions,
 } from '@fluentui/react-components';
 import {
   BoardRegular,
@@ -39,6 +49,7 @@ import {
   GlobeRegular,
   TicketHorizontalRegular,
   ClipboardTaskListLtrRegular,
+  PersonSwapRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -298,15 +309,89 @@ const NAV_TABLES = {
   '/reports/vat': 'invoices',
 };
 
+// Impersonation picker — lists users; the server enforces the guard rails
+// (self, impersonation-capable targets), so their 4xx messages surface here.
+function ImpersonateDialog({ open, onClose, selfEmail }) {
+  const [users, setUsers] = useState(null);
+  const [error, setError] = useState(null);
+  const [starting, setStarting] = useState(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setUsers(null);
+    usersApi.getAll()
+      .then((data) => setUsers(data.filter((u) => u.email !== selfEmail)))
+      .catch((err) => setError(err.message));
+  }, [open, selfEmail]);
+
+  const start = (email) => {
+    setStarting(email);
+    setError(null);
+    meApi.impersonate(email)
+      .then(() => window.location.reload())
+      .catch((err) => {
+        setError(err.message);
+        setStarting(null);
+      });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(e, data) => { if (!data.open) onClose(); }}>
+      <DialogSurface>
+        <DialogBody>
+          <DialogTitle>Impersonate a user</DialogTitle>
+          <DialogContent>
+            <Text size={200} style={{ display: 'block', marginBottom: 12, color: tokens.colorNeutralForeground2 }}>
+              You will see and act in the app exactly as the selected user. Writes are
+              recorded against them with you as the impersonator.
+            </Text>
+            {error && (
+              <MessageBar intent="error" style={{ marginBottom: 8 }}>
+                <MessageBarBody>{error}</MessageBarBody>
+              </MessageBar>
+            )}
+            {users === null && !error && <Spinner size="tiny" label="Loading users..." />}
+            {users?.length === 0 && <Text size={200}>No other users found.</Text>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {users?.map((user) => (
+                <Button
+                  key={user._id}
+                  appearance="subtle"
+                  icon={<PersonSwapRegular />}
+                  disabled={!!starting}
+                  onClick={() => start(user.email)}
+                  style={{ justifyContent: 'flex-start' }}
+                >
+                  {starting === user.email ? 'Starting...' : `${user.email} — ${user.status}${user.roleNames?.length ? ` (${user.roleNames.join(', ')})` : ''}`}
+                </Button>
+              ))}
+            </div>
+          </DialogContent>
+          <DialogActions>
+            <DialogTrigger disableButtonEnhancement>
+              <Button appearance="secondary">Cancel</Button>
+            </DialogTrigger>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
 export default function AppLayout() {
   const styles = useStyles();
   const location = useLocation();
   const { navigate } = useAppNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [appTitle, setAppTitle] = useState('');
+  const [impersonateOpen, setImpersonateOpen] = useState(false);
 
   const isEmbedded = useEmbedded();
-  const { canRead } = useCurrentUser();
+  const { canRead, canAction, enabled, me } = useCurrentUser();
+  // `enabled &&` matters: canAction returns true when authorisation is off,
+  // but the endpoints are inert then — hide the button in legacy mode
+  const canImpersonate = enabled && canAction('users', 'impersonate');
 
   const navVisible = (item) => !NAV_TABLES[item.to] || canRead(NAV_TABLES[item.to]);
   const visibleNavItems = navItems
@@ -475,11 +560,29 @@ export default function AppLayout() {
           <Text className={styles.topBarTitle}>{appTitle}</Text>
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
+          {canImpersonate && (
+            <Tooltip content="View the app as another user" relationship="description">
+              <Button
+                appearance="subtle"
+                icon={<PersonSwapRegular />}
+                onClick={() => setImpersonateOpen(true)}
+              >
+                Impersonate
+              </Button>
+            </Tooltip>
+          )}
           <Button appearance="subtle" icon={<QuestionCircleRegular />} onClick={() => navigate('/help')}>
             Help
           </Button>
         </div>
       </div>
+      {canImpersonate && (
+        <ImpersonateDialog
+          open={impersonateOpen}
+          onClose={() => setImpersonateOpen(false)}
+          selfEmail={me?.email}
+        />
+      )}
       <div className={styles.body}>
         <nav
           className={styles.sidebar}

@@ -37,7 +37,7 @@ import todoRoutes from './routes/todos.js';
 import assetsRoutes from './routes/assets.js';
 import geminiConfigRoutes, { geminiFeatureRouter } from './routes/geminiConfig.js';
 import { pageviewRouter } from './routes/logs.js';
-import userRoutes from './routes/users.js';
+import userRoutes, { usersReadOnlyRouter } from './routes/users.js';
 import roleRoutes from './routes/roles.js';
 import meRoutes from './routes/me.js';
 import { adminSurfaceMiddleware } from './services/cfAccessJwt.js';
@@ -134,6 +134,7 @@ app.use((req, res, next) => {
 
 // API routes (main surface — identity middleware + pipeline enforcement)
 app.use('/api/me', meRoutes);
+app.use('/api/users', usersReadOnlyRouter); // impersonation picker; engine-gated by users.read
 app.use('/api/logs', pageviewRouter); // pageview beacon only; log admin ops live on /admin/api/logs
 app.use('/api/clients', clientRoutes);
 app.use('/api/projects', projectRoutes);

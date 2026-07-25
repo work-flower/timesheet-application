@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Spinner, Text, tokens } from '@fluentui/react-components';
-import { ShieldPersonRegular, ShieldErrorRegular } from '@fluentui/react-icons';
+import { Button, Spinner, Text, tokens } from '@fluentui/react-components';
+import { ShieldPersonRegular, ShieldErrorRegular, PersonSwapRegular } from '@fluentui/react-icons';
 import { meApi } from '../api/index.js';
 
 /**
@@ -32,6 +32,38 @@ const BLOCKED_COPY = {
     body: 'No identity was presented with your request. Access this application through its published address.',
   },
 };
+
+// Persistent strip shown while impersonating — rendered by the provider above
+// BOTH branches (normal app AND BlockedScreen) so the Stop control is always
+// reachable, including when impersonating a pending/disabled user and in
+// embedded iframes. Stop clears the httpOnly cookie server-side then reloads
+// (page state is scoped to the old identity — a reload is the only honest reset).
+function ImpersonationBanner({ info }) {
+  const stop = () => meApi.stopImpersonation().finally(() => window.location.reload());
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '4px 12px',
+        backgroundColor: tokens.colorPaletteDarkOrangeBackground2,
+        borderBottom: `1px solid ${tokens.colorPaletteDarkOrangeBorder1}`,
+      }}
+    >
+      <PersonSwapRegular style={{ fontSize: 16 }} />
+      <Text size={200} weight="semibold">
+        Viewing as {info.email}
+      </Text>
+      <Text size={200} style={{ color: tokens.colorNeutralForeground2 }}>
+        (you are {info.by})
+      </Text>
+      <Button size="small" appearance="outline" onClick={stop} style={{ marginLeft: 'auto' }}>
+        Stop impersonating
+      </Button>
+    </div>
+  );
+}
 
 function BlockedScreen({ status, email }) {
   const copy = BLOCKED_COPY[status] || BLOCKED_COPY.unauthenticated;
@@ -105,10 +137,20 @@ export function CurrentUserProvider({ children }) {
   }
 
   if (me.enabled && me.status !== 'active') {
-    return <BlockedScreen status={me.status} email={me.email} />;
+    return (
+      <>
+        {me.impersonating && <ImpersonationBanner info={me.impersonating} />}
+        <BlockedScreen status={me.status} email={me.email} />
+      </>
+    );
   }
 
-  return <CurrentUserContext.Provider value={value}>{children}</CurrentUserContext.Provider>;
+  return (
+    <CurrentUserContext.Provider value={value}>
+      {me.impersonating && <ImpersonationBanner info={me.impersonating} />}
+      {children}
+    </CurrentUserContext.Provider>
+  );
 }
 
 export function useCurrentUser() {

@@ -93,6 +93,20 @@ Macros (resolved per-request in `accessService` before the pipeline sees them):
 | `$$today+Nd` / `$$today-Nd` | Day-offset `YYYY-MM-DD` |
 | `$$idsOf(...)` | RESERVED — rejected until lookup macros ship |
 
+## Impersonation ("View As")
+
+Full write-through impersonation for System Admin-style users — the app behaves EXACTLY as the target (their filters, `$$user.*` macros, gated UI, even the awaiting-access screen for pending targets).
+
+- **Privilege:** the `users.impersonate` named action. Role recipe: `users: { read: true, actions: ['impersonate'] }` **plus `roles: { read: true }`** (the users list enriches roleNames through the wrapped roles collection and 403s without it).
+- **Signal:** httpOnly session cookie `impersonate=<email>` (SameSite=Lax, Path=/, dies with the browser) set by `POST /api/me/impersonate {email}` and cleared by `DELETE /api/me/impersonate`. A cookie — not a header — so it rides on `<img>` thumbnails, PDF iframes, notebook media and every raw fetch automatically.
+- **Per-request swap** (`identity.js`): after resolving the REAL user + grants, a valid cookie swaps `store.auth` to the target's identity + grants with `impersonatedBy: realEmail`; `store.user` stays the REAL email and `store.impersonating` carries the target (log entries show both). Invalid cookies (no grant, unknown target, self, impersonation-capable target) warn + fall through to self — stale cookies after demotion are harmless.
+- **Guard rail:** impersonation-capable users cannot be impersonated (checked at start AND per request). Self-impersonation rejected. Nested impersonation impossible by construction.
+- **CRITICAL — skip-swap:** the middleware skips the swap for `path.startsWith('/api/me/impersonate')` so start/stop always run as the REAL user. Without this, switching targets would 403 (target grants never include impersonate) and stopping while impersonating a pending/disabled target would be blocked before the route could clear the httpOnly cookie — a permanent lock-out.
+- **Attribution:** impersonated writes → `createdBy`/`updatedBy` = target, `impersonatedBy` = real admin. Updates ALWAYS set `impersonatedBy` (null when not impersonating) so stale values can't misrepresent the latest write. Caveat: lifecycle actions (invoice confirm etc.) execute under `runAsSystem`, so those record writes show `updatedBy: 'system'` — the log entries retain `user` (real) + `impersonating` (target).
+- **Picker data:** GET-only users router mounted at `/api/users` (engine-gated by `users.read`). Deliberately not the full router — a partially-granted PUT could half-write the bidirectional membership via `syncMembership`.
+- **Frontend:** `CurrentUserProvider` renders a persistent `ImpersonationBanner` (target + Stop) above BOTH the app and the BlockedScreen (Stop must be reachable when impersonating a blocked user; covers embedded mode). Top-bar Impersonate button in `AppLayout` gated on `enabled && canAction('users','impersonate')` — the `enabled &&` matters because `canAction` returns true in flag-off legacy mode. Start/stop trigger `window.location.reload()` (page state is scoped to the old identity).
+- **Constraint:** SameSite=Lax means cross-site iframing would drop the cookie; same-origin `?embedded=true` is unaffected.
+
 ## Frontend (main app)
 
 - **`GET /api/me`** (`server/routes/me.js`) returns `{ enabled, email, status, tables: {t: {read,create,update,delete}}, actions: {t: [names]} }` — booleans only, never raw filters (filter ⇒ `true` = "some access"). Flag off ⇒ `{ enabled: false }`. Pending/disabled users get a 200 here (identity middleware exemption) so the UI can render the block screen from one call.
@@ -127,6 +141,8 @@ Macros (resolved per-request in `accessService` before the pipeline sees them):
 **If you add a lifecycle route:** gate with `requireAction`, add the action to the registry, follow the scoped-getById-then-runAsSystem pattern.
 
 **If you add a background job:** wrap its entry point in `runAsSystem` or it will be denied (or fail open with flag off and surprise you later).
+
+**If you change identity.js or the impersonation flow:** re-run the impersonation curl matrix — start (Set-Cookie), `/api/me` shows target + `impersonating.by`, scoped reads/writes as target with `updatedBy: target` + `impersonatedBy: admin`, guard rails (self 400, admin target 403, non-admin 403), switch-target while impersonating works (skip-swap), pending target answers `/api/me` but 403s data, DELETE works while impersonating, non-impersonated update sets `impersonatedBy: null`, flag-off POST → 400.
 
 ## Lessons Learned
 

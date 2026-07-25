@@ -4,7 +4,13 @@ import * as userService from '../services/userService.js';
 
 const router = Router();
 
-router.get('/', async (req, res) => {
+// GET-only subset mounted at /api/users for the main app (impersonation picker).
+// Engine-protected: requires users.read (+ roles.read for the roleNames
+// enrichment). Deliberately NOT the full router — a partially-granted PUT could
+// half-write the bidirectional user↔role membership via syncMembership.
+export const usersReadOnlyRouter = Router();
+
+usersReadOnlyRouter.get('/', async (req, res) => {
   try {
     const result = await userService.getAll(req.query);
     res.json(result);
@@ -14,7 +20,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+usersReadOnlyRouter.get('/:id', async (req, res) => {
   try {
     const result = await userService.getById(req.params.id);
     if (!result) return res.status(404).json({ error: 'User not found' });
@@ -24,6 +30,8 @@ router.get('/:id', async (req, res) => {
     respondError(res, err, 500);
   }
 });
+
+router.use(usersReadOnlyRouter);
 
 // Pre-create a user ahead of their first visit (JIT-pending handles the usual path)
 router.post('/', async (req, res) => {

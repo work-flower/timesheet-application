@@ -24,6 +24,24 @@ import { resolveGrants } from '../services/accessService.js';
 
 const PUBLIC_PATHS = new Set(['/api/health']);
 
+// Impersonation signal — an httpOnly session cookie set by POST /api/me/impersonate.
+// A cookie (not a header) so it rides on <img> thumbnails, PDF iframes, notebook
+// media and every raw fetch automatically. Only honoured when the REAL caller's
+// grants include users.impersonate — a forged/stale cookie degrades to self.
+function parseImpersonateCookie(req) {
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const [name, ...rest] = part.trim().split('=');
+    if (name === 'impersonate') {
+      try {
+        return decodeURIComponent(rest.join('=')).toLowerCase() || null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 function extractIdentity(req) {
   const email = req.headers['cf-access-authenticated-user-email'];
   if (email) return email.toLowerCase();
@@ -81,6 +99,56 @@ export async function identityMiddleware(req, res, next) {
     }
 
     const grants = await resolveGrants(user);
+
+    // ── Impersonation swap ──
+    // The start/stop endpoints are exempt: they must always run as the REAL
+    // user, or switching targets would run under target grants (which never
+    // include users.impersonate) and stopping while impersonating a pending
+    // target would be 403'd here before the route could clear the cookie.
+    const targetEmail = parseImpersonateCookie(req);
+    if (
+      targetEmail &&
+      targetEmail !== user.email &&
+      !path.startsWith('/api/me/impersonate')
+    ) {
+      if (!grants.users?.actions?.has('impersonate')) {
+        console.warn(`Ignoring impersonate cookie for ${user.email}: no users.impersonate grant`);
+      } else {
+        const target = await runAsSystem(() => userService.findByEmail(targetEmail));
+        if (!target) {
+          console.warn(`Ignoring impersonate cookie: target ${targetEmail} not found`);
+        } else if (target.status !== 'active') {
+          // Faithful reproduction of the target's blocked state — /api/me still
+          // answers (so the banner + Stop control render over the BlockedScreen)
+          store.impersonating = target.email;
+          store.auth = {
+            user: { id: target._id, email: target.email, status: target.status },
+            grants: {},
+            impersonatedBy: user.email,
+          };
+          if (path === '/api/me') return next();
+          const code = target.status === 'pending' ? 'pending' : 'disabled';
+          return res.status(403).json({
+            error: code === 'pending' ? 'Account pending activation' : 'Account disabled',
+            code,
+          });
+        } else {
+          const targetGrants = await resolveGrants(target);
+          if (targetGrants.users?.actions?.has('impersonate')) {
+            console.warn(`Ignoring impersonate cookie: ${target.email} is impersonation-capable`);
+          } else {
+            store.impersonating = target.email; // store.user stays REAL for logs
+            store.auth = {
+              user: { id: target._id, email: target.email, status: target.status },
+              grants: targetGrants,
+              impersonatedBy: user.email,
+            };
+            return next();
+          }
+        }
+      }
+    }
+
     store.auth = {
       user: { id: user._id, email: user.email, status: user.status },
       grants,

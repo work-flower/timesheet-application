@@ -27,6 +27,8 @@ hooks.register({
       if (doc && typeof doc === 'object') {
         doc.createdBy = who;
         doc.updatedBy = who;
+        // Impersonated writes carry the real actor alongside the target identity
+        if (context.auth?.impersonatedBy) doc.impersonatedBy = context.auth.impersonatedBy;
       }
     }
   },
@@ -42,13 +44,17 @@ hooks.register({
     if (!who) return;
     const modifier = context.args[1];
     if (!modifier || typeof modifier !== 'object') return;
+    // Always set on updates (null when not impersonated) so a stale value from
+    // an older impersonated edit can't misrepresent the latest write
+    const impersonatedBy = context.auth?.impersonatedBy ?? null;
     const hasOperators = Object.keys(modifier).some((k) => k.startsWith('$'));
     if (hasOperators) {
       // NeDB rejects mixed operator/plain updates — fold into $set
-      modifier.$set = { ...(modifier.$set || {}), updatedBy: who };
+      modifier.$set = { ...(modifier.$set || {}), updatedBy: who, impersonatedBy };
     } else {
       // Whole-document replacement
       modifier.updatedBy = who;
+      modifier.impersonatedBy = impersonatedBy;
     }
   },
 });

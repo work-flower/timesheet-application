@@ -99,6 +99,7 @@ function interceptWrite(chunk, encoding, callback) {
     ...(store.toolName && { toolName: store.toolName }),
     ...(store.importJobId && { importJobId: store.importJobId }),
     ...(store.user && { user: store.user }),
+    ...(store.impersonating && { impersonating: store.impersonating }),
   };
 
   try {
@@ -138,6 +139,7 @@ function interceptStderrWrite(chunk, encoding, callback) {
     ...(store.toolName && { toolName: store.toolName }),
     ...(store.importJobId && { importJobId: store.importJobId }),
     ...(store.user && { user: store.user }),
+    ...(store.impersonating && { impersonating: store.impersonating }),
   };
 
   try {

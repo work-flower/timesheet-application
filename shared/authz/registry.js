@@ -34,6 +34,9 @@ export const ACTIONS = {
   importJobs: ['abandon'],
   calendarSources: ['refresh'],
   ticketSources: ['refresh'],
+  // impersonate: act as another user for a session (System Admin capability).
+  // Holders cannot themselves be impersonated (guard rail in identity.js/me.js).
+  users: ['impersonate'],
 };
 
 // Reads every functional role needs — list enrichment resolves names/rates from

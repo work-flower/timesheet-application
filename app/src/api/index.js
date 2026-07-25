@@ -29,6 +29,21 @@ async function request(path, options = {}) {
 // Current user + permission hints (multiuser authorisation)
 export const meApi = {
   get: () => request('/me'),
+  impersonate: (email) =>
+    request('/me/impersonate', { method: 'POST', body: JSON.stringify({ email }) }),
+  stopImpersonation: () => request('/me/impersonate', { method: 'DELETE' }),
+};
+
+// Users (read-only — impersonation picker; requires users.read + roles.read grants)
+export const usersApi = {
+  getAll: (params = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request(`/users${query ? `?${query}` : ''}`);
+  },
 };
 
 // Clients
