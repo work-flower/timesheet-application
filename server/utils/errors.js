@@ -15,6 +15,20 @@ export class ForbiddenError extends Error {
 }
 
 /**
+ * Client-side request error (bad query/payload). Thrown by shared helpers
+ * (e.g. buildQuery's field-level security rejection) so routes surface 400
+ * regardless of their catch-block fallback status.
+ */
+export class BadRequestError extends Error {
+  constructor(message, code = 'bad_request') {
+    super(message);
+    this.name = 'BadRequestError';
+    this.statusCode = 400;
+    this.code = code;
+  }
+}
+
+/**
  * Map an error to an HTTP response. Uses err.statusCode when present (typed
  * errors), otherwise the route's conventional fallback (400 for writes,
  * 500 for reads).

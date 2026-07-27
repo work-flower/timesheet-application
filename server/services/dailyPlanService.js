@@ -1,5 +1,6 @@
 import { dailyPlans, timesheets, todos, projects, clients, notebooks } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, renameSync, statSync } from 'fs';
@@ -325,11 +326,19 @@ export async function changeDate(oldDate, newDate) {
     renameSync(oldDir, newDir);
   }
 
-  // Re-create record with new _id (NeDB doesn't allow _id changes)
-  const { _id, ...rest } = existing;
+  // Re-create record with new _id (NeDB doesn't allow _id changes).
+  // A date move must carry EVERY stored field verbatim: the caller-identity
+  // copy may have fields masked by field-level security, and a caller-identity
+  // insert would strip write-hidden fields — either would corrupt the moved
+  // plan. Access was already proven above (caller-scoped findOne); the remove
+  // stays caller-scoped (delete grant enforced), then the re-insert runs under
+  // system identity from a system-read (unmasked) copy.
+  const raw = await runAsSystem(() => dailyPlans.findOne({ _id: oldDate }));
+  const numRemoved = await dailyPlans.remove({ _id: oldDate });
+  if (!numRemoved) throw new Error('Daily plan could not be moved');
+  const { _id, ...rest } = raw;
   rest.updatedAt = new Date().toISOString();
-  await dailyPlans.remove({ _id: oldDate });
-  await dailyPlans.insert({ _id: newDate, ...rest });
+  await runAsSystem(() => dailyPlans.insert({ _id: newDate, ...rest }));
 
   return getById(newDate);
 }

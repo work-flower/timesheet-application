@@ -6,13 +6,16 @@ function coerce(value) {
   return value;
 }
 
-export default function QueryStringPrefill({ handleChange, onPrefill, ready = true }) {
+export default function QueryStringPrefill({ handleChange, onPrefill, ready = true, exclude }) {
   useEffect(() => {
     if (!ready) return;
     const qs = new URLSearchParams(window.location.search);
     const prefilled = new Set();
 
     for (const [key, raw] of qs.entries()) {
+      // Field-level security: fields hidden/stripped for this user must not be
+      // settable via URL params (server would strip them on save anyway)
+      if (exclude?.has(key)) continue;
       handleChange(key)(null, { value: coerce(raw) });
       prefilled.add(key);
     }

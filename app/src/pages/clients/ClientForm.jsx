@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   makeStyles,
@@ -27,7 +27,7 @@ import {
   createTableColumn,
 } from '@fluentui/react-components';
 import { clientsApi } from '../../api/index.js';
-import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
@@ -75,7 +75,7 @@ const useStyles = makeStyles({
   },
 });
 
-const projectColumns = [
+const makeProjectColumns = (hidden) => [
   createTableColumn({
     columnId: 'name',
     renderHeaderCell: () => 'Project Name',
@@ -89,7 +89,7 @@ const projectColumns = [
   createTableColumn({
     columnId: 'rate',
     renderHeaderCell: () => 'Rate',
-    renderCell: (item) => <TableCellLayout>{item.rate != null ? `£${item.rate}/day` : 'Inherited'}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('rate') ? '\u2014' : (item.rate != null ? `£${item.rate}/day` : 'Inherited')}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'status',
@@ -98,7 +98,7 @@ const projectColumns = [
   }),
 ];
 
-const timesheetColumns = [
+const makeTimesheetColumns = (hidden) => [
   createTableColumn({
     columnId: 'date',
     renderHeaderCell: () => 'Date',
@@ -112,7 +112,7 @@ const timesheetColumns = [
   createTableColumn({
     columnId: 'hours',
     renderHeaderCell: () => 'Hours',
-    renderCell: (item) => <TableCellLayout>{item.hours}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('hours') ? '\u2014' : item.hours}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'notes',
@@ -121,7 +121,7 @@ const timesheetColumns = [
   }),
 ];
 
-const expenseColumns = [
+const makeExpenseColumns = (hidden) => [
   createTableColumn({
     columnId: 'date',
     renderHeaderCell: () => 'Date',
@@ -140,7 +140,7 @@ const expenseColumns = [
   createTableColumn({
     columnId: 'amount',
     renderHeaderCell: () => 'Amount',
-    renderCell: (item) => <TableCellLayout>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('amount') ? '\u2014' : new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'billable',
@@ -149,7 +149,7 @@ const expenseColumns = [
   }),
 ];
 
-const invoiceColumns = [
+const makeInvoiceColumns = (hidden) => [
   createTableColumn({
     columnId: 'invoiceNumber',
     renderHeaderCell: () => 'Invoice #',
@@ -173,7 +173,7 @@ const invoiceColumns = [
   createTableColumn({
     columnId: 'total',
     renderHeaderCell: () => 'Amount',
-    renderCell: (item) => <TableCellLayout>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0)}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('total') ? '\u2014' : new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0)}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'paymentStatus',
@@ -188,7 +188,21 @@ export default function ClientForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
-  const { canCreate, canUpdate } = useCurrentUser();
+  const { canCreate, canUpdate, fls } = useCurrentUser();
+
+  // Field-level security: read-hidden fields render redacted; the strip set
+  // (read ∪ mode-op) is removed from create defaults, QS prefill and payloads
+  const tableFls = fls('clients');
+  const stripSet = useMemo(
+    () => new Set([...tableFls.read, ...(isNew ? tableFls.create : tableFls.update)]),
+    [tableFls, isNew]
+  );
+
+  // Embedded grids show other tables' fields — dash their read-hidden numerics
+  const projectColumns = useMemo(() => makeProjectColumns(fls('projects').read), [fls]);
+  const timesheetColumns = useMemo(() => makeTimesheetColumns(fls('timesheets').read), [fls]);
+  const expenseColumns = useMemo(() => makeExpenseColumns(fls('expenses').read), [fls]);
+  const invoiceColumns = useMemo(() => makeInvoiceColumns(fls('invoices').read), [fls]);
 
   const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
   const notifyParent = useNotifyParent();
@@ -208,7 +222,10 @@ export default function ClientForm() {
           setClientData(data);
           resetBase(data);
         } else {
-          resetBase({ defaultRate: 0, currency: 'GBP', workingHoursPerDay: 8, ir35Status: 'OUTSIDE_IR35' });
+          const defaults = { defaultRate: 0, currency: 'GBP', workingHoursPerDay: 8, ir35Status: 'OUTSIDE_IR35' };
+          // No phantom defaults in fields this user cannot see or set
+          for (const f of stripSet) delete defaults[f];
+          resetBase(defaults);
         }
       } catch (err) {
         setError(err.message);
@@ -217,7 +234,7 @@ export default function ClientForm() {
       }
     };
     init();
-  }, [id, isNew, resetBase]);
+  }, [id, isNew, resetBase, stripSet]);
 
   const handleChange = (field) => (e, data) => {
     const raw = data?.value ?? e.target.value;
@@ -238,11 +255,16 @@ export default function ClientForm() {
     setError(null);
     setSuccess(false);
     try {
+      // Never echo masked/blocked values back — the server strips them anyway,
+      // but absent beats sending sentinels into service validation
       if (isNew) {
-        const created = await clientsApi.create(form);
+        const payload = { ...form };
+        for (const f of stripSet) delete payload[f];
+        const created = await clientsApi.create(payload);
         return { ok: true, id: created._id };
       } else {
         const { ir35Status, ...updatePayload } = form;
+        for (const f of stripSet) delete updatePayload[f];
         await clientsApi.update(id, updatePayload);
         const data = await clientsApi.getById(id);
         setClientData(data);
@@ -255,7 +277,7 @@ export default function ClientForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, resetBase]);
+  }, [form, isNew, id, resetBase, stripSet]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -289,7 +311,8 @@ export default function ClientForm() {
     <>
       {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
       <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
-      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
+    <FormDataProvider table="clients" isNew={isNew} fls={tableFls} changedFields={changedFields} locked={isLocked}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} exclude={stripSet} />
       <FormCommandBar
         onBack={() => goBack('/clients')}
         onSave={handleSave}
@@ -330,12 +353,12 @@ export default function ClientForm() {
           {(isNew || tab === 'general') && (
             <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
               <FormSection title="Company Information">
-                <FormField changed={changedFields.has('companyName')}>
+                <FormField name="companyName">
                   <Field label="Company Name" required>
                     <Input name="companyName" value={form.companyName ?? ''} onChange={handleChange('companyName')} />
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('currency')}>
+                <FormField name="currency">
                   <Field label="Currency">
                     <Select name="currency" value={form.currency ?? ''} onChange={handleChange('currency')}>
                       <option value="GBP">GBP</option>
@@ -344,18 +367,18 @@ export default function ClientForm() {
                     </Select>
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('defaultRate')}>
+                <FormField name="defaultRate">
                   <Field label="Default Rate (per day)">
                     <Input name="defaultRate" type="number" value={String(form.defaultRate ?? '')} onChange={handleChange('defaultRate')} min={0} step={25} />
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('workingHoursPerDay')}>
+                <FormField name="workingHoursPerDay">
                   <Field label="Working Hours Per Day">
                     <Input name="workingHoursPerDay" type="number" value={String(form.workingHoursPerDay ?? '')} onChange={handleChange('workingHoursPerDay')} min={0.25} max={24} step={0.25} />
                   </Field>
                 </FormField>
                 {isNew && (
-                  <FormField changed={changedFields.has('ir35Status')}>
+                  <FormField name="ir35Status">
                     <Field label="IR35 Status (for default project)" required>
                       <Select name="ir35Status" value={form.ir35Status ?? ''} onChange={handleChange('ir35Status')}>
                         <option value="OUTSIDE_IR35">Outside IR35</option>
@@ -368,12 +391,12 @@ export default function ClientForm() {
               </FormSection>
 
               <FormSection title="Invoicing">
-                <FormField changed={changedFields.has('invoicingEntityName')}>
+                <FormField name="invoicingEntityName">
                   <Field label="Invoicing Entity Name" hint="Used in the Bill To section of invoices. Falls back to company name.">
                     <Input name="invoicingEntityName" value={form.invoicingEntityName ?? ''} onChange={handleChange('invoicingEntityName')} />
                   </Field>
                 </FormField>
-                <FormField fullWidth changed={changedFields.has('invoicingEntityAddress')}>
+                <FormField fullWidth name="invoicingEntityAddress">
                   <Field label="Invoicing Entity Address">
                     <Textarea name="invoicingEntityAddress" value={form.invoicingEntityAddress ?? ''} onChange={handleChange('invoicingEntityAddress')} resize="vertical" rows={3} />
                   </Field>
@@ -381,18 +404,18 @@ export default function ClientForm() {
               </FormSection>
 
               <FormSection title="Primary Contact">
-                <FormField changed={changedFields.has('primaryContactName')}>
+                <FormField name="primaryContactName">
                   <Field label="Contact Name"><Input name="primaryContactName" value={form.primaryContactName ?? ''} onChange={handleChange('primaryContactName')} /></Field>
                 </FormField>
-                <FormField changed={changedFields.has('primaryContactEmail')}>
+                <FormField name="primaryContactEmail">
                   <Field label="Contact Email"><Input name="primaryContactEmail" type="email" value={form.primaryContactEmail ?? ''} onChange={handleChange('primaryContactEmail')} /></Field>
                 </FormField>
-                <FormField changed={changedFields.has('primaryContactPhone')}>
+                <FormField name="primaryContactPhone">
                   <Field label="Contact Phone"><Input name="primaryContactPhone" value={form.primaryContactPhone ?? ''} onChange={handleChange('primaryContactPhone')} /></Field>
                 </FormField>
               </FormSection>
 
-              <FormField fullWidth changed={changedFields.has('notes')}>
+              <FormField fullWidth name="notes">
                 <div style={{ marginTop: '16px' }}>
                   <MarkdownEditor
                     label="Notes"
@@ -492,6 +515,7 @@ export default function ClientForm() {
           )}
         </div>
       </div>
+    </FormDataProvider>
     </div>
     </>
   );

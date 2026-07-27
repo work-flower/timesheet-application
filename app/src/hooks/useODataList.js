@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { buildFilterString } from '../utils/odataBuilder.js';
 import { extractFilterValues } from '../utils/odataParser.js';
+import { useCurrentUser } from '../contexts/CurrentUserContext.jsx';
 
 const MANAGED_KEYS = new Set(['$filter', '$orderby', '$top', '$skip', '$count', '$summary']);
 
@@ -85,6 +86,13 @@ export function useODataList({
   const navigate = useNavigate();
   const location = useLocation();
   const isInitRef = useRef(false);
+
+  // Field-level security: $summary on a read-hidden field is rejected with
+  // 400 server-side, and the hook auto-sends it — drop hidden fields here so
+  // one excluded money column doesn't error the entire list. List keys match
+  // table names ('expenses', 'timesheets', ...).
+  const { fls } = useCurrentUser() || {};
+  const hiddenRead = fls ? fls(key).read : null;
 
   // Raw URL $filter captured at mount — used as-is for the initial fetch only
   const initFilterRef = useRef(new URLSearchParams(location.search).get('$filter'));
@@ -173,13 +181,16 @@ export function useODataList({
     params.$skip = String((page - 1) * pageSize);
     params.$count = 'true';
 
-    // Summary
-    if (summaryFields.length > 0) {
-      params.$summary = summaryFields.join(',');
+    // Summary (minus fields hidden from this user by field-level security)
+    const effectiveSummary = hiddenRead?.size
+      ? summaryFields.filter((f) => !hiddenRead.has(f))
+      : summaryFields;
+    if (effectiveSummary.length > 0) {
+      params.$summary = effectiveSummary.join(',');
     }
 
     return params;
-  }, [filterValues, orderBy, page, pageSize, filterDefs, defaultOrderBy, summaryFields]);
+  }, [filterValues, orderBy, page, pageSize, filterDefs, defaultOrderBy, summaryFields, hiddenRead]);
 
   // --- Fetch data with given params ---
   const doFetch = useCallback(async (params) => {

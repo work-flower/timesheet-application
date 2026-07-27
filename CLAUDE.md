@@ -470,7 +470,7 @@ Granular permission roles. Each role holds per-table privileges with optional pr
 |-------|-------------|
 | name | Required |
 | description | Optional |
-| privileges | `{ [table]: { read: filter\|bool, create: bool, update: filter\|bool, delete: filter\|bool, actions: [names] } }`. Filters are Mongo-style NeDB queries supporting macros (`$$user.*`, `$$today`, …). Stored key-escaped on disk (NeDB constraint), decoded on read |
+| privileges | `{ [table]: { read: filter\|bool\|{access, fls}, create: bool\|{access, fls}, update: <as read>, delete: filter\|bool, actions: [names] } }`. Filters are Mongo-style NeDB queries supporting macros (`$$user.*`, `$$today`, …). `fls` is a per-operation excluded-field list (field-level security — see `authorisation.md`); the `{access, fls}` wrapper is stored only when fls is non-empty, `delete` never carries fls. Stored key-escaped on disk (NeDB constraint), decoded on read |
 | userIds | Array of member user ids (managed via `syncMembership` only) |
 
 **Computed field (returned by API, not stored):** `userCount`.
@@ -521,8 +521,9 @@ Full wiring in `.claude/docs/authorisation.md`. Cross-cutting rules:
 3. Every functional role needs the **baseline reads** (`clients`, `projects`, `settings`) or list enrichment 403s — deliberate, no graceful degradation.
 4. Non-CRUD lifecycle endpoints are gated by **named action privileges** (`requireAction`); after the gate + a caller-scoped visibility check they execute under system identity.
 5. **Impersonation**: users holding the `users.impersonate` action can act as another user (full write-through, per-request cookie-driven identity swap; `impersonatedBy` stamped on writes; impersonation-capable users cannot themselves be impersonated). See the Impersonation section of `authorisation.md`.
-5. Background jobs (schedulers, AI parsing, backup, seed) must run under `runAsSystem` or they are denied when enforcement is on.
-6. With `AUTH_ENABLED` unset the app behaves exactly as the legacy single-user build.
+6. **Field-level security (fls)**: per role, per table, per operation (`read`/`create`/`update`) an excluded-field list masks fields on read (strings → `***redacted***`, others → `null`), strips them from writes at the pipeline (read-hidden implies write-stripped; replacement-style updates rejected), and 400s `$filter`/`$orderby`/`$summary` references. Multi-role merge is per-op intersection (most permissive). Forms render redacted/read-only controls via `FormDataProvider` + `FormField name="..."`; lists dash hidden numerics. Protected fields (`_id`, timestamps, attribution, lock fields) can never be hidden. Full semantics + sibling-group configuration rules in `authorisation.md` → Field-Level Security.
+7. Background jobs (schedulers, AI parsing, backup, seed) must run under `runAsSystem` or they are denied when enforcement is on.
+8. With `AUTH_ENABLED` unset the app behaves exactly as the legacy single-user build.
 
 ### Record Locking
 

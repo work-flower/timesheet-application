@@ -33,12 +33,13 @@ import {
   DismissCircleRegular,
 } from '@fluentui/react-icons';
 import { importJobsApi, stagedTransactionsApi } from '../../api/index.js';
-import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext.jsx';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import { useNotifyParent } from '../../hooks/useNotifyParent.js';
 import QueryStringPrefill from '../../components/QueryStringPrefill.jsx';
 
@@ -134,6 +135,16 @@ export default function ImportJobForm() {
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
 
   const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker();
+
+  // Field-level security: read-hidden fields render redacted; the strip set
+  // (read ∪ mode-op) is removed from create defaults, QS prefill and payloads
+  const { fls } = useCurrentUser();
+  const tableFls = fls('importJobs');
+  const stripSet = useMemo(
+    () => new Set([...tableFls.read, ...(isNew ? tableFls.create : tableFls.update)]),
+    [tableFls, isNew]
+  );
+  const stagedHidden = fls('stagedTransactions').read;
   const notifyParent = useNotifyParent();
   const [initialized, setInitialized] = useState(false);
 
@@ -199,7 +210,10 @@ export default function ImportJobForm() {
             setStagedTransactions(staged);
           }
         } else {
-          resetBase({ userPrompt: 'Parse the attached bank statement.' });
+          const defaults = { userPrompt: 'Parse the attached bank statement.' };
+          // No phantom defaults in fields this user cannot see or set
+          for (const f of stripSet) delete defaults[f];
+          resetBase(defaults);
         }
       } catch (err) {
         setError(err.message);
@@ -208,7 +222,7 @@ export default function ImportJobForm() {
       }
     };
     init();
-  }, [id, isNew, resetBase]);
+  }, [id, isNew, resetBase, stripSet]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0] || null;
@@ -319,7 +333,7 @@ export default function ImportJobForm() {
       return [
         createTableColumn({ columnId: 'date', renderHeaderCell: () => 'Date', renderCell: (item) => <TableCellLayout>{item.date}</TableCellLayout> }),
         createTableColumn({ columnId: 'description', renderHeaderCell: () => 'Description', renderCell: (item) => <TableCellLayout>{item.description}</TableCellLayout> }),
-        createTableColumn({ columnId: 'amount', renderHeaderCell: () => 'Amount', renderCell: (item) => <TableCellLayout>{fmtGBP(item.amount)}</TableCellLayout> }),
+        createTableColumn({ columnId: 'amount', renderHeaderCell: () => 'Amount', renderCell: (item) => <TableCellLayout>{stagedHidden.has('amount') ? '\u2014' : fmtGBP(item.amount)}</TableCellLayout> }),
       ];
     }
 
@@ -387,7 +401,8 @@ export default function ImportJobForm() {
     <>
     {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
     <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
-      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
+    <FormDataProvider table="importJobs" isNew={isNew} fls={tableFls} changedFields={changedFields} locked={isLocked}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} exclude={stripSet} />
       {/* Custom command bar */}
       <div className={styles.commandBar}>
         <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => goBack('/import-jobs')} size="small">
@@ -501,7 +516,7 @@ export default function ImportJobForm() {
                 )}
               </>
             )}
-            <FormField fullWidth changed={changedFields.has('userPrompt')}>
+            <FormField fullWidth name="userPrompt" label="User Prompt">
               <MarkdownEditor
                 label="User Prompt"
                 name="userPrompt"
@@ -600,6 +615,7 @@ export default function ImportJobForm() {
         title={actionLabels[confirmAction]?.title || 'Confirm'}
         message={actionLabels[confirmAction]?.message || 'Are you sure?'}
       />
+    </FormDataProvider>
 
     </div>
     </>

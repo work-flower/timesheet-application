@@ -99,25 +99,54 @@ Wraps form fields in a titled 2-column grid.
 
 **Location:** `src/components/FormSection.jsx` (same file)
 
-Wraps individual fields inside a FormSection.
+Wraps individual fields inside a FormSection. Given a `name` and an enclosing `FormDataProvider`, it derives the changed indicator AND field-level security rendering itself.
 
 ### Props
 
 | Prop | Type | Description |
 | --- | --- | --- |
+| `name` | `string` | Field name (DB field). With a `FormDataProvider` above, derives `changed`, redaction, and write-blocking automatically. Preferred API. |
 | `fullWidth` | `boolean` | Spans both columns. |
-| `changed` | `boolean` | Shows blue left-border indicator (Power Platform style). |
+| `label` | `string` | Label for the redacted fallback when children are not a Fluent `<Field>` (e.g. MarkdownEditor notes). |
+| `changed` | `boolean` | Legacy/provider-less fallback for the blue left-border indicator. |
+| `redacted` | `boolean` | Legacy/provider-less override forcing the redacted rendering. |
 | `children` | `ReactNode` | Typically a Fluent UI `<Field>` with input inside. |
+
+### Rendering states
+
+- **Normal** — children as-is (+ changed bar when dirty).
+- **Read-hidden** (`fls.read` contains `name`) — children NOT rendered; the Fluent `Field` is cloned (label kept, `required`/validation stripped, hint → "Hidden by your security role") around the standard redacted control: disabled `Input` showing `***redacted***` (shared `shared/authz/redaction.js` constant) with an eye-off icon. Non-`Field` children get a generic labelled box via `label`.
+- **Write-blocked only** (`fls.create`/`fls.update` by mode) — children render with real values inside a per-field disabled fieldset, hint → "Read-only for your security role".
 
 ### Usage
 
 ```jsx
-<FormField changed={changedFields.has('fieldName')}>
+<FormField name="fieldName">
   <Field label="Field Label" required hint="Hint text">
     <Input name="fieldName" value={form.fieldName} onChange={handleChange('fieldName')} />
   </Field>
 </FormField>
 ```
+
+---
+
+## FormDataProvider
+
+**Location:** `src/components/FormSection.jsx` (same file)
+
+Thin per-form context binding the form's data state to field UI (the bidirectional data↔UI bridge). Owns NO state — `useFormTracker` remains the single owner. Declared once at the form root; `FormField` consumes it via `useFormData()`.
+
+### Props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `table` | `string` | Registry table name (e.g. `'timesheets'`). |
+| `isNew` | `boolean` | Create vs edit — selects `fls.create` vs `fls.update` for write-blocking. |
+| `fls` | `{read,create,update}` Sets | From `useCurrentUser().fls(table)`. |
+| `changedFields` | `Set` | From `useFormTracker`. |
+| `locked` | `boolean` | The form's lock flag (reserved for future per-field lock treatment). |
+
+See `/forms-guide` → Field-Level Security for the full wiring recipe (stripSet, payload strip, prefill exclude).
 
 ---
 
@@ -335,6 +364,7 @@ Renderless component (returns `null`) that pre-fills form fields from URL query 
 | --- | --- | --- |
 | `handleChange` | `(field) => (e, data) => void` | Required. The form's curried change handler. |
 | `ready` | `boolean` | Required. Gate on `baseReady` from `useFormTracker` so prefill fires after DOM scan + base setup. |
+| `exclude` | `Set<string>` | Optional. Keys skipped during replay — pass the form's field-level-security `stripSet` so hidden fields are not URL-settable. |
 | `onPrefill` | `(prefilledFields: Set<string>) => void` | Optional. Callback after pre-fill completes. |
 
 ### Usage

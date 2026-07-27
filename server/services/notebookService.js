@@ -6,6 +6,7 @@ import { basename, dirname, join, extname } from 'path';
 import { mkdirSync, rmSync, renameSync, existsSync, readFileSync, writeFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'fs';
 import sharp from 'sharp';
 import * as git from './notebookGitService.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
 import {
   parseContentMeta,
   extractEntityReferences,
@@ -1049,7 +1050,10 @@ export function executePull(force = false) {
   if (pullPromise && typeof pullPromise.then === 'function') {
     pullPromise.then(async (result) => {
       if (result.ok) {
-        await syncDbWithDisk();
+        // Background continuation — the request's ALS scope is gone by the
+        // time the pull finishes, so the DB sync must run as system or it is
+        // denied when enforcement is on
+        await runAsSystem(() => syncDbWithDisk());
       }
     }).catch(() => {});
   }

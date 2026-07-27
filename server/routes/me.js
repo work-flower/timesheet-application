@@ -30,6 +30,15 @@ router.get('/', (req, res) => {
       update: grant.update !== undefined,
       delete: grant.delete !== undefined,
     };
+    // Field-level security: per-op hidden-field lists so forms/lists can
+    // render redacted/read-only controls (create mode has no record to infer from)
+    if (grant.fls) {
+      const fls = {};
+      for (const op of ['read', 'create', 'update']) {
+        if (grant.fls[op]?.size) fls[op] = [...grant.fls[op]];
+      }
+      if (Object.keys(fls).length) tables[table].fls = fls;
+    }
     if (grant.actions?.size) actions[table] = [...grant.actions];
   }
 

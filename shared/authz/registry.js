@@ -43,6 +43,21 @@ export const ACTIONS = {
 // these tables and fails hard (403) without them. Surfaced as a hint in the Roles editor.
 export const BASELINE_READ_TABLES = ['clients', 'projects', 'settings'];
 
+// Fields that can never appear in a field-level security (fls) list.
+// isLocked/isLockedReason: services assert lock state on docs read through the
+// masked collection — masking them would silently disable record locking.
+// Attribution fields: stamped by pipeline pre-hooks; stripping them would erase audit.
+export const PROTECTED_FIELDS = [
+  '_id',
+  'createdAt',
+  'updatedAt',
+  'createdBy',
+  'updatedBy',
+  'impersonatedBy',
+  'isLocked',
+  'isLockedReason',
+];
+
 export function isKnownTable(name) {
   return TABLES.includes(name);
 }

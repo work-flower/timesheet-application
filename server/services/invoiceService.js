@@ -129,7 +129,11 @@ export async function create(data) {
 export async function update(id, data) {
   const existing = await invoices.findOne({ _id: id });
   if (!existing) throw new Error('Invoice not found');
-  if (existing.status === 'posted') throw new Error('Posted invoices cannot be edited');
+  // Whitelist editable statuses (fail closed): a status this caller cannot
+  // read, or a corrupt value, must never slip past the posted-invoice guard
+  if (existing.status !== 'draft' && existing.status !== 'confirmed') {
+    throw new Error('Only draft or confirmed invoices can be edited');
+  }
   assertNotLocked(existing);
 
   const now = new Date().toISOString();

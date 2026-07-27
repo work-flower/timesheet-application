@@ -42,7 +42,7 @@ import { expensesApi, projectsApi, clientsApi, transactionsApi } from '../../api
 import InvoicePickerDialog from '../../components/InvoicePickerDialog.jsx';
 import ReceiptScanDialog from './ReceiptScanDialog.jsx';
 import { isCameraSupported, CAMERA_UNSUPPORTED_MESSAGE } from './CameraCapturePane.jsx';
-import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
@@ -175,7 +175,16 @@ export default function ExpenseForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
-  const { canCreate, canUpdate } = useCurrentUser();
+  const { canCreate, canUpdate, fls } = useCurrentUser();
+
+  // Field-level security: read-hidden fields render redacted; the strip set
+  // (read ∪ mode-op) is removed from create defaults, QS prefill and payloads
+  const tableFls = fls('expenses');
+  const stripSet = useMemo(
+    () => new Set([...tableFls.read, ...(isNew ? tableFls.create : tableFls.update)]),
+    [tableFls, isNew]
+  );
+
   const sourceTransactionIds = useMemo(() => {
     if (!isNew) return [];
     const raw = new URLSearchParams(window.location.search).get('transactionId');
@@ -239,12 +248,15 @@ export default function ExpenseForm() {
           setLoadedData(data);
           setAttachments(data.attachments || []);
           resetBase(data);
-        } else if (active.length > 0) {
-          const firstProj = active[0];
-          const firstClient = clientLookup[firstProj.clientId];
-          resetBase({ date: today, billable: true, currency: firstClient?.currency || 'GBP', projectId: firstProj._id });
         } else {
-          resetBase({ date: today, billable: true });
+          const firstProj = active[0];
+          const firstClient = firstProj ? clientLookup[firstProj.clientId] : null;
+          const defaults = firstProj
+            ? { date: today, billable: true, currency: firstClient?.currency || 'GBP', projectId: firstProj._id }
+            : { date: today, billable: true };
+          // No phantom defaults in fields this user cannot see or set
+          for (const f of stripSet) delete defaults[f];
+          resetBase(defaults);
         }
       } catch (err) {
         setError(err.message);
@@ -253,7 +265,7 @@ export default function ExpenseForm() {
       }
     };
     init();
-  }, [id, isNew, resetBase, today]);
+  }, [id, isNew, resetBase, today, stripSet]);
 
   // Group projects by client
   const projectsByClient = useMemo(() => {
@@ -313,8 +325,12 @@ export default function ExpenseForm() {
     setSuccess(false);
     setAttachWarning(null);
     try {
+      const payload = { ...form };
+      // Never echo masked/blocked values back — the server strips them anyway,
+      // but absent beats sending sentinels into service validation
+      for (const f of stripSet) delete payload[f];
       if (isNew) {
-        const created = await expensesApi.create(form);
+        const created = await expensesApi.create(payload);
 
         // Attach before the transaction-link loop: a link failure throws to the
         // outer catch, and the photo is the one thing the user cannot redo.
@@ -341,7 +357,7 @@ export default function ExpenseForm() {
         }
         return { ok: true, id: created._id, attachFailed };
       } else {
-        const updated = await expensesApi.update(id, form);
+        const updated = await expensesApi.update(id, payload);
         setAttachments(updated.attachments || []);
         resetBase(updated);
         return { ok: true };
@@ -352,7 +368,7 @@ export default function ExpenseForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, resetBase, today, sourceTransactionIds, pendingCapture]);
+  }, [form, isNew, id, resetBase, today, sourceTransactionIds, pendingCapture, stripSet]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -443,7 +459,11 @@ export default function ExpenseForm() {
   // input. setForm is a functional updater, so these compose within one batch.
   // Do not reorder, and do not route around handleChange.
   const handleScanApply = (entries, file) => {
-    for (const [key, value] of entries) handleChange(key)(null, { value });
+    for (const [key, value] of entries) {
+      // Never programmatically set fields this user cannot see or set
+      if (stripSet.has(key)) continue;
+      handleChange(key)(null, { value });
+    }
 
     if (file) {
       if (isNew) setPendingCapture(file); // held until the first successful save
@@ -567,7 +587,8 @@ export default function ExpenseForm() {
     <>
     {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
     <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
-      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
+    <FormDataProvider table="expenses" isNew={isNew} fls={tableFls} changedFields={changedFields} locked={isLocked}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} exclude={stripSet} />
       <FormCommandBar
         onBack={() => goBack('/expenses')}
         onSave={handleSave}
@@ -643,22 +664,22 @@ export default function ExpenseForm() {
 
         <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
         <FormSection title="Entry Details">
-          <FormField changed={changedFields.has('amount')}>
+          <FormField name="amount">
             <Field label="Amount (gross)" required hint="Total amount paid including VAT">
               <Input type="number" name="amount" value={String(form.amount ?? '')} onChange={handleChange('amount')} step="0.01" />
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('date')}>
+          <FormField name="date">
             <Field label="Date" required>
               <Input type="date" name="date" value={form.date ?? ''} max={today} onChange={handleChange('date')} />
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('vatPercent')}>
+          <FormField name="vatPercent">
             <Field label="VAT %">
               <Input type="number" name="vatPercent" value={String(form.vatPercent ?? '')} onChange={handleChange('vatPercent')} min="0" max="100" step="0.01" />
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('projectId')}>
+          <FormField name="projectId">
             <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
               <Select name="projectId" value={form.projectId ?? ''} onChange={handleChange('projectId')}>
                 <option value="">Select project...</option>
@@ -672,12 +693,12 @@ export default function ExpenseForm() {
               </Select>
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('vatAmount')}>
+          <FormField name="vatAmount">
             <Field label="VAT Amount" hint="VAT portion included in the Amount (gross)">
               <Input type="number" name="vatAmount" value={String(form.vatAmount ?? '')} onChange={handleChange('vatAmount')} step="0.01" />
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('expenseType')}>
+          <FormField name="expenseType">
             <Field label="Expense Type" hint="Select from previous types or type a new one">
               <Combobox
                 freeform
@@ -693,12 +714,12 @@ export default function ExpenseForm() {
               </Combobox>
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('netAmount')}>
+          <FormField name="netAmount">
             <Field label="Net Amount" hint="Amount (gross) minus VAT">
               <Input name="netAmount" readOnly value={fmtGBP.format(form.netAmount || 0)} />
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('billable')}>
+          <FormField name="billable">
             <Field>
               <Checkbox
                 name="billable"
@@ -708,12 +729,12 @@ export default function ExpenseForm() {
               />
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('currency')}>
+          <FormField name="currency">
             <Field label="Currency" hint="Inherited from client">
               <Input name="currency" readOnly value={form.currency ?? ''} />
             </Field>
           </FormField>
-          <FormField fullWidth changed={changedFields.has('description')}>
+          <FormField fullWidth name="description">
             <Field label="Description" hint="Visible to the client on invoices/reports">
               <Textarea
                 name="description"
@@ -724,7 +745,7 @@ export default function ExpenseForm() {
               />
             </Field>
           </FormField>
-          <FormField changed={changedFields.has('externalReference')}>
+          <FormField name="externalReference">
             <Field label="External Reference" hint="Invoice number, order ID, or other external reference">
               <Input
                 name="externalReference"
@@ -736,7 +757,7 @@ export default function ExpenseForm() {
           </FormField>
         </FormSection>
 
-        <FormField fullWidth changed={changedFields.has('notes')}>
+        <FormField fullWidth name="notes">
           <div className={styles.notes}>
             <MarkdownEditor
               label="Notes"
@@ -779,7 +800,7 @@ export default function ExpenseForm() {
               onUpload={handleUpload}
               onDelete={handleDeleteAttachment}
               uploading={uploading}
-              readOnly={!!isLocked}
+              readOnly={!!isLocked || tableFls.read.has('attachments') || tableFls.update.has('attachments')}
             />
           )}
         </div>
@@ -852,6 +873,7 @@ export default function ExpenseForm() {
           </FormSection>
         )}
       </div>
+    </FormDataProvider>
       <ConfirmDialog
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}

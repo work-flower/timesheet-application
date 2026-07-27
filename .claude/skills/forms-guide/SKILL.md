@@ -110,7 +110,10 @@ useEffect(() => {
         setLoadedData(data);
         resetBase(data);
       } else {
-        resetBase({ date: today, hours: 8, projectId: active[0]._id });
+        const defaults = { date: today, hours: 8, projectId: active[0]._id };
+        // Field-level security: no phantom defaults in hidden fields
+        for (const f of stripSet) delete defaults[f];
+        resetBase(defaults);
       }
     } catch (err) {
       setError(err.message);
@@ -119,8 +122,54 @@ useEffect(() => {
     }
   };
   init();
-}, [id, isNew, resetBase]);
+}, [id, isNew, resetBase, stripSet]);
 ```
+
+## GOLDEN RULE: Field-Level Security (FormDataProvider + name-prop FormField)
+
+Every form MUST be FLS-aware. Reference implementation: `TimesheetForm.jsx`.
+
+1. **Derive the sets** next to the existing `useCurrentUser()` call:
+
+```jsx
+const { canCreate, canUpdate, fls } = useCurrentUser();
+const tableFls = fls('<table>');
+const stripSet = useMemo(
+  () => new Set([...tableFls.read, ...(isNew ? tableFls.create : tableFls.update)]),
+  [tableFls, isNew]
+);
+```
+
+2. **Declare the provider once**, inside the page div, wrapping command bar + body (dialogs stay outside):
+
+```jsx
+<FormDataProvider table="<table>" isNew={isNew} fls={tableFls} changedFields={changedFields} locked={isLocked}>
+```
+
+3. **FormField takes `name`, not `changed`** — it derives redaction, write-blocking, AND the changed indicator from the provider:
+
+```jsx
+<FormField name="hours">          // was: changed={changedFields.has('hours')}
+  <Field label="Hours" required>
+    <Input type="number" name="hours" ... />
+  </Field>
+</FormField>
+```
+
+Rendering matrix (automatic): **read-hidden** → standard redacted control (`***redacted***` + eye-off icon + "Hidden by your security role" hint; label preserved; children never rendered). **Write-blocked only** → real value shown inside a per-field disabled fieldset with "Read-only for your security role". Markdown/custom children (no Fluent `Field` wrapper) additionally pass `label="Notes"` for the redacted fallback.
+
+4. **Strip the save payload** (server strips authoritatively — this keeps sentinels out of service validation):
+
+```jsx
+const payload = { ...form };
+for (const f of stripSet) delete payload[f];   // add stripSet to useCallback deps
+```
+
+5. **`<QueryStringPrefill exclude={stripSet} />`** — hidden fields are not URL-settable.
+
+6. **Non-FormField sections** (embedded grids, array editors like ProjectForm resources or InvoiceForm lines): wrap in `<fieldset disabled>` (record-lock style) when their field is in `stripSet`, and coerce a masked array (`null`) back to `[]` before `.length`/`.map` (see InvoiceForm `coerceFls`). Embedded grids showing OTHER tables' numerics dash via that table's `fls('<other>').read`.
+
+`changedFields` stays destructured (the provider consumes it). The old `changed`/`redacted` props still work as provider-less fallbacks — do not use them in new code.
 
 ## GOLDEN RULE: Query String Pre-fill via `QueryStringPrefill`
 
@@ -371,10 +420,10 @@ Extra action buttons can be passed as `children` — they render after a Toolbar
 
 ### Fields
 
-- Wrap each field with `<FormField changed={changedFields.has('fieldName')}>` for the blue left-border indicator
+- Wrap each field with `<FormField name="fieldName">` — the provider-driven form derives the blue changed indicator AND field-level security state from it (legacy `changed={...}` prop still accepted without a provider)
 - Use `<FormField fullWidth>` to span both columns
 - Use `<Field label="..." required hint="...">` inside FormField
-- Notes field uses `MarkdownEditor` component, placed outside FormSection, as a fullWidth FormField
+- Notes field uses `MarkdownEditor` component, placed outside FormSection, as a fullWidth FormField with `label="Notes"` (used by the redacted fallback rendering)
 
 ### Numeric Fields
 

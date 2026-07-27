@@ -4,6 +4,7 @@ import { dirname, join } from 'path';
 import { mkdirSync } from 'fs';
 import { wrapCollection } from '../pipeline/index.js';
 import '../pipeline/attribution.js'; // registers createdBy/updatedBy pre-hooks
+import '../pipeline/fieldSecurity.js'; // registers fls mask/strip hooks (after attribution)
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -65,3 +66,7 @@ const ticketSources = wrapCollection('ticketSources', _ticketSources);
 const tickets = wrapCollection('tickets', _tickets);
 
 export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, calendarSources, calendarEvents, ticketSources, tickets };
+
+// Wrapped-collection lookup keyed exactly as shared/authz/registry.js TABLES —
+// used by generic per-table endpoints (e.g. the roles field-name sampler).
+export const collectionsByName = { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, calendarSources, calendarEvents, ticketSources, tickets };

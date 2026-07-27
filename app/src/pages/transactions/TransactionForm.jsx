@@ -39,8 +39,9 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, LinkRegular, LinkMultipleRegular, LinkDismissRegular, WarningFilled, EyeOffRegular, ArrowUndoRegular } from '@fluentui/react-icons';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
-import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import { transactionsApi, invoicesApi, expensesApi } from '../../api/index.js';
 import { usePagination } from '../../hooks/usePagination.js';
 import PaginationControls from '../../components/PaginationControls.jsx';
@@ -221,6 +222,9 @@ export default function TransactionForm() {
   const styles = useStyles();
   const { id } = useParams();
   const navigate = useNavigate();
+  // Field-level security: dash masked numerics instead of showing fake £0.00
+  const { fls } = useCurrentUser();
+  const txHidden = fls('transactions').read;
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -622,9 +626,9 @@ export default function TransactionForm() {
                   <FormField fullWidth>
                     <Field label="Amount">
                       <Input
-                        value={fmtGBP.format(data.amount)}
+                        value={txHidden.has('amount') ? '\u2014' : fmtGBP.format(data.amount)}
                         readOnly
-                        style={{ color: data.amount >= 0 ? '#107C10' : '#D13438' }}
+                        style={txHidden.has('amount') ? undefined : { color: data.amount >= 0 ? '#107C10' : '#D13438' }}
                       />
                     </Field>
                   </FormField>
@@ -643,7 +647,7 @@ export default function TransactionForm() {
                   <div className={styles.balanceSection}>
                     <div className={styles.balanceRow}>
                       <span>Transaction Amount</span>
-                      <span>{fmtGBP.format(data.amount)}</span>
+                      <span>{txHidden.has('amount') ? '\u2014' : fmtGBP.format(data.amount)}</span>
                     </div>
 
                     {data.linkedInvoices?.length > 0 && (
@@ -719,7 +723,7 @@ export default function TransactionForm() {
                             )}
                           </span>
                           <span style={{ color: balanceColor }}>
-                            {fmtGBP.format(remaining)}
+                            {txHidden.has('amount') ? '\u2014' : fmtGBP.format(remaining)}
                           </span>
                         </div>
                       );

@@ -171,7 +171,7 @@ function getMonthRange() {
   };
 }
 
-const baseColumns = [
+const makeBaseColumns = (hidden) => [
   createTableColumn({
     columnId: 'date',
     compare: (a, b) => a.date.localeCompare(b.date),
@@ -194,19 +194,19 @@ const baseColumns = [
     columnId: 'hours',
     compare: (a, b) => (a.hours || 0) - (b.hours || 0),
     renderHeaderCell: () => 'Hours',
-    renderCell: (item) => <TableCellLayout>{item.hours}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('hours') ? '—' : item.hours}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'days',
     compare: (a, b) => (a.days || 0) - (b.days || 0),
     renderHeaderCell: () => 'Days',
-    renderCell: (item) => <TableCellLayout>{item.days != null ? item.days.toFixed(2) : '—'}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('days') ? '—' : item.days != null ? item.days.toFixed(2) : '—'}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'amount',
     compare: (a, b) => (a.amount || 0) - (b.amount || 0),
     renderHeaderCell: () => 'Amount',
-    renderCell: (item) => <TableCellLayout>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('amount') ? '—' : new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'notes',
@@ -232,7 +232,8 @@ function deriveRange(startDate, endDate) {
 export default function TimesheetList() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const { canCreate } = useCurrentUser();
+  const { canCreate, fls } = useCurrentUser();
+  const hidden = fls('timesheets').read;
 
   // --- OData-driven data flow ---
   const {
@@ -308,8 +309,8 @@ export default function TimesheetList() {
         </TableCellLayout>
       ),
     }),
-    ...baseColumns,
-  ], []);
+    ...makeBaseColumns(hidden),
+  ], [hidden]);
 
   // --- Delete handler ---
   const handleDelete = async () => {
@@ -444,8 +445,8 @@ export default function TimesheetList() {
             )}
             renderActions={(item) => (
               <>
-                <Text className={styles.hoursText}>{item.hours}h</Text>
-                <Text className={styles.amountText}>{fmt.format(item.amount || 0)}</Text>
+                <Text className={styles.hoursText}>{hidden.has('hours') ? '—' : `${item.hours}h`}</Text>
+                <Text className={styles.amountText}>{hidden.has('amount') ? '—' : fmt.format(item.amount || 0)}</Text>
                 <Tooltip content="Quick view" relationship="label" withArrow>
                   <Button
                     appearance="subtle"
@@ -487,9 +488,9 @@ export default function TimesheetList() {
             )}
             renderMeta={(item) => (
               <>
-                <CardMetaItem label="Hours" value={item.hours} />
-                <CardMetaItem label="Days" value={item.days != null ? item.days.toFixed(2) : '—'} />
-                <CardMetaItem label="Amount" value={fmt.format(item.amount || 0)} />
+                <CardMetaItem label="Hours" value={hidden.has('hours') ? '—' : item.hours} />
+                <CardMetaItem label="Days" value={hidden.has('days') ? '—' : item.days != null ? item.days.toFixed(2) : '—'} />
+                <CardMetaItem label="Amount" value={hidden.has('amount') ? '—' : fmt.format(item.amount || 0)} />
               </>
             )}
             renderFooter={(item) => item.notes ? (
@@ -506,15 +507,15 @@ export default function TimesheetList() {
         <div className={styles.summary}>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Hours</Text>
-            <Text className={styles.summaryValue}>{summary.hours ?? 0}</Text>
+            <Text className={styles.summaryValue}>{hidden.has('hours') ? '—' : summary.hours ?? 0}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Days</Text>
-            <Text className={styles.summaryValue}>{(summary.days ?? 0).toFixed(2)}</Text>
+            <Text className={styles.summaryValue}>{hidden.has('days') ? '—' : (summary.days ?? 0).toFixed(2)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Amount</Text>
-            <Text className={styles.summaryValue}>{fmt.format(summary.amount ?? 0)}</Text>
+            <Text className={styles.summaryValue}>{hidden.has('amount') ? '—' : fmt.format(summary.amount ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Entries</Text>

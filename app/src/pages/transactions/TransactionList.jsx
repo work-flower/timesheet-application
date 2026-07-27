@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import {
   makeStyles,
   tokens,
@@ -167,7 +168,7 @@ const statusColors = {
   ignored: 'subtle',
 };
 
-const baseColumns = [
+const makeBaseColumns = (hidden) => [
   createTableColumn({
     columnId: 'date',
     compare: (a, b) => a.date.localeCompare(b.date),
@@ -198,9 +199,11 @@ const baseColumns = [
     renderHeaderCell: () => 'Amount',
     renderCell: (item) => (
       <TableCellLayout>
-        <span style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
-          {fmtGBP.format(item.amount)}
-        </span>
+        {hidden.has('amount') ? '—' : (
+          <span style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
+            {fmtGBP.format(item.amount)}
+          </span>
+        )}
       </TableCellLayout>
     ),
   }),
@@ -227,6 +230,8 @@ const baseColumns = [
 export default function TransactionList() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { fls } = useCurrentUser();
+  const hidden = fls('transactions').read;
 
   // --- OData-driven data flow ---
   const {
@@ -303,8 +308,8 @@ export default function TransactionList() {
         </TableCellLayout>
       ),
     }),
-    ...baseColumns,
-  ], []);
+    ...makeBaseColumns(hidden),
+  ], [hidden]);
 
   return (
     <div className={styles.page}>
@@ -422,8 +427,11 @@ export default function TransactionList() {
             )}
             renderActions={(item) => (
               <>
-                <Text className={styles.amountText} style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
-                  {fmtGBP.format(item.amount)}
+                <Text
+                  className={styles.amountText}
+                  style={hidden.has('amount') ? undefined : { color: item.amount >= 0 ? '#107C10' : '#D13438' }}
+                >
+                  {hidden.has('amount') ? '—' : fmtGBP.format(item.amount)}
                 </Text>
                 <Tooltip content="Quick view" relationship="label" withArrow>
                   <Button
@@ -470,9 +478,11 @@ export default function TransactionList() {
             renderMeta={(item) => (
               <>
                 <CardMetaItem label="Amount" value={
-                  <span style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
-                    {fmtGBP.format(item.amount)}
-                  </span>
+                  hidden.has('amount') ? '—' : (
+                    <span style={{ color: item.amount >= 0 ? '#107C10' : '#D13438' }}>
+                      {fmtGBP.format(item.amount)}
+                    </span>
+                  )
                 } />
                 <CardMetaItem label="Account" value={item.accountName || '—'} />
                 {item.reference && <CardMetaItem label="Reference" value={item.reference} />}
@@ -493,18 +503,18 @@ export default function TransactionList() {
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Credits</Text>
             <Text className={styles.summaryValue} style={{ color: '#107C10' }}>
-              {fmtGBP.format(summary.credits ?? 0)}
+              {hidden.has('amount') ? '—' : fmtGBP.format(summary.credits ?? 0)}
             </Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Debits</Text>
             <Text className={styles.summaryValue} style={{ color: '#D13438' }}>
-              {fmtGBP.format(summary.debits ?? 0)}
+              {hidden.has('amount') ? '—' : fmtGBP.format(summary.debits ?? 0)}
             </Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Net</Text>
-            <Text className={styles.summaryValue}>{fmtGBP.format(summary.amount ?? 0)}</Text>
+            <Text className={styles.summaryValue}>{hidden.has('amount') ? '—' : fmtGBP.format(summary.amount ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Unmatched</Text>

@@ -10,28 +10,31 @@ Everything is gated by the **`AUTH_ENABLED`** env var. Unset/false = legacy sing
 
 ```text
 shared/authz/
-  registry.js       — TABLES (19 wrapped collections), ACTIONS per table, BASELINE_READ_TABLES
+  registry.js       — TABLES (19 wrapped collections), ACTIONS per table, BASELINE_READ_TABLES, PROTECTED_FIELDS (never fls-excludable)
   macros.js         — resolveMacros(): $$user.*, $$today, $$startOfMonth, $$today±Nd, $regex rehydration
-  filterValidate.js — validateFilter() / validatePrivileges() (bans $where, unknown macros/tables/actions)
+  filterValidate.js — validateFilter() / validatePrivileges() (bans $where, unknown macros/tables/actions; fls wrapper validation), opValue() normaliser
   filterCodec.js    — encodePrivileges()/decodePrivileges() — NeDB storage escaping (see Lessons)
+  redaction.js      — REDACTED sentinel ('***redacted***') shared by the server mask hook and the app UI
 
 server/pipeline/
   authFlag.js       — isAuthEnabled()
   identity.js       — identityMiddleware: header → user lookup → JIT-pending → grants → ALS
   authorisation.js  — checkAccess() (sync, 3 phases), enforceWriteScope() (async post-image), requireAction()
   attribution.js    — wildcard pre-hooks stamping createdBy/updatedBy (registered via db/index.js import)
+  fieldSecurity.js  — wildcard fls hooks: mask read-hidden fields post-find/findOne, strip write-hidden fields pre-insert/update (registered AFTER attribution)
   systemContext.js  — runAsSystem(fn, extraStore) — system identity for background/engine work
   context.js        — buildContext() now includes `auth` from ALS
-  index.js          — write path awaits enforceWriteScope between checkAccess and pre-hooks
+  index.js          — write path awaits enforceWriteScope between checkAccess and pre-hooks; proxy exposes `collectionName`
 
 server/services/
   userService.js    — users CRUD, findByEmail, createPending (JIT), syncMembership (M2M both sides)
   roleService.js    — roles CRUD, privilege validation, filter encode/decode at the storage boundary
-  accessService.js  — resolveGrants(user): union roles → macro-resolve → grant shape for checkAccess
+  accessService.js  — resolveGrants(user): union roles → macro-resolve → grant shape for checkAccess; per-op fls intersection
 
-server/utils/errors.js — ForbiddenError (403 + code), respondError(res, err, fallback)
+server/odata.js        — buildQuery() rejects $filter/$orderby/$summary/baseFilter refs to read-hidden fields (400 field_forbidden)
+server/utils/errors.js — ForbiddenError (403 + code), BadRequestError (400 + code), respondError(res, err, fallback)
 server/index.js        — identityMiddleware registered right after the ALS middleware; central error handler
-server/db/index.js     — users.db/roles.db wrapped; calendar/ticket stores now wrapped; unique users.email index
+server/db/index.js     — users.db/roles.db wrapped; calendar/ticket stores now wrapped; unique users.email index; collectionsByName map
 ```
 
 ## Data Model
@@ -51,7 +54,7 @@ server/db/index.js     — users.db/roles.db wrapped; calendar/ticket stores now
 |-------|-------------|
 | name | Required |
 | description | Optional |
-| privileges | `{ [table]: { read: filter\|bool, create: bool, update: filter\|bool, delete: filter\|bool, actions: [names] } }` — stored ENCODED (see Lessons), decoded on every read |
+| privileges | `{ [table]: { read: filter\|bool\|{access, fls:[fields]}, create: bool\|{access, fls}, update: <as read>, delete: filter\|bool, actions: [names] } }` — stored ENCODED (see Lessons), decoded on every read. The `{ access, fls }` wrapper is written ONLY when fls is non-empty (the `fls` key IS the discriminator — zero migration for plain-shaped roles). `delete` never carries fls (whole-record op, rejected at validation) |
 | userIds | Array of member user ids — managed ONLY via `userService.syncMembership` |
 | userCount | Computed on read (not stored) |
 
@@ -67,6 +70,52 @@ Backup: both collections are included in R2 backup archives and restore (backupS
 - **Named actions** (`requireAction(table, action)` route middleware): gates lifecycle endpoints. After the gate passes, routes do a **caller-scoped existence check** (`getById` under user grants → 404 if invisible) then execute the operation under **system identity** (`runAsSystem`) because lifecycle ops perform privileged cross-entity writes (invoice confirm sets locks on timesheets/expenses and bumps the invoice seed) that table grants shouldn't have to cover. Current actions: invoices `confirm/post/unconfirm/updatePayment`, stagedTransactions `submit`, importJobs `abandon`, calendarSources/ticketSources `refresh`.
 - **Attribution**: wildcard pre-hooks stamp `createdBy`/`updatedBy` (acting email, or `system`) on every insert/update when AUTH_ENABLED. These fields are audit-only — **never** used in filter evaluation.
 - **403 surfacing**: pipeline throws `ForbiddenError` (statusCode 403 + machine `code`: `unauthenticated`/`pending`/`disabled`/`forbidden`/`scope_escape`); route catch blocks call `respondError(res, err, fallback)`; a central Express error handler is the safety net.
+
+## Field-Level Security (fls)
+
+Per role, per table, **per operation** (`read`/`create`/`update` — never `delete`), an fls list hides individual fields from members. Field names are free-form (schemaless data layer): the Roles editor samples suggestions from records (`GET /admin/api/roles/table-fields/:table`, ~200-doc sample minus PROTECTED_FIELDS) but custom values are always allowed; names not present on a record are ignored silently.
+
+**Read masking** (`fieldSecurity.js` post-hook on `find`/`findOne`): read-hidden fields are masked in place on every fetched doc — strings → `"***redacted***"` (shared `REDACTED` constant), everything else → `null`; keys stay present, absent keys stay absent; `count` untouched. Covers lists, detail, `$expand` nested docs (masked per their own table), enrichment reads, MCP, reports — everything through the wrapped collections. NeDB returns deep copies, so in-place mutation is safe.
+
+**Write stripping** (pre-hooks on `insert`/`update`, registered after attribution so `updatedBy` lands first): effective sets are **insert = read ∪ create**, **update = read ∪ update** — read-hidden implies write-stripped. Write-only fields are deliberately unsupported: forms save full objects, so honouring a write-only combination would echo masked values over real data. Strips match the full modifier key AND its first dot-segment (`$set['resources.0.dailyRate']` → `resources`). Because services write with `$set` and the strip runs AFTER all service logic, a stripped field is simply never mentioned in the modifier — the stored value survives byte-for-byte even when a service invents values for absent fields (projectService `undefined → null` inheritance) or normalises a masked echo (`normalizeResources(null) → []`). **Replacement-style updates (modifier with no `$` operators) are REJECTED 403 `fls_replacement_update`, never stripped** — stripping a replacement doc would erase the hidden fields.
+
+**Query-inference rejection** (`server/odata.js` `buildQuery`): `$filter` probes, `$orderby`, `$summary`, and legacy params folded into `baseFilter` referencing a read-hidden field → **400 `field_forbidden`** (typed `BadRequestError`, so GET routes surface 400 despite their 500 fallback). `$select` is allowed — masking runs first and it only narrows. `useODataList` drops read-hidden fields from its auto-`$summary` client-side so one hidden money column doesn't 400 the whole list.
+
+**Merge across roles** (`resolveGrants`): per-op most-permissive **intersection** — a field is hidden for an op only when EVERY role granting that op lists it; a granting role with no fls ⇒ no exclusions for that op. Grant shape: `grants[table].fls = { read?: Set, create?: Set, update?: Set }` (keys only when non-empty). `/api/me` mirrors it as arrays in `tables[t].fls`.
+
+**PROTECTED_FIELDS** (registry; rejected at role save): `_id, createdAt, updatedAt, createdBy, updatedBy, impersonatedBy, isLocked, isLockedReason`. Masking `isLocked` would blind `assertNotLocked` (services read lock state through the masked collection) and silently disable record locking; stripping attribution fields would erase audit stamps.
+
+**Bypasses**: system identity (`runAsSystem`), superuser (admin surface), and flag-off legacy mode are untouched by construction — `fieldSecurity` bails exactly like attribution.
+
+### Caveats (admin configuration rules)
+
+- **Computed/enriched fields derive their visibility from their SOURCE fields — by design** (user ruling, not a limitation): enrichment runs per-service AFTER the pipeline, so a computed field is never masked by name (a computed name in an fls list is ignored silently, per the elasticity rule) and instead reflects whatever its masked/visible inputs produce. Hiding `projects.rate` alone lets `effectiveRate` fall back to the still-visible `client.defaultRate` (projectService.js:74) — that is correct behaviour; to degrade the computation, hide its sources (`projects.rate` + `clients.defaultRate` ⇒ `effectiveRate` computes 0). Do NOT add response-level masking for computed fields.
+- **Masked internal reads degrade derived recomputation**: services recompute stored values from cross-entity reads under user identity (timesheet days/amount from project rates; invoice lines snapshot timesheet/expense values). Partial exclusion stores degraded math; excluding the full group means the recomputed outputs are stripped too.
+- **Exclude arithmetic siblings together** (from the service audit):
+
+| Entity | Hide together | Why |
+|---|---|---|
+| timesheets | hours, days, amount (+ projectId, clientId if scoping matters) | days/amount recomputed from hours + project rates on every save |
+| expenses | amount, vatAmount, vatPercent, netAmount | VAT recompute cross-derives all four |
+| expenses | projectId, clientId | clientId is a snapshot of projects.clientId |
+| invoices | lines, transactions, subtotal, totalVat, total | totals recomputed from lines; RMW link/unlink flows |
+| transactions | status, ignoreReason | lock state derived from both |
+| notebooks | title, summary, tags, related* — title effectively un-hideable | all re-derived from content on save; title drives on-disk folder resolution |
+| projects ⇄ clients | rate + defaultRate (→ effectiveRate); workingHoursPerDay pair | inheritance fallback leaks/zeroes the computed value |
+| cross-entity | projects.rate/workingHoursPerDay/clientId/vatPercent, clients.defaultRate/workingHoursPerDay/currency must stay READABLE for roles that write timesheets/expenses/invoices | masked inputs → £0 amounts, wrong days, redacted currency snapshots |
+
+- **Array fields on RMW endpoints** (invoices.lines/transactions, dailyPlans link arrays, expenses.transactions/attachments): read-hiding them for a role that still holds update makes read-modify-write endpoints see `null` — keep them readable wherever writable.
+- **Status fields must stay readable for update roles**: guards were hardened to fail closed (invoice update whitelists draft/confirmed; transaction status validated against the vocabulary), so a masked status now errors loudly instead of failing open — but the sensible config is simply not to read-hide `status` from writers.
+- **Hiding a field used by a list's default `$orderby`/filters or a role pre-filter** makes those views 400 by design (no graceful degradation).
+- **On-disk content bypasses fls entirely** (notebooks content.md/media, daily-plan content/recap/briefing files) — fls governs DB fields only.
+- **Required fields**: hiding a create-required field (e.g. timesheets.projectId) makes that create form a dead end (Save disabled, field shows the hidden hint) — deliberate loud failure.
+
+### Frontend rendering
+
+- `/api/me` `tables[t].fls` → `CurrentUserContext.fls(table)` → `{ read, create, update }` Sets (shared empties in legacy mode).
+- **`FormDataProvider`** (in `FormSection.jsx`) — per-form context `{ table, isNew, fls, changedFields, locked }`; declared once at the form root. **`FormField name="field"`** derives everything: read-hidden → standard redacted control (label preserved by cloning the Fluent `Field`; plain `Input` showing `***redacted***` + eye-off icon + "Hidden by your security role" hint; children never rendered, so dropdown options stay out of the DOM); write-blocked-only → real value inside a per-field disabled fieldset with "Read-only for your security role". `changed`/`redacted` props remain as provider-less fallbacks. The `name` prop replaces `changed={changedFields.has(...)}` at every call site.
+- Forms also: strip `read ∪ (isNew ? create : update)` keys from create defaults, `QueryStringPrefill exclude`, and the save payload (server strips authoritatively regardless — the client strip keeps masked values out of service validation).
+- Lists: numeric cells/cards/footers render `—` when their field is read-hidden (never a fake £0.00); string columns show the sentinel naturally.
 
 ## Identity Lifecycle
 
@@ -142,6 +191,8 @@ Full write-through impersonation for System Admin-style users — the app behave
 
 **If you add a background job:** wrap its entry point in `runAsSystem` or it will be denied (or fail open with flag off and surprise you later).
 
+**If you change fieldSecurity.js, the fls grant resolution, or buildQuery's rejection:** re-run the fls curl matrix (masked list/detail incl. string sentinel + null numerics; per-op intersection across two roles; write-blocked-only role reads real value but PUT leaves it unchanged; read-hidden echo PUT leaves stored values byte-identical — verify via raw .db read; 400 field_forbidden on $filter/$orderby/$summary; $select still masked-200; /api/me per-op fls arrays; role save rejects protected/dotted/fls-on-delete; flag-off byte-identical; sampling endpoint sorted-minus-protected).
+
 **If you change identity.js or the impersonation flow:** re-run the impersonation curl matrix — start (Set-Cookie), `/api/me` shows target + `impersonating.by`, scoped reads/writes as target with `updatedBy: target` + `impersonatedBy: admin`, guard rails (self 400, admin target 403, non-admin 403), switch-target while impersonating works (skip-swap), pending target answers `/api/me` but 403s data, DELETE works while impersonating, non-impersonated update sets `impersonatedBy: null`, flag-off POST → 400.
 
 ## Lessons Learned
@@ -149,4 +200,5 @@ Full write-through impersonation for System Admin-style users — the app behave
 - **NeDB forbids stored document keys beginning with `$` or containing `.`** — the datastore refuses to LOAD a file containing them, bricking the whole collection. Role filters are therefore stored escaped (`$gte` → `＄gte` U+FF04, `a.b` → `a．b` U+FF0E) via `shared/authz/filterCodec.js`, and decoded on every read (roleService responses, accessService grant resolution). Never insert raw filters into `roles` directly.
 - **zsh does not word-split unquoted variables** — when curl-testing with a header in a shell var, quote per-flag or requests silently break.
 - **The cursor path cannot await** — all read-side enforcement must stay inside the synchronous `checkAccess`; async work (post-image checks, identity resolution) happens at the request boundary or on the write path, which does await.
+- **Partial fls exclusion of a derived group stores desynced math — observed live, not theoretical.** A role with `update.fls: ['hours']` alone let a PUT with `hours: 2` recompute `amount` (2h × rate = £175) from the payload BEFORE the pipeline stripped `hours` from `$set` — stored result: `hours: 8, amount: 175`. The strip guarantees no field is *overwritten*, but derived outputs computed from a stripped input still persist unless the whole sibling group (`hours/days/amount`) is excluded together. This is why the sibling-group table above exists and is echoed in the Roles editor hint.
 - **The impersonation cookie's `Secure` flag is gated on `X-Forwarded-Proto`, not `req.secure`** — the tunnel terminates https at the edge and forwards plain http to the app, and no `trust proxy` is set, so `req.secure` is always false server-side. Read `req.headers['x-forwarded-proto'] === 'https'` to decide `Secure` so the cookie is `Secure` in the tunnelled deployment yet still works over local http dev. `clearCookie` matches on name/path/domain only, so the `DELETE` handler needs no matching `secure` attribute.

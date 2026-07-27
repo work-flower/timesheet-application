@@ -170,4 +170,6 @@ export const rolesApi = {
   create: (data) => request('/roles', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/roles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/roles/${id}`, { method: 'DELETE' }),
+  // Sampled field names for the fls (hidden fields) pickers
+  getTableFields: (table) => request(`/roles/table-fields/${encodeURIComponent(table)}`),
 };

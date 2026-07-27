@@ -120,6 +120,11 @@ export async function update(id, data) {
   delete updateData.source;
   delete updateData.importJobId;
 
+  // Fail closed on unknown status values (bad payload never reaches storage)
+  if (updateData.status != null && !VALID_STATUSES.includes(updateData.status)) {
+    throw new Error(`Invalid transaction status "${updateData.status}"`);
+  }
+
   // Validate ignoreReason when setting status to ignored
   if (updateData.status === 'ignored' && !updateData.ignoreReason && !existing.ignoreReason) {
     throw new Error('Ignore reason is required when status is ignored');
@@ -128,6 +133,8 @@ export async function update(id, data) {
   await transactions.update({ _id: id }, { $set: updateData });
   return getById(id);
 }
+
+const VALID_STATUSES = ['unmatched', 'matched', 'ignored'];
 
 export async function updateMapping(id, data) {
   const existing = await transactions.findOne({ _id: id });
@@ -140,6 +147,11 @@ export async function updateMapping(id, data) {
 
   // Validate ignoreReason required when status is ignored
   const newStatus = updateData.status ?? existing.status;
+  // Fail closed on unknown status (bad payload, or existing.status unreadable
+  // for this caller) — the branches below must never run against garbage
+  if (!VALID_STATUSES.includes(newStatus)) {
+    throw new Error(`Invalid or unavailable transaction status "${newStatus}"`);
+  }
   const newIgnoreReason = updateData.ignoreReason !== undefined ? updateData.ignoreReason : existing.ignoreReason;
   if (newStatus === 'ignored' && !newIgnoreReason) {
     throw new Error('Ignore reason is required when status is ignored');

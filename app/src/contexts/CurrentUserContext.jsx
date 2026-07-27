@@ -15,6 +15,11 @@ import { meApi } from '../api/index.js';
  */
 const CurrentUserContext = createContext(null);
 
+// Stable empties so consumers can destructure without null checks and memoised
+// column factories don't re-run on every render.
+const EMPTY_SET = new Set();
+const EMPTY_FLS = Object.freeze({ read: EMPTY_SET, create: EMPTY_SET, update: EMPTY_SET });
+
 const BLOCKED_COPY = {
   pending: {
     icon: ShieldPersonRegular,
@@ -117,6 +122,17 @@ export function CurrentUserProvider({ children }) {
     const enabled = me?.enabled === true;
     const tables = me?.tables || {};
     const actions = me?.actions || {};
+    // Field-level security: per-table per-op hidden-field Sets from /api/me.
+    // Legacy mode (enabled=false) → always the shared empty sets.
+    const flsByTable = {};
+    for (const [table, info] of Object.entries(tables)) {
+      if (!info.fls) continue;
+      flsByTable[table] = {
+        read: info.fls.read?.length ? new Set(info.fls.read) : EMPTY_SET,
+        create: info.fls.create?.length ? new Set(info.fls.create) : EMPTY_SET,
+        update: info.fls.update?.length ? new Set(info.fls.update) : EMPTY_SET,
+      };
+    }
     return {
       me,
       enabled,
@@ -125,6 +141,7 @@ export function CurrentUserProvider({ children }) {
       canUpdate: (table) => !enabled || !!tables[table]?.update,
       canDelete: (table) => !enabled || !!tables[table]?.delete,
       canAction: (table, action) => !enabled || (actions[table] || []).includes(action),
+      fls: (table) => (enabled && flsByTable[table]) || EMPTY_FLS,
     };
   }, [me]);
 

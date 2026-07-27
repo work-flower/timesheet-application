@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCurrentUser } from '../../contexts/CurrentUserContext.jsx';
 import {
@@ -137,7 +137,7 @@ function lineBreakdown(lines) {
   return { ts, exp, wi };
 }
 
-const columns = [
+const makeColumns = (hidden) => [
   createTableColumn({
     columnId: 'invoiceNumber',
     compare: (a, b) => (a.invoiceNumber || '').localeCompare(b.invoiceNumber || ''),
@@ -192,7 +192,9 @@ const columns = [
     renderHeaderCell: () => 'Amount',
     renderCell: (item) => (
       <TableCellLayout>
-        {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0)}
+        {hidden.has('total')
+          ? '—'
+          : new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0)}
       </TableCellLayout>
     ),
   }),
@@ -215,7 +217,9 @@ const columns = [
 export default function InvoiceList() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const { canCreate } = useCurrentUser();
+  const { canCreate, fls } = useCurrentUser();
+  const hidden = fls('invoices').read;
+  const gridColumns = useMemo(() => makeColumns(hidden), [hidden]);
 
   // --- OData-driven data flow ---
   const {
@@ -327,7 +331,7 @@ export default function InvoiceList() {
         ) : viewMode === 'grid' ? (
           <DataGrid
             items={items}
-            columns={columns}
+            columns={gridColumns}
             sortable
             getRowId={(item) => item._id}
             selectionMode="multiselect"
@@ -368,7 +372,7 @@ export default function InvoiceList() {
               </>
             )}
             renderActions={(item) => (
-              <Text className={styles.amountText}>{fmt.format(item.total || 0)}</Text>
+              <Text className={styles.amountText}>{hidden.has('total') ? '—' : fmt.format(item.total || 0)}</Text>
             )}
             renderBottomLine={(item) => {
               const b = lineBreakdown(item.lines);
@@ -412,7 +416,7 @@ export default function InvoiceList() {
             )}
             renderMeta={(item) => (
               <>
-                <CardMetaItem label="Total" value={fmt.format(item.total || 0)} />
+                <CardMetaItem label="Total" value={hidden.has('total') ? '—' : fmt.format(item.total || 0)} />
                 <CardMetaItem label="Date" value={item.invoiceDate || '—'} />
                 <CardMetaItem label="Due" value={item.dueDate || '—'} />
               </>
@@ -447,7 +451,7 @@ export default function InvoiceList() {
         <div className={styles.summary}>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Amount</Text>
-            <Text className={styles.summaryValue}>{fmt.format(summary.total ?? 0)}</Text>
+            <Text className={styles.summaryValue}>{hidden.has('total') ? '—' : fmt.format(summary.total ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Invoices</Text>

@@ -157,7 +157,7 @@ function getMonthRange() {
 
 const fmt = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
 
-const gridColumns = [
+const makeColumns = (hidden) => [
   createTableColumn({
     columnId: 'date',
     compare: (a, b) => a.date.localeCompare(b.date),
@@ -198,19 +198,19 @@ const gridColumns = [
     columnId: 'amount',
     compare: (a, b) => (a.amount || 0) - (b.amount || 0),
     renderHeaderCell: () => 'Amount',
-    renderCell: (item) => <TableCellLayout>{fmt.format(item.amount || 0)}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('amount') ? '—' : fmt.format(item.amount || 0)}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'vatAmount',
     compare: (a, b) => (a.vatAmount || 0) - (b.vatAmount || 0),
     renderHeaderCell: () => 'VAT',
-    renderCell: (item) => <TableCellLayout>{item.vatAmount ? fmt.format(item.vatAmount) : '—'}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('vatAmount') ? '—' : (item.vatAmount ? fmt.format(item.vatAmount) : '—')}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'netAmount',
     compare: (a, b) => (a.netAmount || 0) - (b.netAmount || 0),
     renderHeaderCell: () => 'Net Amount',
-    renderCell: (item) => <TableCellLayout>{fmt.format(item.netAmount ?? ((item.amount || 0) - (item.vatAmount || 0)))}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('netAmount') ? '—' : fmt.format(item.netAmount ?? ((item.amount || 0) - (item.vatAmount || 0)))}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'billable',
@@ -236,7 +236,9 @@ function deriveRange(startDate, endDate) {
 export default function ExpenseList() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const { canCreate } = useCurrentUser();
+  const { canCreate, fls } = useCurrentUser();
+  const hidden = fls('expenses').read;
+  const gridColumns = useMemo(() => makeColumns(hidden), [hidden]);
 
   // --- OData-driven data flow ---
   const {
@@ -503,7 +505,7 @@ export default function ExpenseList() {
                   <Badge size="small" appearance="filled" color="brand">{item.transactions.length} linked</Badge>
                 )}
                 <Badge size="small" appearance="filled" color={item.billable ? 'success' : 'warning'}>{item.billable ? 'Billable' : 'Non-billable'}</Badge>
-                <Text className={styles.amountText}>{fmt.format(item.amount || 0)}</Text>
+                <Text className={styles.amountText}>{hidden.has('amount') ? '—' : fmt.format(item.amount || 0)}</Text>
               </>
             )}
             renderBottomLine={(item) => (
@@ -529,9 +531,9 @@ export default function ExpenseList() {
             )}
             renderMeta={(item) => (
               <>
-                <CardMetaItem label="Amount" value={fmt.format(item.amount || 0)} />
-                <CardMetaItem label="VAT" value={item.vatAmount ? fmt.format(item.vatAmount) : '—'} />
-                <CardMetaItem label="Net" value={fmt.format(item.netAmount ?? ((item.amount || 0) - (item.vatAmount || 0)))} />
+                <CardMetaItem label="Amount" value={hidden.has('amount') ? '—' : fmt.format(item.amount || 0)} />
+                <CardMetaItem label="VAT" value={hidden.has('vatAmount') ? '—' : (item.vatAmount ? fmt.format(item.vatAmount) : '—')} />
+                <CardMetaItem label="Net" value={hidden.has('netAmount') ? '—' : fmt.format(item.netAmount ?? ((item.amount || 0) - (item.vatAmount || 0)))} />
                 <CardMetaItem label="Type" value={item.expenseType || '—'} />
               </>
             )}
@@ -551,15 +553,15 @@ export default function ExpenseList() {
         <div className={styles.summary}>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Amount</Text>
-            <Text className={styles.summaryValue}>{fmt.format(summary.amount ?? 0)}</Text>
+            <Text className={styles.summaryValue}>{hidden.has('amount') ? '—' : fmt.format(summary.amount ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total VAT</Text>
-            <Text className={styles.summaryValue}>{fmt.format(summary.vatAmount ?? 0)}</Text>
+            <Text className={styles.summaryValue}>{hidden.has('vatAmount') ? '—' : fmt.format(summary.vatAmount ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Total Net</Text>
-            <Text className={styles.summaryValue}>{fmt.format(summary.netAmount ?? 0)}</Text>
+            <Text className={styles.summaryValue}>{hidden.has('netAmount') ? '—' : fmt.format(summary.netAmount ?? 0)}</Text>
           </div>
           <div className={styles.summaryItem}>
             <Text className={styles.summaryLabel}>Entries</Text>

@@ -21,7 +21,7 @@ import {
 import { ReceiptRegular } from '@fluentui/react-icons';
 import { timesheetsApi, projectsApi } from '../../api/index.js';
 import InvoicePickerDialog from '../../components/InvoicePickerDialog.jsx';
-import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
@@ -91,7 +91,15 @@ export default function TimesheetForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
-  const { canCreate, canUpdate } = useCurrentUser();
+  const { canCreate, canUpdate, fls } = useCurrentUser();
+
+  // Field-level security: read-hidden fields render redacted; the strip set
+  // (read ∪ mode-op) is removed from create defaults, QS prefill and payloads
+  const tableFls = fls('timesheets');
+  const stripSet = useMemo(
+    () => new Set([...tableFls.read, ...(isNew ? tableFls.create : tableFls.update)]),
+    [tableFls, isNew]
+  );
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -130,11 +138,13 @@ export default function TimesheetForm() {
           const data = await timesheetsApi.getById(id);
           setLoadedData(data);
           resetBase(data);
-        } else if (active.length > 0) {
-          const computed = computeDaysAmount(8, active[0]._id, active);
-          resetBase({ date: today, hours: 8, projectId: active[0]._id, ...computed });
         } else {
-          resetBase({ date: today, hours: 8 });
+          const defaults = active.length > 0
+            ? { date: today, hours: 8, projectId: active[0]._id, ...computeDaysAmount(8, active[0]._id, active) }
+            : { date: today, hours: 8 };
+          // No phantom defaults in fields this user cannot see or set
+          for (const f of stripSet) delete defaults[f];
+          resetBase(defaults);
         }
       } catch (err) {
         setError(err.message);
@@ -143,7 +153,7 @@ export default function TimesheetForm() {
       }
     };
     init();
-  }, [id, isNew, resetBase, today]);
+  }, [id, isNew, resetBase, today, stripSet]);
 
   const selectedProject = useMemo(
     () => allProjects.find((p) => p._id === form.projectId),
@@ -187,6 +197,9 @@ export default function TimesheetForm() {
     setSuccess(false);
     try {
       const { days, amount, ...payload } = form;
+      // Never echo masked/blocked values back — the server strips them anyway,
+      // but absent beats sending sentinels into service validation
+      for (const f of stripSet) delete payload[f];
       if (isNew) {
         const created = await timesheetsApi.create(payload);
         return { ok: true, id: created._id };
@@ -202,7 +215,7 @@ export default function TimesheetForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, resetBase, today]);
+  }, [form, isNew, id, resetBase, today, stripSet]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -246,7 +259,8 @@ export default function TimesheetForm() {
     <>
     {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
     <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
-      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
+    <FormDataProvider table="timesheets" isNew={isNew} fls={tableFls} changedFields={changedFields} locked={isLocked}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} exclude={stripSet} />
       <FormCommandBar
         onBack={() => { notifyParent('back', base, form); goBack('/timesheets'); }}
         onSave={handleSave}
@@ -288,12 +302,12 @@ export default function TimesheetForm() {
 
         <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
           <FormSection title="Entry Details">
-            <FormField changed={changedFields.has('date')}>
+            <FormField name="date">
               <Field label="Date" required>
                 <Input type="date" name="date" value={form.date ?? ''} max={today} onChange={handleChange('date')} />
               </Field>
             </FormField>
-            <FormField changed={changedFields.has('projectId')}>
+            <FormField name="projectId">
               <Field label="Project" required hint={selectedProject ? `Client: ${selectedProject.clientName}` : undefined}>
                 <Select name="projectId" value={form.projectId ?? ''} onChange={handleChange('projectId')}>
                   <option value="">Select project...</option>
@@ -309,13 +323,13 @@ export default function TimesheetForm() {
                 </Select>
               </Field>
             </FormField>
-            <FormField changed={changedFields.has('hours')}>
+            <FormField name="hours">
               <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
                 <Input type="number" name="hours" value={String(form.hours ?? '')} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
               </Field>
             </FormField>
             <div className={styles.daysAmountCell}>
-              <FormField changed={changedFields.has('days')}>
+              <FormField name="days">
                 <Field label="Days">
                   <Input
                     name="days"
@@ -324,7 +338,7 @@ export default function TimesheetForm() {
                   />
                 </Field>
               </FormField>
-              <FormField changed={changedFields.has('amount')}>
+              <FormField name="amount">
                 <Field label="Amount">
                   <Input
                     name="amount"
@@ -343,7 +357,7 @@ export default function TimesheetForm() {
               <TabList selectedValue="notes" size="small">
                 <Tab value="notes">Notes</Tab>
               </TabList>
-              <FormField fullWidth changed={changedFields.has('notes')}>
+              <FormField fullWidth name="notes">
                 <MarkdownEditor
                   name="notes"
                   value={form.notes}
@@ -388,6 +402,7 @@ export default function TimesheetForm() {
           </div>
         </fieldset>
       </div>
+    </FormDataProvider>
       <ConfirmDialog
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}

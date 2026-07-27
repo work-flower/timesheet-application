@@ -393,7 +393,22 @@ export default function InvoiceForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
-  const { canCreate, canUpdate, canAction } = useCurrentUser();
+  const { canCreate, canUpdate, canAction, fls } = useCurrentUser();
+
+  // Field-level security: read-hidden fields render redacted; the strip set
+  // (read ∪ mode-op) is removed from create defaults, QS prefill and payloads
+  const tableFls = fls('invoices');
+  const stripSet = useMemo(
+    () => new Set([...tableFls.read, ...(isNew ? tableFls.create : tableFls.update)]),
+    [tableFls, isNew]
+  );
+  // The lines editor is not FormField-based — block it wholesale when hidden,
+  // and coerce the masked null back to [] so line math stays crash-free
+  const linesBlocked = stripSet.has('lines');
+  const coerceFls = useCallback(
+    (data) => ({ ...data, lines: Array.isArray(data.lines) ? data.lines : [] }),
+    []
+  );
 
   const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker({ lines: [] });
   const notifyParent = useNotifyParent();
@@ -485,7 +500,7 @@ export default function InvoiceForm() {
           const data = await invoicesApi.getById(id);
           setInvoiceData(data);
           setClientProjects(data.clientProjects || []);
-          resetBase(data);
+          resetBase(coerceFls(data));
 
           // Fetch source data for client-side consistency checking
           await fetchSourceData(data.clientId);
@@ -499,7 +514,7 @@ export default function InvoiceForm() {
       }
     };
     init();
-  }, [id, isNew, resetBase, fetchSourceData]);
+  }, [id, isNew, resetBase, fetchSourceData, coerceFls]);
 
   const handleChange = (field) => (e, data) => {
     setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
@@ -521,6 +536,9 @@ export default function InvoiceForm() {
         includeTimesheetReport: form.includeTimesheetReport,
         includeExpenseReport: form.includeExpenseReport,
       };
+      // Never echo masked/blocked values back — the server strips them anyway,
+      // but absent beats sending sentinels into service validation
+      for (const f of stripSet) delete payload[f];
 
       if (isNew) {
         const created = await invoicesApi.create(payload);
@@ -529,7 +547,7 @@ export default function InvoiceForm() {
         const updated = await invoicesApi.update(id, payload);
         setInvoiceData(updated);
         setClientProjects(updated.clientProjects || []);
-        resetBase(updated);
+        resetBase(coerceFls(updated));
         return { ok: true };
       }
     } catch (err) {
@@ -538,7 +556,7 @@ export default function InvoiceForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, resetBase]);
+  }, [form, isNew, id, resetBase, stripSet, coerceFls]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -590,7 +608,7 @@ export default function InvoiceForm() {
       if (updated) {
         setInvoiceData(updated);
         setClientProjects(updated.clientProjects || []);
-        resetBase(updated);
+        resetBase(coerceFls(updated));
         await fetchSourceData(updated.clientId);
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
@@ -611,7 +629,7 @@ export default function InvoiceForm() {
       }
       const updated = await invoicesApi.recalculate(id);
       setInvoiceData(updated);
-      resetBase(updated);
+      resetBase(coerceFls(updated));
       await fetchSourceData(updated.clientId);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -657,7 +675,7 @@ export default function InvoiceForm() {
   const refreshFromInvoice = useCallback((updated) => {
     setInvoiceData(updated);
     setClientProjects(updated.clientProjects || []);
-    resetBase(updated);
+    resetBase(coerceFls(updated));
   }, [resetBase]);
 
   // --- Transaction picker ---
@@ -1091,7 +1109,8 @@ export default function InvoiceForm() {
     <>
       {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
       <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
-      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
+    <FormDataProvider table="invoices" isNew={isNew} fls={tableFls} changedFields={changedFields} locked={isLocked}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} exclude={stripSet} />
       {/* Custom command bar with lifecycle actions */}
       <div className={styles.commandBar}>
         <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => goBack('/invoices')} size="small">
@@ -1217,7 +1236,7 @@ export default function InvoiceForm() {
             <>
               <fieldset disabled={!!isReadOnly} style={{ border: 'none', padding: 0, margin: 0, minWidth: 0, ...(isReadOnly ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
                 <FormSection title="Invoice Details">
-                  <FormField changed={changedFields.has('clientId')}>
+                  <FormField name="clientId">
                     <Field label="Client" required>
                       <Select
                         name="clientId"
@@ -1237,29 +1256,29 @@ export default function InvoiceForm() {
                       <Input name="invoiceNumber" value={form.invoiceNumber || '—'} disabled />
                     </Field>
                   </FormField>
-                  <FormField changed={changedFields.has('invoiceDate')}>
+                  <FormField name="invoiceDate">
                     <Field label="Invoice Date">
                       <Input type="date" name="invoiceDate" value={form.invoiceDate || ''} onChange={handleChange('invoiceDate')} />
                     </Field>
                   </FormField>
-                  <FormField changed={changedFields.has('servicePeriodStart')}>
+                  <FormField name="servicePeriodStart">
                     <Field label="Service Period Start">
                       <Input type="date" name="servicePeriodStart" value={form.servicePeriodStart || ''} onChange={handleChange('servicePeriodStart')} />
                     </Field>
                   </FormField>
-                  <FormField changed={changedFields.has('dueDate')}>
+                  <FormField name="dueDate">
                     <Field label="Due Date">
                       <Input type="date" name="dueDate" value={form.dueDate || ''} onChange={handleChange('dueDate')} />
                     </Field>
                   </FormField>
-                  <FormField changed={changedFields.has('servicePeriodEnd')}>
+                  <FormField name="servicePeriodEnd">
                     <Field label="Service Period End">
                       <Input type="date" name="servicePeriodEnd" value={form.servicePeriodEnd || ''} onChange={handleChange('servicePeriodEnd')} />
                     </Field>
                   </FormField>
                 </FormSection>
 
-                <FormField fullWidth changed={changedFields.has('additionalNotes')}>
+                <FormField fullWidth name="additionalNotes">
                   <Field label="Additional Notes" style={{ marginTop: '8px' }}>
                     <Textarea
                       name="additionalNotes"
@@ -1272,10 +1291,11 @@ export default function InvoiceForm() {
                 </FormField>
 
                 {/* Invoice Lines — unified view */}
+                <fieldset disabled={linesBlocked} style={{ border: 'none', padding: 0, margin: 0, ...(linesBlocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
                 <div style={{ marginTop: '24px' }}>
                   <div className={styles.sectionHeader}>
                     <Text style={{ fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase400 }}>
-                      Line Sources ({form.lines.length})
+                      Line Sources ({(form.lines || []).length})
                     </Text>
                     {!isReadOnly && (
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -1316,20 +1336,21 @@ export default function InvoiceForm() {
                     </DataGrid>
                   )}
                 </div>
+                </fieldset>
 
                 {/* Totals — computed live from form.lines */}
                 <div className={styles.totalsSection}>
                   <div className={styles.totalRow}>
                     <Text className={styles.totalLabel}>Sub Total:</Text>
-                    <Text className={styles.totalValue}>{fmt.format(liveTotals.subtotal)}</Text>
+                    <Text className={styles.totalValue}>{tableFls.read.has('lines') ? '\u2014' : fmt.format(liveTotals.subtotal)}</Text>
                   </div>
                   <div className={styles.totalRow}>
                     <Text className={styles.totalLabel}>Total VAT:</Text>
-                    <Text className={styles.totalValue}>{fmt.format(liveTotals.totalVat)}</Text>
+                    <Text className={styles.totalValue}>{tableFls.read.has('lines') ? '\u2014' : fmt.format(liveTotals.totalVat)}</Text>
                   </div>
                   <div className={styles.totalRow}>
                     <Text className={`${styles.totalLabel} ${styles.grandTotal}`}>Total Due:</Text>
-                    <Text className={`${styles.totalValue} ${styles.grandTotal}`}>{fmt.format(liveTotals.total)}</Text>
+                    <Text className={`${styles.totalValue} ${styles.grandTotal}`}>{tableFls.read.has('lines') ? '\u2014' : fmt.format(liveTotals.total)}</Text>
                   </div>
                 </div>
               </fieldset>
@@ -1604,6 +1625,7 @@ export default function InvoiceForm() {
         title="Unlink Transaction"
         message={`Are you sure you want to unlink "${unlinkTarget?.label}" from this invoice?`}
       />
+    </FormDataProvider>
     </div>
     </>
   );

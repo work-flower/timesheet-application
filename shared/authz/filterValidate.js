@@ -3,11 +3,61 @@
  * Shared between server (role save) and admin frontend (Roles editor on-blur checks).
  */
 import { SIMPLE_MACROS } from './macros.js';
-import { isKnownTable, knownActionsFor } from './registry.js';
+import { isKnownTable, knownActionsFor, PROTECTED_FIELDS } from './registry.js';
 
 const TODAY_OFFSET = /^\$\$today([+-]\d+)d$/;
 const REGEX_FLAGS = /^[gimsuy]*$/;
 const PRIVILEGE_KEYS = ['read', 'create', 'update', 'delete', 'actions'];
+
+/**
+ * An op value with field-level security is stored as { access, fls } — the
+ * wrapper form is only written when fls is non-empty, so the presence of an
+ * `fls` array IS the discriminator (a plain filter object never has one).
+ */
+function isFlsWrapper(value) {
+  return (
+    value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Array.isArray(value.fls)
+  );
+}
+
+/**
+ * Normalise an op's stored value to { access, fls }.
+ * Legacy plain values (true / filter / bool) become { access: value, fls: [] }.
+ * Shared by accessService (grant resolution) and the admin Roles editor.
+ */
+export function opValue(value) {
+  if (isFlsWrapper(value)) return { access: value.access, fls: value.fls };
+  return { access: value, fls: [] };
+}
+
+function validateFlsList(fls, label, errors) {
+  if (!Array.isArray(fls)) {
+    errors.push(`${label}: must be an array of field names`);
+    return;
+  }
+  for (const field of fls) {
+    if (typeof field !== 'string' || field.trim() === '') {
+      errors.push(`${label}: field names must be non-empty strings`);
+    } else if (field.startsWith('$')) {
+      errors.push(`${label}: "${field}" — field names cannot start with $`);
+    } else if (field.includes('.')) {
+      errors.push(`${label}: "${field}" — only top-level field names are supported`);
+    } else if (PROTECTED_FIELDS.includes(field)) {
+      errors.push(`${label}: "${field}" is protected and cannot be hidden`);
+    }
+  }
+}
+
+function validateWrapperShape(value, label, errors) {
+  for (const key of Object.keys(value)) {
+    if (key !== 'access' && key !== 'fls') {
+      errors.push(`${label}: unknown key "${key}" (expected access, fls)`);
+    }
+  }
+}
 
 /**
  * Validate a single stored filter object.
@@ -95,13 +145,32 @@ export function validatePrivileges(privileges) {
       if (!PRIVILEGE_KEYS.includes(key)) errors.push(`${table}.${key}: unknown privilege key`);
     }
     for (const op of ['read', 'update', 'delete']) {
-      const value = priv[op];
-      if (value === undefined || typeof value === 'boolean') continue;
-      const result = validateFilter(value);
+      const raw = priv[op];
+      if (raw === undefined) continue;
+      if (isFlsWrapper(raw)) {
+        // Field-level security does not apply to delete — whole-record operation.
+        if (op === 'delete') {
+          errors.push(`${table}.delete: field-level security (fls) does not apply to delete`);
+          continue;
+        }
+        validateWrapperShape(raw, `${table}.${op}`, errors);
+        validateFlsList(raw.fls, `${table}.${op}.fls`, errors);
+      }
+      const { access } = opValue(raw);
+      if (access === undefined || typeof access === 'boolean') continue;
+      const result = validateFilter(access);
       if (!result.ok) errors.push(...result.errors.map((e) => `${table}.${op}: ${e}`));
     }
-    if (priv.create !== undefined && typeof priv.create !== 'boolean') {
-      errors.push(`${table}.create: must be a boolean`);
+    if (priv.create !== undefined) {
+      const raw = priv.create;
+      if (isFlsWrapper(raw)) {
+        validateWrapperShape(raw, `${table}.create`, errors);
+        validateFlsList(raw.fls, `${table}.create.fls`, errors);
+      }
+      const { access } = opValue(raw);
+      if (access !== undefined && typeof access !== 'boolean') {
+        errors.push(`${table}.create: must be a boolean`);
+      }
     }
     if (priv.actions !== undefined) {
       if (!Array.isArray(priv.actions)) {

@@ -11,6 +11,9 @@
  */
 
 import { parseFilter as parseFilterAst } from 'odata-filter-to-ast';
+import als from './logging/asyncContext.js';
+import { isAuthEnabled } from './pipeline/authFlag.js';
+import { BadRequestError } from './utils/errors.js';
 
 // ---------------------------------------------------------------------------
 // $filter parsing — AST-based via odata-filter-to-ast
@@ -116,6 +119,59 @@ export function parseOrderBy(orderByStr) {
 }
 
 // ---------------------------------------------------------------------------
+// Field-level security — reject queries referencing read-hidden fields
+// ---------------------------------------------------------------------------
+
+// Collect field names referenced by a NeDB query object: keys starting with
+// '$' are operators (recurse into their values); anything else is a field path.
+function collectQueryFields(node, out) {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const item of node) collectQueryFields(item, out);
+    return;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (key.startsWith('$')) collectQueryFields(value, out);
+    else out.add(key);
+  }
+}
+
+/**
+ * A caller whose read grant hides fields must not be able to infer their
+ * values through query params: $filter probes (binary search), $orderby
+ * (relative magnitude), $summary (aggregate totals), or legacy params folded
+ * into baseFilter. Any reference to a read-hidden field → 400 field_forbidden.
+ * $select is deliberately allowed — masking runs before it and it only narrows.
+ */
+function rejectExcludedFields(collectionName, odataFilter, baseFilter, query) {
+  if (!collectionName || !isAuthEnabled()) return;
+  const auth = als.getStore()?.auth;
+  if (!auth || auth.system || auth.superuser) return;
+  const hidden = auth.grants?.[collectionName]?.fls?.read;
+  if (!hidden?.size) return;
+
+  const referenced = new Set();
+  collectQueryFields(odataFilter, referenced);
+  collectQueryFields(baseFilter, referenced);
+  const sort = parseOrderBy(query.$orderby);
+  if (sort) for (const field of Object.keys(sort)) referenced.add(field);
+  if (query.$summary) {
+    for (const field of query.$summary.split(',').map((s) => s.trim()).filter(Boolean)) {
+      referenced.add(field);
+    }
+  }
+
+  for (const field of referenced) {
+    if (hidden.has(field) || hidden.has(field.split('.')[0])) {
+      throw new BadRequestError(
+        `Query references restricted field "${field}" on ${collectionName}`,
+        'field_forbidden'
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // buildQuery — orchestrates filter + sort + pagination against a collection
 // ---------------------------------------------------------------------------
 
@@ -130,6 +186,7 @@ export function parseOrderBy(orderByStr) {
  */
 export async function buildQuery(collection, query = {}, defaultSort = {}, baseFilter = {}) {
   const odataFilter = parseFilter(query.$filter);
+  rejectExcludedFields(collection.collectionName, odataFilter, baseFilter, query);
   const filter = { ...baseFilter, ...odataFilter };
 
   let totalCount;

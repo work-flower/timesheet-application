@@ -20,6 +20,10 @@ const ASYNC_METHODS = new Set(['insert', 'update', 'remove']);
 export function wrapCollection(name, datastore) {
   return new Proxy(datastore, {
     get(target, prop, receiver) {
+      // Collection identity for generic consumers (odata buildQuery fls checks).
+      // NeDB datastores have no property of this name, so no collision.
+      if (prop === 'collectionName') return name;
+
       if (CURSOR_METHODS.has(prop)) {
         return (...args) => {
           const context = buildContext(name, prop, args);

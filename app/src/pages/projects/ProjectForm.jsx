@@ -28,7 +28,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { projectsApi, clientsApi, documentsApi, invoicesApi } from '../../api/index.js';
-import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import ResourceDialog from './ResourceDialog.jsx';
@@ -78,7 +78,7 @@ const useStyles = makeStyles({
   },
 });
 
-const timesheetColumns = [
+const makeTimesheetColumns = (hidden) => [
   createTableColumn({
     columnId: 'date',
     renderHeaderCell: () => 'Date',
@@ -87,7 +87,7 @@ const timesheetColumns = [
   createTableColumn({
     columnId: 'hours',
     renderHeaderCell: () => 'Hours',
-    renderCell: (item) => <TableCellLayout>{item.hours}</TableCellLayout>,
+    renderCell: (item) => <TableCellLayout>{hidden.has('hours') ? '\u2014' : item.hours}</TableCellLayout>,
   }),
   createTableColumn({
     columnId: 'notes',
@@ -96,7 +96,7 @@ const timesheetColumns = [
   }),
 ];
 
-const expenseColumns = [
+const makeExpenseColumns = (hidden) => [
   createTableColumn({
     columnId: 'date',
     renderHeaderCell: () => 'Date',
@@ -117,7 +117,7 @@ const expenseColumns = [
     renderHeaderCell: () => 'Amount',
     renderCell: (item) => (
       <TableCellLayout>
-        {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}
+        {hidden.has('amount') ? '\u2014' : new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.amount || 0)}
       </TableCellLayout>
     ),
   }),
@@ -128,7 +128,7 @@ const expenseColumns = [
   }),
 ];
 
-const invoiceColumns = [
+const makeInvoiceColumns = (hidden) => [
   createTableColumn({
     columnId: 'invoiceNumber',
     renderHeaderCell: () => 'Invoice #',
@@ -151,7 +151,7 @@ const invoiceColumns = [
     renderHeaderCell: () => 'Amount',
     renderCell: (item) => (
       <TableCellLayout>
-        {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0)}
+        {hidden.has('total') ? '\u2014' : new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(item.total || 0)}
       </TableCellLayout>
     ),
   }),
@@ -233,7 +233,18 @@ export default function ProjectForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
-  const { canCreate, canUpdate } = useCurrentUser();
+  const { canCreate, canUpdate, fls } = useCurrentUser();
+
+  // Field-level security: read-hidden fields render redacted; the strip set
+  // (read ∪ mode-op) is removed from create defaults, QS prefill and payloads
+  const tableFls = fls('projects');
+  const stripSet = useMemo(
+    () => new Set([...tableFls.read, ...(isNew ? tableFls.create : tableFls.update)]),
+    [tableFls, isNew]
+  );
+  // Resources tab is not FormField-based — block it wholesale when the
+  // resources field is hidden or write-blocked for this mode
+  const resourcesBlocked = stripSet.has('resources');
 
   const { form, setForm, setBase, resetBase, formRef, isDirty, changedFields, base, baseReady } = useFormTracker({ resources: [] });
   const notifyParent = useNotifyParent();
@@ -280,16 +291,19 @@ export default function ProjectForm() {
             } catch {}
           }
           resetBase(coerceApi(data));
-        } else if (clients.length > 0) {
-          const firstClient = clients[0];
-          resetBase({
-            clientId: firstClient._id, ir35Status: 'OUTSIDE_IR35',
-            rate: firstClient.defaultRate != null ? String(firstClient.defaultRate) : '',
-            workingHoursPerDay: firstClient.workingHoursPerDay != null ? String(firstClient.workingHoursPerDay) : '',
-            vatPercent: '20', status: 'active', resources: [],
-          });
         } else {
-          resetBase({ ir35Status: 'OUTSIDE_IR35', vatPercent: '20', status: 'active', resources: [] });
+          const firstClient = clients[0];
+          const defaults = firstClient
+            ? {
+                clientId: firstClient._id, ir35Status: 'OUTSIDE_IR35',
+                rate: firstClient.defaultRate != null ? String(firstClient.defaultRate) : '',
+                workingHoursPerDay: firstClient.workingHoursPerDay != null ? String(firstClient.workingHoursPerDay) : '',
+                vatPercent: '20', status: 'active', resources: [],
+              }
+            : { ir35Status: 'OUTSIDE_IR35', vatPercent: '20', status: 'active', resources: [] };
+          // No phantom defaults in fields this user cannot see or set
+          for (const f of stripSet) delete defaults[f];
+          resetBase(defaults);
         }
       } catch (err) {
         setError(err.message);
@@ -298,7 +312,7 @@ export default function ProjectForm() {
       }
     };
     init();
-  }, [id, isNew, resetBase]);
+  }, [id, isNew, resetBase, stripSet]);
 
   const handleChange = (field) => (e, data) => {
     const value = data?.value ?? e.target.value;
@@ -355,6 +369,9 @@ export default function ProjectForm() {
         workingHoursPerDay: form.workingHoursPerDay !== '' ? Number(form.workingHoursPerDay) : null,
         vatPercent: form.vatPercent !== '' ? Number(form.vatPercent) : null,
       };
+      // Never echo masked/blocked values back — the server strips them anyway,
+      // but absent beats sending sentinels into service validation
+      for (const f of stripSet) delete payload[f];
       if (isNew) {
         const created = await projectsApi.create(payload);
         return { ok: true, id: created._id };
@@ -370,7 +387,7 @@ export default function ProjectForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, resetBase]);
+  }, [form, isNew, id, resetBase, stripSet]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -401,6 +418,10 @@ export default function ProjectForm() {
   const lockReason = projectData?.isLockedReason;
 
   const resourceColumns = useMemo(() => makeResourceColumns(setResourceToDelete, !!isLocked), [isLocked]);
+  // Embedded grids show other tables' fields — dash their read-hidden numerics
+  const timesheetColumns = useMemo(() => makeTimesheetColumns(fls('timesheets').read), [fls]);
+  const expenseColumns = useMemo(() => makeExpenseColumns(fls('expenses').read), [fls]);
+  const invoiceColumns = useMemo(() => makeInvoiceColumns(fls('invoices').read), [fls]);
 
   // Compute placeholder for rate
   const selectedClient = allClients.find((c) => c._id === form.clientId);
@@ -411,7 +432,8 @@ export default function ProjectForm() {
     <>
       {!initialized && <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>}
       <div className={styles.page} ref={formRef} style={{ display: initialized ? undefined : 'none' }}>
-      <QueryStringPrefill handleChange={handleChange} ready={baseReady} />
+    <FormDataProvider table="projects" isNew={isNew} fls={tableFls} changedFields={changedFields} locked={isLocked}>
+      <QueryStringPrefill handleChange={handleChange} ready={baseReady} exclude={stripSet} />
       <FormCommandBar
         onBack={() => goBack('/projects')}
         onSave={handleSave}
@@ -453,12 +475,12 @@ export default function ProjectForm() {
           {(isNew || tab === 'general') && (
             <fieldset disabled={!!isLocked} style={{ border: 'none', padding: 0, margin: 0, ...(isLocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
               <FormSection title="Project Details">
-                <FormField changed={changedFields.has('name')}>
+                <FormField name="name">
                   <Field label="Project Name" required>
                     <Input name="name" value={form.name ?? ''} onChange={handleChange('name')} />
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('clientId')}>
+                <FormField name="clientId">
                   <Field label="Client" required hint={!isNew && projectData?.isDefault ? 'Client cannot be changed for default projects' : undefined}>
                     <Select name="clientId" value={form.clientId ?? ''} onChange={handleChange('clientId')} disabled={!isNew && projectData?.isDefault}>
                       <option value="">Select client...</option>
@@ -468,7 +490,7 @@ export default function ProjectForm() {
                     </Select>
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('endClientId')}>
+                <FormField name="endClientId">
                   <Field label="End Client">
                     <Select name="endClientId" value={form.endClientId ?? ''} onChange={handleChange('endClientId')}>
                       <option value="">None</option>
@@ -478,7 +500,7 @@ export default function ProjectForm() {
                     </Select>
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('ir35Status')}>
+                <FormField name="ir35Status">
                   <Field label="IR35 Status" required>
                     <Select name="ir35Status" value={form.ir35Status ?? ''} onChange={handleChange('ir35Status')}>
                       <option value="OUTSIDE_IR35">Outside IR35</option>
@@ -487,7 +509,7 @@ export default function ProjectForm() {
                     </Select>
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('rate')}>
+                <FormField name="rate">
                   <Field label="Rate (per day)" hint={form.rate === '' ? ratePlaceholder : undefined}>
                     <Input
                       name="rate"
@@ -498,7 +520,7 @@ export default function ProjectForm() {
                     />
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('workingHoursPerDay')}>
+                <FormField name="workingHoursPerDay">
                   <Field label="Working Hours Per Day" hint={form.workingHoursPerDay === '' ? hoursPlaceholder : undefined}>
                     <Input
                       name="workingHoursPerDay"
@@ -509,7 +531,7 @@ export default function ProjectForm() {
                     />
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('vatPercent')}>
+                <FormField name="vatPercent">
                   <Field label="VAT Rate (%)" hint={form.vatPercent === '' ? 'Leave empty for no VAT (exempt)' : undefined}>
                     <Input
                       name="vatPercent"
@@ -520,7 +542,7 @@ export default function ProjectForm() {
                     />
                   </Field>
                 </FormField>
-                <FormField changed={changedFields.has('status')}>
+                <FormField name="status">
                   <Field label="Status">
                     <Select name="status" value={form.status ?? ''} onChange={handleChange('status')}>
                       <option value="active">Active</option>
@@ -530,7 +552,7 @@ export default function ProjectForm() {
                 </FormField>
               </FormSection>
 
-              <FormField fullWidth changed={changedFields.has('notes')}>
+              <FormField fullWidth name="notes">
                 <div style={{ marginTop: '16px' }}>
                   <MarkdownEditor
                     label="Notes"
@@ -546,14 +568,14 @@ export default function ProjectForm() {
           )}
 
           {tab === 'resources' && (
-            <>
+            <fieldset disabled={resourcesBlocked} style={{ border: 'none', padding: 0, margin: 0, ...(resourcesBlocked ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}>
               <div style={{ marginBottom: '12px' }}>
                 <Button
                   appearance="outline"
                   size="small"
                   icon={<AddRegular />}
                   onClick={openAddResource}
-                  disabled={!!isLocked}
+                  disabled={!!isLocked || resourcesBlocked}
                 >
                   Add resource
                 </Button>
@@ -592,7 +614,7 @@ export default function ProjectForm() {
                   </DataGridBody>
                 </DataGrid>
               )}
-            </>
+            </fieldset>
           )}
 
           {tab === 'timesheets' && projectData && (
@@ -736,6 +758,7 @@ export default function ProjectForm() {
           )}
         </div>
       </div>
+    </FormDataProvider>
 
       <ResourceDialog
         open={resourceDialogOpen}
