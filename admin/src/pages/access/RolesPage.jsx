@@ -3,41 +3,17 @@ import {
   makeStyles,
   tokens,
   Text,
-  Input,
-  Field,
   Button,
   Spinner,
   Badge,
-  Checkbox,
-  Textarea,
   MessageBar,
   MessageBarBody,
-  Dialog,
-  DialogTrigger,
-  DialogSurface,
-  DialogTitle,
-  DialogBody,
-  DialogContent,
-  DialogActions,
-  Dropdown,
-  Option,
   Tooltip,
-  Tag,
-  TagPicker,
-  TagPickerControl,
-  TagPickerGroup,
-  TagPickerInput,
-  TagPickerList,
-  TagPickerOption,
 } from '@fluentui/react-components';
-import { AddRegular, DeleteRegular, EditRegular, KeyRegular, DismissRegular } from '@fluentui/react-icons';
+import { AddRegular, DeleteRegular, EditRegular, KeyRegular } from '@fluentui/react-icons';
 import { rolesApi } from '../../api/index.js';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
-import { TABLES, ACTIONS, BASELINE_READ_TABLES } from '../../../../shared/authz/registry.js';
-import { validatePrivileges, opValue } from '../../../../shared/authz/filterValidate.js';
-
-const FILTER_OPS = ['read', 'update', 'delete'];
-const MODES = { none: 'No access', all: 'All records', filtered: 'Filtered' };
+import useAppNavigate from '../../hooks/useAppNavigate.js';
 
 const useStyles = makeStyles({
   page: { maxWidth: '1000px' },
@@ -79,182 +55,15 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     color: tokens.colorNeutralForeground1,
   },
-  dialogSurface: { maxWidth: '760px', width: '760px' },
-  tableSection: {
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: tokens.borderRadiusMedium,
-    padding: '10px 12px',
-    marginBottom: '10px',
-  },
-  tableHeader: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' },
-  tableName: { fontWeight: tokens.fontWeightSemibold, fontFamily: 'monospace' },
-  opRow: { display: 'grid', gridTemplateColumns: '70px 150px 1fr', gap: '8px', alignItems: 'start', marginBottom: '6px' },
-  opLabel: {
-    fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground3,
-    paddingTop: '6px',
-    textTransform: 'capitalize',
-  },
-  flsRow: { display: 'grid', gridTemplateColumns: '70px 1fr', gap: '8px', alignItems: 'start', marginBottom: '6px' },
-  filterInput: { fontFamily: 'monospace', fontSize: tokens.fontSizeBase200 },
-  filterError: { color: tokens.colorPaletteRedForeground1, fontSize: tokens.fontSizeBase200 },
-  actionsRow: { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' },
-  addTableRow: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' },
-  hint: { fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3, marginTop: '4px' },
 });
-
-function emptyOp() {
-  return { mode: 'none', filter: '', fls: [] };
-}
-
-// role.privileges (API shape) → editor state. Op values may be plain
-// (true|filter) or the fls wrapper { access, fls } — opValue() normalises.
-function toEditorState(privileges = {}) {
-  const state = {};
-  for (const [table, priv] of Object.entries(privileges)) {
-    const create = opValue(priv.create);
-    const entry = { create: create.access === true, createFls: create.fls, actions: priv.actions || [] };
-    for (const op of FILTER_OPS) {
-      const { access, fls } = opValue(priv[op]);
-      if (access === true) entry[op] = { mode: 'all', filter: '', fls };
-      else if (access && typeof access === 'object') entry[op] = { mode: 'filtered', filter: JSON.stringify(access, null, 2), fls };
-      else entry[op] = { ...emptyOp(), fls };
-    }
-    state[table] = entry;
-  }
-  return state;
-}
-
-// editor state → role.privileges; returns { privileges } or { error }.
-// The { access, fls } wrapper is emitted ONLY when fls is non-empty so roles
-// without field-level security keep the plain legacy shape (zero migration).
-function fromEditorState(state) {
-  const privileges = {};
-  for (const [table, entry] of Object.entries(state)) {
-    const priv = {};
-    for (const op of FILTER_OPS) {
-      const { mode, filter, fls } = entry[op];
-      let access;
-      if (mode === 'all') access = true;
-      else if (mode === 'filtered') {
-        try {
-          access = JSON.parse(filter || '');
-        } catch {
-          return { error: `${table}.${op}: filter is not valid JSON` };
-        }
-      }
-      if (access === undefined) continue;
-      // delete never carries fls (whole-record operation)
-      priv[op] = op !== 'delete' && fls.length > 0 ? { access, fls } : access;
-    }
-    if (entry.create) {
-      priv.create = entry.createFls.length > 0 ? { access: true, fls: entry.createFls } : true;
-    }
-    if (entry.actions.length > 0) priv.actions = entry.actions;
-    if (Object.keys(priv).length > 0) privileges[table] = priv;
-  }
-  const { ok, errors } = validatePrivileges(privileges);
-  if (!ok) return { error: errors.join('; ') };
-  return { privileges };
-}
-
-// Tag list for one op's hidden fields: pick from sampled field names or type
-// a custom value and press Enter (the data layer is schemaless — unknown
-// fields are ignored silently at runtime).
-function FlsPicker({ value, options, onChange, placeholder }) {
-  const [query, setQuery] = useState('');
-  const suggestions = (options || []).filter(
-    (o) => !value.includes(o) && (!query || o.toLowerCase().includes(query.toLowerCase()))
-  );
-
-  const addField = (field) => {
-    const trimmed = (field || '').trim();
-    if (!trimmed || value.includes(trimmed)) return;
-    onChange([...value, trimmed]);
-    setQuery('');
-  };
-
-  return (
-    <TagPicker
-      selectedOptions={value}
-      onOptionSelect={(e, data) => {
-        if (data.value === '__no_match__') return;
-        onChange(data.selectedOptions.filter((v) => v !== '__no_match__'));
-        setQuery('');
-      }}
-    >
-      <TagPickerControl>
-        <TagPickerGroup aria-label="Hidden fields">
-          {value.map((field) => (
-            <Tag key={field} shape="rounded" value={field} dismissible dismissIcon={{ 'aria-label': 'remove' }}>
-              {field}
-            </Tag>
-          ))}
-        </TagPickerGroup>
-        <TagPickerInput
-          aria-label="Hidden fields"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && query.trim()) {
-              e.preventDefault();
-              addField(query);
-            }
-          }}
-          placeholder={value.length ? '' : placeholder}
-        />
-      </TagPickerControl>
-      <TagPickerList>
-        {suggestions.length > 0 ? (
-          suggestions.map((option) => (
-            <TagPickerOption value={option} key={option}>{option}</TagPickerOption>
-          ))
-        ) : (
-          <TagPickerOption value="__no_match__">
-            {query.trim() ? `Press Enter to add "${query.trim()}"` : 'No sampled fields — type a name and press Enter'}
-          </TagPickerOption>
-        )}
-      </TagPickerList>
-    </TagPicker>
-  );
-}
 
 export default function RolesPage() {
   const styles = useStyles();
+  const { navigate } = useAppNavigate();
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingRole, setEditingRole] = useState(null);
-  const [formData, setFormData] = useState({ name: '', description: '' });
-  const [privState, setPrivState] = useState({});
-  const [dialogError, setDialogError] = useState(null);
-  const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  // Sampled field names per table for the fls pickers. Load failures degrade
-  // to an empty suggestion list — custom entry via Enter still works.
-  const [fieldOptions, setFieldOptions] = useState({});
-
-  useEffect(() => {
-    if (!dialogOpen) return;
-    const missing = Object.keys(privState).filter((t) => !(t in fieldOptions));
-    if (missing.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const loaded = {};
-      await Promise.all(
-        missing.map(async (table) => {
-          try {
-            loaded[table] = await rolesApi.getTableFields(table);
-          } catch {
-            loaded[table] = [];
-          }
-        })
-      );
-      if (!cancelled) setFieldOptions((prev) => ({ ...prev, ...loaded }));
-    })();
-    return () => { cancelled = true; };
-  }, [dialogOpen, privState, fieldOptions]);
 
   const loadRoles = useCallback(async () => {
     try {
@@ -274,88 +83,6 @@ export default function RolesPage() {
     if (intent === 'success') setTimeout(() => setMessage(null), 4000);
   };
 
-  const openAdd = () => {
-    setEditingRole(null);
-    setFormData({ name: '', description: '' });
-    // Baseline reads pre-added — list enrichment needs them (default deny otherwise)
-    setPrivState(toEditorState(Object.fromEntries(BASELINE_READ_TABLES.map((t) => [t, { read: true }]))));
-    setDialogError(null);
-    setDialogOpen(true);
-  };
-
-  const openEdit = (role) => {
-    setEditingRole(role);
-    setFormData({ name: role.name, description: role.description || '' });
-    setPrivState(toEditorState(role.privileges));
-    setDialogError(null);
-    setDialogOpen(true);
-  };
-
-  const setOp = (table, op, patch) => {
-    setPrivState((prev) => ({
-      ...prev,
-      [table]: { ...prev[table], [op]: { ...prev[table][op], ...patch } },
-    }));
-  };
-
-  const addTable = (table) => {
-    if (!table || privState[table]) return;
-    setPrivState((prev) => ({
-      ...prev,
-      [table]: { read: emptyOp(), update: emptyOp(), delete: emptyOp(), create: false, createFls: [], actions: [] },
-    }));
-  };
-
-  const removeTable = (table) => {
-    setPrivState((prev) => {
-      const next = { ...prev };
-      delete next[table];
-      return next;
-    });
-  };
-
-  const toggleAction = (table, action, checked) => {
-    setPrivState((prev) => ({
-      ...prev,
-      [table]: {
-        ...prev[table],
-        actions: checked
-          ? [...prev[table].actions, action]
-          : prev[table].actions.filter((a) => a !== action),
-      },
-    }));
-  };
-
-  const handleSaveRole = async () => {
-    if (!formData.name.trim()) {
-      setDialogError('Role name is required.');
-      return;
-    }
-    const result = fromEditorState(privState);
-    if (result.error) {
-      setDialogError(result.error);
-      return;
-    }
-    setSaving(true);
-    setDialogError(null);
-    try {
-      const payload = { ...formData, privileges: result.privileges };
-      if (editingRole) {
-        await rolesApi.update(editingRole._id, payload);
-        showMessage('success', 'Role updated. Changes apply to members on their next request.');
-      } else {
-        await rolesApi.create(payload);
-        showMessage('success', 'Role created.');
-      }
-      setDialogOpen(false);
-      await loadRoles();
-    } catch (err) {
-      setDialogError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
@@ -369,11 +96,6 @@ export default function RolesPage() {
     }
   };
 
-  const availableTables = TABLES.filter((t) => !privState[t]);
-  const missingBaseline = BASELINE_READ_TABLES.filter(
-    (t) => !privState[t] || privState[t].read.mode === 'none'
-  );
-
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
   return (
@@ -381,7 +103,7 @@ export default function RolesPage() {
       <div className={styles.pageBody}>
         <div className={styles.header}>
           <Text className={styles.title}>Roles</Text>
-          <Button appearance="primary" icon={<AddRegular />} onClick={openAdd} size="small">
+          <Button appearance="primary" icon={<AddRegular />} onClick={() => navigate('/access/roles/new')} size="small">
             Add Role
           </Button>
         </div>
@@ -408,7 +130,12 @@ export default function RolesPage() {
                   </Badge>
                   <div className={styles.cardHeaderActions}>
                     <Tooltip content="Edit" relationship="label">
-                      <Button appearance="subtle" icon={<EditRegular />} size="small" onClick={() => openEdit(role)} />
+                      <Button
+                        appearance="subtle"
+                        icon={<EditRegular />}
+                        size="small"
+                        onClick={() => navigate(`/access/roles/${role._id}`)}
+                      />
                     </Tooltip>
                     <Tooltip content="Delete" relationship="label">
                       <Button appearance="subtle" icon={<DeleteRegular />} size="small" onClick={() => setDeleteTarget(role)} />
@@ -432,171 +159,6 @@ export default function RolesPage() {
           </div>
         )}
       </div>
-
-      {/* Add / Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(e, data) => { if (!data.open) setDialogOpen(false); }}>
-        <DialogSurface className={styles.dialogSurface}>
-          <DialogBody>
-            <DialogTitle>{editingRole ? `Edit ${editingRole.name}` : 'Add Role'}</DialogTitle>
-            <DialogContent>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Field label="Name" required>
-                  <Input
-                    value={formData.name}
-                    onChange={(e, d) => setFormData((prev) => ({ ...prev, name: d.value }))}
-                    placeholder="e.g. Contractor"
-                  />
-                </Field>
-                <Field label="Description">
-                  <Input
-                    value={formData.description}
-                    onChange={(e, d) => setFormData((prev) => ({ ...prev, description: d.value }))}
-                  />
-                </Field>
-
-                <Field label="Table privileges">
-                  <div>
-                    {missingBaseline.length > 0 && (
-                      <MessageBar intent="warning" style={{ marginBottom: 8 }}>
-                        <MessageBarBody>
-                          Missing baseline reads: {missingBaseline.join(', ')} — list enrichment
-                          needs read access on these or pages will fail with 403.
-                        </MessageBarBody>
-                      </MessageBar>
-                    )}
-                    {Object.keys(privState).map((table) => (
-                      <div key={table} className={styles.tableSection}>
-                        <div className={styles.tableHeader}>
-                          <Text className={styles.tableName}>{table}</Text>
-                          <Tooltip content="Remove table" relationship="label">
-                            <Button
-                              appearance="subtle"
-                              icon={<DismissRegular />}
-                              size="small"
-                              style={{ marginLeft: 'auto' }}
-                              onClick={() => removeTable(table)}
-                            />
-                          </Tooltip>
-                        </div>
-                        {FILTER_OPS.map((op) => (
-                          <div key={op}>
-                            <div className={styles.opRow}>
-                              <Text className={styles.opLabel}>{op}</Text>
-                              <Dropdown
-                                size="small"
-                                value={MODES[privState[table][op].mode]}
-                                selectedOptions={[privState[table][op].mode]}
-                                onOptionSelect={(e, d) => setOp(table, op, { mode: d.optionValue })}
-                              >
-                                <Option value="none">No access</Option>
-                                <Option value="all">All records</Option>
-                                <Option value="filtered">Filtered</Option>
-                              </Dropdown>
-                              {privState[table][op].mode === 'filtered' ? (
-                                <Textarea
-                                  className={styles.filterInput}
-                                  value={privState[table][op].filter}
-                                  onChange={(e, d) => setOp(table, op, { filter: d.value })}
-                                  placeholder='{"date": {"$gte": "$$startOfMonth"}}'
-                                  resize="vertical"
-                                />
-                              ) : (
-                                <span />
-                              )}
-                            </div>
-                            {op !== 'delete' && privState[table][op].mode !== 'none' && (
-                              <div className={styles.flsRow}>
-                                <Text className={styles.opLabel}>hidden</Text>
-                                <FlsPicker
-                                  value={privState[table][op].fls}
-                                  options={fieldOptions[table]}
-                                  onChange={(fls) => setOp(table, op, { fls })}
-                                  placeholder={`Hidden fields on ${op}...`}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        <div className={styles.actionsRow}>
-                          <Checkbox
-                            label="Create"
-                            checked={privState[table].create}
-                            onChange={(e, d) =>
-                              setPrivState((prev) => ({
-                                ...prev,
-                                [table]: { ...prev[table], create: !!d.checked },
-                              }))
-                            }
-                          />
-                          {(ACTIONS[table] || []).map((action) => (
-                            <Checkbox
-                              key={action}
-                              label={`Action: ${action}`}
-                              checked={privState[table].actions.includes(action)}
-                              onChange={(e, d) => toggleAction(table, action, d.checked)}
-                            />
-                          ))}
-                        </div>
-                        {privState[table].create && (
-                          <div className={styles.flsRow} style={{ marginTop: '6px' }}>
-                            <Text className={styles.opLabel}>hidden</Text>
-                            <FlsPicker
-                              value={privState[table].createFls}
-                              options={fieldOptions[table]}
-                              onChange={(createFls) =>
-                                setPrivState((prev) => ({
-                                  ...prev,
-                                  [table]: { ...prev[table], createFls },
-                                }))
-                              }
-                              placeholder="Hidden fields on create..."
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    <div className={styles.addTableRow}>
-                      <Dropdown
-                        size="small"
-                        placeholder="Add table..."
-                        value=""
-                        selectedOptions={[]}
-                        onOptionSelect={(e, d) => addTable(d.optionValue)}
-                      >
-                        {availableTables.map((t) => (
-                          <Option key={t} value={t}>{t}</Option>
-                        ))}
-                      </Dropdown>
-                      <Text className={styles.hint}>
-                        Filters are NeDB queries; macros: $$user.id, $$user.email, $$today, $$startOfWeek/Month/Year, $$today±Nd.
-                      </Text>
-                    </div>
-                    <Text className={styles.hint}>
-                      Hidden fields are masked/stripped for members on that operation; read-hidden fields are
-                      also stripped from writes and rejected in filters/sorts. Hide computed siblings together
-                      (e.g. hours/days/amount).
-                    </Text>
-                  </div>
-                </Field>
-
-                {dialogError && (
-                  <MessageBar intent="error">
-                    <MessageBarBody>{dialogError}</MessageBarBody>
-                  </MessageBar>
-                )}
-              </div>
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button appearance="secondary">Cancel</Button>
-              </DialogTrigger>
-              <Button appearance="primary" onClick={handleSaveRole} disabled={saving}>
-                {saving ? 'Saving...' : (editingRole ? 'Update' : 'Add')}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
 
       {/* Delete Confirmation */}
       <ConfirmDialog

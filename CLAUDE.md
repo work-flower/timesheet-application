@@ -655,7 +655,9 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/system/calendars` | CalendarSourcesPage (ICS feed management) |
 | `/system/ticket-sources` | TicketSourcesPage (Jira & Azure DevOps ticket source management) |
 | `/access/users` | UsersPage (user activation, role assignment, status) |
-| `/access/roles` | RolesPage (granular role editor: per-table privileges + filters + actions) |
+| `/access/roles` | RolesPage (role list) |
+| `/access/roles/new` | RoleEditPage (full-page privilege matrix: per-table Read/Create/Update/Delete cells, filters, fls, actions) |
+| `/access/roles/:id` | RoleEditPage (edit) |
 | `/infra/backup` | BackupPage (R2 config, backup/restore) |
 | `/infra/logging` | LoggingPage (log config, R2 upload) |
 | `/reports/logs` | LogViewer (search, filters, detail drawer) |

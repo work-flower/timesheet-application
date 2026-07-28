@@ -13,6 +13,7 @@ import TicketSourcesPage from './pages/system/TicketSourcesPage.jsx';
 import NotebookGitPage from './pages/system/NotebookGitPage.jsx';
 import UsersPage from './pages/access/UsersPage.jsx';
 import RolesPage from './pages/access/RolesPage.jsx';
+import RoleEditPage from './pages/access/RoleEditPage.jsx';
 import BackupPage from './pages/infra/BackupPage.jsx';
 import LoggingPage from './pages/infra/LoggingPage.jsx';
 import LogViewer from './pages/infra/LogViewer.jsx';
@@ -35,6 +36,8 @@ export default function App() {
               <Route path="/system/notebook-git" element={<NotebookGitPage />} />
               <Route path="/access/users" element={<UsersPage />} />
               <Route path="/access/roles" element={<RolesPage />} />
+              <Route path="/access/roles/new" element={<RoleEditPage />} />
+              <Route path="/access/roles/:id" element={<RoleEditPage />} />
               <Route path="/infra/backup" element={<BackupPage />} />
               <Route path="/infra/logging" element={<LoggingPage />} />
 

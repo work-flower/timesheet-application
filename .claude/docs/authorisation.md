@@ -35,6 +35,12 @@ server/odata.js        — buildQuery() rejects $filter/$orderby/$summary/baseFi
 server/utils/errors.js — ForbiddenError (403 + code), BadRequestError (400 + code), respondError(res, err, fallback)
 server/index.js        — identityMiddleware registered right after the ALS middleware; central error handler
 server/db/index.js     — users.db/roles.db wrapped; calendar/ticket stores now wrapped; unique users.email index; collectionsByName map
+
+admin/src/pages/access/
+  RolesPage.jsx        — role card list (add/edit navigate to the editor page; delete stays here)
+  RoleEditPage.jsx     — full-page privilege matrix editor (/access/roles/new, /access/roles/:id)
+  roleEditorState.js   — editor state ↔ privileges mapping (buildEditorState/fromEditorState)
+admin/src/components/FlsPicker.jsx — shared fls tag-picker (sampled suggestions + free-text Enter)
 ```
 
 ## Data Model
@@ -73,7 +79,7 @@ Backup: both collections are included in R2 backup archives and restore (backupS
 
 ## Field-Level Security (fls)
 
-Per role, per table, **per operation** (`read`/`create`/`update` — never `delete`), an fls list hides individual fields from members. Field names are free-form (schemaless data layer): the Roles editor samples suggestions from records (`GET /admin/api/roles/table-fields/:table`, ~200-doc sample minus PROTECTED_FIELDS) but custom values are always allowed; names not present on a record are ignored silently.
+Per role, per table, **per operation** (`read`/`create`/`update` — never `delete`), an fls list hides individual fields from members. Field names are free-form (schemaless data layer): the Roles editor samples suggestions from records (`GET /admin/api/roles/table-fields/:table`, ~200-doc sample minus PROTECTED_FIELDS) but custom values are always allowed; names not present on a record are ignored silently. In the matrix editor the fls picker lives in a per-cell popover; suggestions are fetched lazily the first time a table's popover opens (never prefetched for all tables).
 
 **Read masking** (`fieldSecurity.js` post-hook on `find`/`findOne`): read-hidden fields are masked in place on every fetched doc — strings → `"***redacted***"` (shared `REDACTED` constant), everything else → `null`; keys stay present, absent keys stay absent; `count` untouched. Covers lists, detail, `$expand` nested docs (masked per their own table), enrichment reads, MCP, reports — everything through the wrapped collections. NeDB returns deep copies, so in-place mutation is safe.
 
@@ -125,7 +131,7 @@ Per role, per table, **per operation** (`read`/`create`/`update` — never `dele
 4. **`/api/me` exception**: pending/disabled users are NOT rejected on this path (they get `auth` with empty grants) so the frontend can render the awaiting-access page from one call.
 5. **Suspension**: `disabled` → 403 `code:disabled` everywhere regardless of Cloudflare session.
 6. **System identity**: background execution (calendar/ticket schedulers, backup cron, log uploader, import AI parsing, seed) runs under `runAsSystem` — full access, attribution `system`. The engine's own users/roles reads also run as system (avoids chicken-and-egg denial).
-7. **Admin surface** (`/admin/api/*`): guarded by `adminSurfaceMiddleware` (`server/services/cfAccessJwt.js`) — verifies the `Cf-Access-Jwt-Assertion` signature against the team JWKS (`jose`) plus `aud === CF_ADMIN_AUD` and issuer, then stamps `{ superuser: true }` (bypasses the engine entirely). No app-level admin role, no bootstrap. Flag on + missing `CF_TEAM_DOMAIN`/`CF_ADMIN_AUD` → 503 fail-closed; flag off → open (local dev). Routers backed by UNWRAPPED config stores exist only here (backup, ai-config, mcp-auth, logs minus the pageview beacon, gemini config verbs, notebook git config) plus `/admin/api/users` + `/admin/api/roles`; wrapped-collection routers are dual-mounted (engine-protected on `/api`). The admin SPA (`admin/src/api/index.js`) points at `/admin/api`; the Users/Roles pages live at `admin/src/pages/access/`. Note: admins visiting the admin console still trigger the main-surface pageview beacon, so they appear as pending users in the Users list — expected.
+7. **Admin surface** (`/admin/api/*`): guarded by `adminSurfaceMiddleware` (`server/services/cfAccessJwt.js`) — verifies the `Cf-Access-Jwt-Assertion` signature against the team JWKS (`jose`) plus `aud === CF_ADMIN_AUD` and issuer, then stamps `{ superuser: true }` (bypasses the engine entirely). No app-level admin role, no bootstrap. Flag on + missing `CF_TEAM_DOMAIN`/`CF_ADMIN_AUD` → 503 fail-closed; flag off → open (local dev). Routers backed by UNWRAPPED config stores exist only here (backup, ai-config, mcp-auth, logs minus the pageview beacon, gemini config verbs, notebook git config) plus `/admin/api/users` + `/admin/api/roles`; wrapped-collection routers are dual-mounted (engine-protected on `/api`). The admin SPA (`admin/src/api/index.js`) points at `/admin/api`; the Users/Roles pages live at `admin/src/pages/access/` (role list at `/access/roles`, matrix editor at `/access/roles/new` + `/access/roles/:id` — `RoleEditPage.jsx`). Note: admins visiting the admin console still trigger the main-surface pageview beacon, so they appear as pending users in the Users list — expected.
 
 ## Filter Language
 
@@ -164,6 +170,10 @@ Full write-through impersonation for System Admin-style users — the app behave
 - **Forms** (clients/projects/timesheets/expenses/invoices): the locked-record trio is extended — `isLocked = record.isLocked || (isNew ? !canCreate(table) : !canUpdate(table))`. Lists hide the New button via `onNew={canCreate(t) ? ... : undefined}`. Invoice Confirm/Post/Unconfirm buttons gate on `canAction('invoices', ...)`.
 - **`ApiError`** (both `app/src/api/index.js` and `admin/src/api/index.js`): every request/fetch error now carries `status` + machine `code` — react to `err.status === 403` / `err.code`, never parse messages.
 - All UI gating is **cosmetic** — the pipeline enforces server-side regardless. Secondary pages (notebooks, daily plans, import jobs UI internals, etc.) rely on nav hiding + server 403s surfacing through existing error MessageBars.
+
+## Admin Roles Editor (matrix)
+
+Full-page editor at `/access/roles/new` + `/access/roles/:id` (`RoleEditPage.jsx`; the old dialog editor is gone). One row per registry table — all 19 always shown; rows left at all-none are omitted from the saved payload (default deny). Read/Update/Delete cells cycle No access → All records → Filtered on click; Create is boolean-only (No access → All records). Filter JSON is edited in a dialog (macro hints included); a Filtered cell with empty/unparseable JSON shows a warning icon and save is rejected client-side. Per-op fls popovers (read/create/update, never delete) use the shared `FlsPicker`; the `{access, fls}` wrapper is emitted only when fls is non-empty. Actions are a per-row count-badge popover over `ACTIONS[table]`. Baseline-read rows are tinted and a warning bar appears when any baseline read is missing; new roles pre-grant baseline reads. Cycling a cell never clears its filter/fls state — serialization follows the final mode only (`roleEditorState.js`). Client-side `validatePrivileges` runs before save; dirty tracking is a JSON snapshot wired into the shared unsaved-changes guard.
 
 ## Golden Rules
 
