@@ -85,6 +85,16 @@ export const aiProvidersApi = {
   testConnection: (id, data = {}) => request(`/ai-providers/${id}/test-connection`, { method: 'POST', body: JSON.stringify(data) }),
 };
 
+// Routing eval-set (Agents)
+export const evalExamplesApi = {
+  getAll: () => request('/eval-examples'),
+  create: (data) => request('/eval-examples', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/eval-examples/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/eval-examples/${id}`, { method: 'DELETE' }),
+  run: () => request('/eval-examples/run', { method: 'POST', body: '{}' }),
+  route: (utterance) => request('/eval-examples/route', { method: 'POST', body: JSON.stringify({ utterance }) }),
+};
+
 // Backup
 export const backupApi = {
   getConfig: () => request('/backup/config'),

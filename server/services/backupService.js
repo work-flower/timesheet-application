@@ -15,6 +15,7 @@ import { pipeline } from 'stream/promises';
 import crypto from 'crypto';
 import backupConfig from '../db/backupConfig.js';
 import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, conversations } from '../db/index.js';
+import evalExamples from '../db/evalExamples.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -191,7 +192,7 @@ export async function createBackup() {
     const key = `${prefix}/${folderName}.tar.gz`;
 
     // Export all collections
-    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs] = await Promise.all([
+    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs, evalExampleDocs] = await Promise.all([
       clients.find({}),
       projects.find({}),
       timesheets.find({}),
@@ -208,6 +209,7 @@ export async function createBackup() {
       users.find({}),
       roles.find({}),
       conversations.find({}),
+      evalExamples.find({}),
     ]);
 
     const metadata = {
@@ -230,6 +232,7 @@ export async function createBackup() {
         users: userDocs.length,
         roles: roleDocs.length,
         conversations: conversationDocs.length,
+        evalExamples: evalExampleDocs.length,
       },
     };
 
@@ -260,6 +263,7 @@ export async function createBackup() {
     archive.append(JSON.stringify(userDocs, null, 2), { name: `${folderName}/users.json` });
     archive.append(JSON.stringify(roleDocs, null, 2), { name: `${folderName}/roles.json` });
     archive.append(JSON.stringify(conversationDocs, null, 2), { name: `${folderName}/conversations.json` });
+    archive.append(JSON.stringify(evalExampleDocs, null, 2), { name: `${folderName}/evalExamples.json` });
 
     // Add file directories (documents, expenses, invoices, uploads)
     const fileDirs = [
@@ -390,6 +394,7 @@ export async function restoreFromBackup(backupKey) {
       { name: 'users', db: users },
       { name: 'roles', db: roles },
       { name: 'conversations', db: conversations },
+      { name: 'evalExamples', db: evalExamples },
     ];
 
     for (const { name, db } of collections) {

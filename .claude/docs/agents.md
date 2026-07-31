@@ -1,8 +1,8 @@
 # Agents — Wiring Doc
 
-> **Status:** Phase 1 ("it talks") implemented. Phases 2 ("it routes") and 3 ("it delegates") are planned — see the design record and `## Roadmap` below. Update this doc as those phases land.
+> **Status:** Phases 1 ("it talks") and 2 ("it routes") implemented. Phase 3 ("it delegates") is planned — see the design record and `## Roadmap` below. Update this doc as it lands.
 
-The agent layer adds a master conversational assistant (Copilot side pane) fronted by a provider-agnostic AI abstraction. Cards (specialist agents), routing RAG, and delegation are P2/P3 and not yet built.
+The agent layer adds a master conversational assistant (Copilot side pane) fronted by a provider-agnostic AI abstraction, plus a local-embeddings routing tier proven standalone by an eval harness. Agent cards and delegation (find_agent, @mention, specialist sub-loops) are P3 and not yet built.
 
 ## Overview
 
@@ -38,6 +38,17 @@ The agent layer adds a master conversational assistant (Copilot side pane) front
 |---|---|
 | Template render (placeholders + `$forEachMessage`) | `server/services/templateEngineService.js` |
 | Response decoders (`anthropic-sse`, `openai-sse`, `gemini-sse`, `json`) | `server/services/streamDecoders.js` |
+
+### Routing (Phase 2 — admin-surface only; eval-set included in backups)
+| Layer | File |
+|---|---|
+| Embeddings (local, WASM) | `server/services/embeddingService.js` (`@xenova/transformers`, `Xenova/all-MiniLM-L6-v2`, 384-dim, cached at `DATA_DIR/models`) |
+| Vector index + routing + eval harness | `server/services/routingService.js` (flat file `DATA_DIR/rag/routing-index.json`, brute-force cosine, `findAgent`, leave-one-out `runEvals`) |
+| Eval-set DB (standalone) | `server/db/evalExamples.js` → `eval-examples.db` |
+| Eval-set service | `server/services/evalService.js` (CRUD, `route` probe, `runEvals`; invalidates the index on mutation) |
+| Route (admin surface only) | `server/routes/evalExamples.js` → `/admin/api/eval-examples` (+ `POST /run`, `POST /route`) |
+| Admin UI | `admin/src/pages/agents/EvalSetPage.jsx` (CRUD + route probe + accuracy/confusion report) |
+| Admin API client | `admin/src/api/index.js` → `evalExamplesApi` |
 
 ## Golden rules
 
@@ -78,10 +89,16 @@ Each yields neutral events `{ type: 'text'|'thinking'|'tool_use'|'stop'|'error',
 - New collection field on conversations: thin-doc only — transcripts live on disk, not in the DB.
 - Backup format changes: confirm restore round-trips conversation transcripts (restore clears file dirs then copies).
 
+## Golden rules — Routing (Phase 2)
+
+10. **The routing index is derived and rebuildable — never a source of truth.** `DATA_DIR/rag/routing-index.json` holds embedded exemplar vectors keyed by a **corpus hash** (sha256 of the eval examples). `getIndex()` rebuilds when the hash mismatches (examples changed, even across a restart); eval mutations call `invalidateIndex()`. It is NOT backed up (rebuilds from `eval-examples.db`, which IS).
+11. **`runEvals` is leave-one-out.** Each example is routed with itself excluded from the pool (`findAgent(u, {excludeId})`), or every example would trivially match itself and accuracy would be a meaningless 100%. Keep the exclusion when changing the harness.
+12. **The routing corpus is currently eval exemplars only.** P3 adds agent card descriptions as further index entries (`source: 'card'`) in `routingService.loadCorpus()` — the `findAgent`/index machinery already carries a `source` field for that.
+13. **`expectedAgent` is a free-text slug, not an FK.** Agent cards don't exist until P3, so the eval-set targets slugs by name. When cards land, keep the slug as the routing label so the eval-set stays valid.
+
 ## Roadmap (not yet implemented)
 
-- **P2 "it routes":** `embeddingService` (local, WASM backend, `DATA_DIR/models` cache), `routingService` (flat-file vector index), `evalService` + eval-set admin page + accuracy/confusion harness.
-- **P3 "it delegates":** `agents` collection (wrapped, registry, seed privilege), `agentCardService` (file-led folders under `DATA_DIR/agents/{id}/`, boot scan, rescan, `ensureMasterCard`), agents routes + card admin pages (copy-on-write template inheritance, keep-and-warn on provider switch), `agentToolRegistry` extraction, `find_agent` tool, `@mention` routing, specialist sub-loops, master-as-card, visibility=talkability enforcement.
+- **P3 "it delegates":** `agents` collection (wrapped, registry, seed privilege), `agentCardService` (file-led folders under `DATA_DIR/agents/{id}/`, boot scan, rescan, `ensureMasterCard`), agents routes + card admin pages (copy-on-write template inheritance, keep-and-warn on provider switch), `agentToolRegistry` extraction, `find_agent` tool (consumes `routingService.findAgent`), `@mention` routing, specialist sub-loops, master-as-card, visibility=talkability enforcement. Card descriptions join the routing corpus (`routingService.loadCorpus`).
 
 ## Lessons learned
 
@@ -89,6 +106,7 @@ Each yields neutral events `{ type: 'text'|'thinking'|'tool_use'|'stop'|'error',
 - **Upstream auth errors mask body-shape errors.** Anthropic validates the API key BEFORE the body, so a smoke test with a fake key returns 401 and never exercises body validation. Verify outgoing request shape against a local mock endpoint (see the mock-provider test pattern), not just against the real API with a fake key.
 - **SSE responses are HTTP 200 — errors inside them are invisible to the logs by default.** The conversations route's `send()` is the choke point: every `{type:'error'}` event forwarded to the pane is also `console.warn`ed server-side. Keep it that way when adding event types.
 - **The transcript owns the current user message.** The route appends it via `appendMessage` BEFORE calling `streamTurn`; `buildContext` maps the transcript verbatim and must not push the message again (shipped once as a duplicated final user turn on every request).
+- **Use `@xenova/transformers` (v2), not `@huggingface/transformers` (v3), for embeddings.** v3 ships only a Node build bound to native `onnxruntime-node`, whose Linux binaries are glibc-only (no musl) → it cannot load on `node:20-alpine`, and its device list excludes `wasm`. v2 runs `onnxruntime-web` (pure WASM) in Node, works on Alpine unchanged. Its transitive `sharp` dep has musl prebuilds and is only loaded on the image path (never for text embedding). Both Dockerfile stages `npm ci` inside Alpine, so the right binaries are fetched — no base-image change.
 
 - **NeDB `$`/`.` key constraint bites declarative templates.** The `$forEachMessage` node can't be stored as a live object; serialise to a string (this doc, golden rule 1). The roles engine hit the same wall and key-escapes instead — for templates, whole-string JSON is simpler.
 - **The local `.env` sets `AUTH_ENABLED=true`.** Backend smoke tests against the identity-gated `/api` surface need a Cloudflare identity header, or run with `AUTH_ENABLED=false` + an isolated `DATA_DIR` to exercise legacy single-user behaviour without touching production data.

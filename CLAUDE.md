@@ -289,6 +289,18 @@ Provider-agnostic chat API abstraction for the agent layer (Copilot assistant). 
 
 A default Anthropic provider is seeded at boot (`ensureDefaults`) if none exist.
 
+### evalExamples
+
+Routing eval-set for the agent layer (Phase 2). Labeled `utterance → expectedAgent` examples that serve as both the runtime routing signal (exemplars in the vector index) and the accuracy harness. Standalone store (`eval-examples.db`), admin-surface only (`/admin/api/eval-examples`), **included** in backups (curated, no secrets). See `.claude/docs/agents.md`.
+
+| Field | Description |
+|-------|-------------|
+| utterance | A phrase that should route to `expectedAgent` |
+| expectedAgent | Agent slug this utterance targets (free text; cards arrive in P3) |
+| createdAt, updatedAt | ISO timestamps |
+
+`POST /admin/api/eval-examples/run` returns leave-one-out accuracy + a per-agent confusion table + misroutes. `POST /admin/api/eval-examples/route` probes an arbitrary utterance. Local embeddings (`@xenova/transformers`, WASM) cached at `DATA_DIR/models`; derived vector index at `DATA_DIR/rag/routing-index.json` (rebuildable, not backed up).
+
 ### conversations
 
 Copilot assistant threads. Thin metadata doc; message transcript stored on disk as JSONL at `DATA_DIR/conversations/{id}/transcript.jsonl`. Pipeline-wrapped (per-user privacy via a role `createdBy` pre-filter); **included** in backups. See `.claude/docs/agents.md`.
@@ -593,7 +605,7 @@ Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods
 - **Settings:** Get/update contractor profile (single document, upserted)
 - **AI Config:** Get/update config (API key masked on read), test connection (sends trivial request to Claude API). Separate from settings — own database, own endpoints.
 - **Logs:** Config CRUD (secret masked on read), test R2 connection, search (supports entity params `startDate`, `endDate`, `level`, `source`, `keyword`, `traceId` + OData `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`), list local files, read log file (with level/source/keyword filtering), upload to R2 (integrity-verified, deletes local), safe delete local file (requires R2 backup verification), download from R2, list R2 logs, pageview tracking (with traceId).
-- **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup. Includes `conversations` (DB + `files/conversations/` transcripts); **excludes** `ai-providers.db` (holds API keys).
+- **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup. Includes `conversations` (DB + `files/conversations/` transcripts) and `evalExamples`; **excludes** `ai-providers.db` (holds API keys) and the derived `rag/` + `models/` dirs (rebuildable).
 - **Help:** Skill zip download endpoint (`GET /api/help/skills/:skillFolder/download`). Searches `src/help/{topic}/skill/{skillFolder}/` and serves as a zip archive. Help topic content is auto-discovered from `src/help/*/index.md` frontmatter (title, description, tags, optional banner image).
 
 ### OData Query Support
@@ -686,6 +698,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/system/calendars` | CalendarSourcesPage (ICS feed management) |
 | `/system/ticket-sources` | TicketSourcesPage (Jira & Azure DevOps ticket source management) |
 | `/agents/providers` | AiProvidersPage (AI provider registry: endpoint, payload template, wireFormat, masked key) |
+| `/agents/eval-set` | EvalSetPage (routing eval-set CRUD, route probe, Run Evals accuracy/confusion report) |
 | `/access/users` | UsersPage (user activation, role assignment, status) |
 | `/access/roles` | RolesPage (role list) |
 | `/access/roles/new` | RoleEditPage (full-page privilege matrix: per-table Read/Create/Update/Delete cells, filters, fls, actions) |

@@ -33,6 +33,7 @@ import {
   ServerRegular,
   DataBarVerticalRegular,
   BotRegular,
+  BeakerRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -230,6 +231,7 @@ const navItems = [
     prefix: '/agents',
     children: [
       { to: '/agents/providers', label: 'AI Providers', icon: <BrainCircuitRegular /> },
+      { to: '/agents/eval-set', label: 'Routing Eval-set', icon: <BeakerRegular /> },
     ],
   },
   {
