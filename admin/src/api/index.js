@@ -75,6 +75,16 @@ export const mcpAuthApi = {
   updateConfig: (data) => request('/mcp-auth', { method: 'PUT', body: JSON.stringify(data) }),
 };
 
+// AI Providers (Agents — chat provider registry)
+export const aiProvidersApi = {
+  getAll: () => request('/ai-providers'),
+  getById: (id) => request(`/ai-providers/${id}`),
+  create: (data) => request('/ai-providers', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/ai-providers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/ai-providers/${id}`, { method: 'DELETE' }),
+  testConnection: (id, data = {}) => request(`/ai-providers/${id}/test-connection`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
 // Backup
 export const backupApi = {
   getConfig: () => request('/backup/config'),

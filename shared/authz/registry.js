@@ -23,6 +23,7 @@ export const TABLES = [
   'calendarEvents',
   'ticketSources',
   'tickets',
+  'conversations',
   'users',
   'roles',
 ];

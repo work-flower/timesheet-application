@@ -14,7 +14,7 @@ import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync
 import { pipeline } from 'stream/promises';
 import crypto from 'crypto';
 import backupConfig from '../db/backupConfig.js';
-import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles } from '../db/index.js';
+import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, conversations } from '../db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -25,6 +25,7 @@ function getInvoicesDir() { return join(getDataDir(), 'invoices'); }
 function getUploadsDir() { return join(getDataDir(), 'uploads'); }
 function getNotebooksDir() { return join(getDataDir(), 'notebooks'); }
 function getDailyPlansDir() { return join(getDataDir(), 'daily-plans'); }
+function getConversationsDir() { return join(getDataDir(), 'conversations'); }
 
 
 function copyDirSync(src, dest) {
@@ -190,7 +191,7 @@ export async function createBackup() {
     const key = `${prefix}/${folderName}.tar.gz`;
 
     // Export all collections
-    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs] = await Promise.all([
+    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs] = await Promise.all([
       clients.find({}),
       projects.find({}),
       timesheets.find({}),
@@ -206,6 +207,7 @@ export async function createBackup() {
       todos.find({}),
       users.find({}),
       roles.find({}),
+      conversations.find({}),
     ]);
 
     const metadata = {
@@ -227,6 +229,7 @@ export async function createBackup() {
         todos: todoDocs.length,
         users: userDocs.length,
         roles: roleDocs.length,
+        conversations: conversationDocs.length,
       },
     };
 
@@ -256,6 +259,7 @@ export async function createBackup() {
     archive.append(JSON.stringify(todoDocs, null, 2), { name: `${folderName}/todos.json` });
     archive.append(JSON.stringify(userDocs, null, 2), { name: `${folderName}/users.json` });
     archive.append(JSON.stringify(roleDocs, null, 2), { name: `${folderName}/roles.json` });
+    archive.append(JSON.stringify(conversationDocs, null, 2), { name: `${folderName}/conversations.json` });
 
     // Add file directories (documents, expenses, invoices, uploads)
     const fileDirs = [
@@ -265,6 +269,7 @@ export async function createBackup() {
       { dir: getUploadsDir(), archiveName: 'uploads' },
       { dir: getNotebooksDir(), archiveName: 'notebooks' },
       { dir: getDailyPlansDir(), archiveName: 'daily-plans' },
+      { dir: getConversationsDir(), archiveName: 'conversations' },
     ];
     for (const { dir, archiveName } of fileDirs) {
       if (existsSync(dir)) {
@@ -384,6 +389,7 @@ export async function restoreFromBackup(backupKey) {
       { name: 'todos', db: todos },
       { name: 'users', db: users },
       { name: 'roles', db: roles },
+      { name: 'conversations', db: conversations },
     ];
 
     for (const { name, db } of collections) {
@@ -407,6 +413,7 @@ export async function restoreFromBackup(backupKey) {
       { target: getUploadsDir(), restoreSubdir: 'files/uploads' },
       { target: getNotebooksDir(), restoreSubdir: 'files/notebooks' },
       { target: getDailyPlansDir(), restoreSubdir: 'files/daily-plans' },
+      { target: getConversationsDir(), restoreSubdir: 'files/conversations' },
     ];
 
     for (const { target, restoreSubdir } of fileDirs) {

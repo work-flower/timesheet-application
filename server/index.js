@@ -22,6 +22,8 @@ import transactionRoutes from './routes/transactions.js';
 import importJobRoutes from './routes/importJobs.js';
 import stagedTransactionRoutes from './routes/stagedTransactions.js';
 import aiConfigRoutes from './routes/aiConfig.js';
+import aiProviderRoutes from './routes/aiProviders.js';
+import conversationRoutes from './routes/conversations.js';
 import dashboardRoutes from './routes/dashboard.js';
 import mcpRoutes from './routes/mcp.js';
 import mcpAuthRoutes from './routes/mcpAuth.js';
@@ -49,6 +51,8 @@ import { initUploader } from './logging/logUploader.js';
 import { initCalendarScheduler } from './services/calendarService.js';
 import { initTicketScheduler } from './services/ticketService.js';
 import { ensureRepo, sanitizeTitle } from './services/notebookGitService.js';
+import { ensureDefaults as ensureAiProviderDefaults } from './services/aiProviderService.js';
+import { runAsSystem } from './pipeline/systemContext.js';
 import { notebooks } from './db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -158,21 +162,23 @@ app.use('/api/notebooks', notebookRoutes);
 app.use('/api/daily-plans', dailyPlanRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/assets', assetsRoutes);
+app.use('/api/conversations', conversationRoutes);
 app.use('/api/gemini-config', geminiFeatureRouter); // feature subset; config verbs on /admin/api
 
 // ── Admin API surface (/admin/api/*) ─────────────────────────────────────────
 // Covered by the admin Cloudflare Access application's /admin path scope.
 // adminSurfaceMiddleware verifies the Access JWT (signature + aud) and stamps
 // the caller as superuser — these routers bypass the role engine entirely.
-// Routers backed by UNWRAPPED config stores (backup, ai-config, mcp-auth, logs,
-// gemini config, notebook git config) exist ONLY here; wrapped-collection
-// routers (settings, clients, sources, users, roles) are engine-protected on
-// /api and superuser-open here.
+// Routers backed by UNWRAPPED config stores (backup, ai-config, ai-providers,
+// mcp-auth, logs, gemini config, notebook git config) exist ONLY here;
+// wrapped-collection routers (settings, clients, sources, users, roles) are
+// engine-protected on /api and superuser-open here.
 const adminApi = express.Router();
 adminApi.use(adminSurfaceMiddleware);
 adminApi.use('/settings', settingsRoutes);
 adminApi.use('/clients', clientRoutes);
 adminApi.use('/ai-config', aiConfigRoutes);
+adminApi.use('/ai-providers', aiProviderRoutes);
 adminApi.use('/gemini-config', geminiConfigRoutes);
 adminApi.use('/mcp-auth', mcpAuthRoutes);
 adminApi.use('/backup', backupRoutes);
@@ -273,6 +279,11 @@ app.listen(PORT, () => {
   initUploader();
   initCalendarScheduler();
   initTicketScheduler();
+  // Seed the default AI provider under system identity (writes to an unwrapped
+  // store, but stays consistent with other boot jobs).
+  runAsSystem(() => ensureAiProviderDefaults()).catch((err) =>
+    console.error('Failed to seed AI provider defaults:', err.message),
+  );
 });
 
 // Graceful shutdown — close singleton Puppeteer browser if running.

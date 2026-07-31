@@ -11,6 +11,7 @@ import McpAuthPage from './pages/system/McpAuthPage.jsx';
 import CalendarSourcesPage from './pages/system/CalendarSourcesPage.jsx';
 import TicketSourcesPage from './pages/system/TicketSourcesPage.jsx';
 import NotebookGitPage from './pages/system/NotebookGitPage.jsx';
+import AiProvidersPage from './pages/agents/AiProvidersPage.jsx';
 import UsersPage from './pages/access/UsersPage.jsx';
 import RolesPage from './pages/access/RolesPage.jsx';
 import RoleEditPage from './pages/access/RoleEditPage.jsx';
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/system/calendars" element={<CalendarSourcesPage />} />
               <Route path="/system/ticket-sources" element={<TicketSourcesPage />} />
               <Route path="/system/notebook-git" element={<NotebookGitPage />} />
+              <Route path="/agents/providers" element={<AiProvidersPage />} />
               <Route path="/access/users" element={<UsersPage />} />
               <Route path="/access/roles" element={<RolesPage />} />
               <Route path="/access/roles/new" element={<RoleEditPage />} />

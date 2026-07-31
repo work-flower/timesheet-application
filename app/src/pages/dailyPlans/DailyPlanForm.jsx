@@ -17,7 +17,7 @@ import TextToSpeechButton from '../../components/TextToSpeechButton.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import NotebookEditor from '../../components/editors/NotebookEditor.jsx';
 import EntitySearchDialog from '../../components/editors/EntitySearchDialog.jsx';
-import MDEditor from '@uiw/react-md-editor';
+import SafeMarkdown from '../../components/SafeMarkdown.jsx';
 import { dailyPlansApi, todosApi, notebooksApi } from '../../api/index.js';
 import useAppNavigate from '../../hooks/useAppNavigate.js';
 import DayTimelineCard from '../../components/cards/DayTimelineCard.jsx';
@@ -1053,7 +1053,7 @@ export default function DailyPlanForm() {
                     <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px' }}>{ts.hours}h — {ts.projectName || 'Unknown'}</div>
                     {ts.notes
                       ? <div data-color-mode="light">
-                          <MDEditor.Markdown source={ts.notes} style={{ backgroundColor: 'transparent', fontSize: '11px', lineHeight: '1.5', padding: 0 }} />
+                          <SafeMarkdown source={ts.notes} style={{ backgroundColor: 'transparent', fontSize: '11px', lineHeight: '1.5', padding: 0 }} />
                         </div>
                       : <span style={{ fontSize: '11px', color: '#888' }}>No description</span>
                     }
@@ -1198,7 +1198,7 @@ export default function DailyPlanForm() {
                         }}
                       />
                     </div>
-                    <MDEditor.Markdown source={recapContent} style={{ backgroundColor: 'transparent', fontSize: '13px', lineHeight: '1.5' }} />
+                    <SafeMarkdown source={recapContent} style={{ backgroundColor: 'transparent', fontSize: '13px', lineHeight: '1.5' }} />
                   </div>
                 ) : (
                   <Text size={200} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground3 }}>
@@ -1228,7 +1228,7 @@ export default function DailyPlanForm() {
                         }}
                       />
                     </div>
-                    <MDEditor.Markdown source={briefingContent} style={{ backgroundColor: 'transparent', fontSize: '13px', lineHeight: '1.5' }} />
+                    <SafeMarkdown source={briefingContent} style={{ backgroundColor: 'transparent', fontSize: '13px', lineHeight: '1.5' }} />
                   </div>
                 ) : (
                   <Text size={200} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground3 }}>

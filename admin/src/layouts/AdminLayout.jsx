@@ -32,6 +32,7 @@ import {
   ShieldKeyholeRegular,
   ServerRegular,
   DataBarVerticalRegular,
+  BotRegular,
 } from '@fluentui/react-icons';
 
 const SIDEBAR_WIDTH = '220px';
@@ -224,6 +225,14 @@ const navItems = [
     ],
   },
   {
+    label: 'Agents',
+    icon: <BotRegular />,
+    prefix: '/agents',
+    children: [
+      { to: '/agents/providers', label: 'AI Providers', icon: <BrainCircuitRegular /> },
+    ],
+  },
+  {
     label: 'Access Control',
     icon: <PeopleTeamRegular />,
     prefix: '/access',
@@ -294,6 +303,9 @@ export default function AdminLayout() {
   const [systemExpanded, setSystemExpanded] = useState(
     () => isChildRouteActive('/system'),
   );
+  const [agentsExpanded, setAgentsExpanded] = useState(
+    () => isChildRouteActive('/agents'),
+  );
   const [accessExpanded, setAccessExpanded] = useState(
     () => isChildRouteActive('/access'),
   );
@@ -309,6 +321,7 @@ export default function AdminLayout() {
   const expandState = {
     'Business Config': [configExpanded, setConfigExpanded],
     'System Config': [systemExpanded, setSystemExpanded],
+    'Agents': [agentsExpanded, setAgentsExpanded],
     'Access Control': [accessExpanded, setAccessExpanded],
     'Infrastructure': [infraExpanded, setInfraExpanded],
     'Admin Reports': [reportsExpanded, setReportsExpanded],

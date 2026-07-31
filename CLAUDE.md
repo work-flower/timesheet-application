@@ -32,7 +32,7 @@ If a change spans multiple areas (e.g. adding a new entity end-to-end), load ALL
 2. **Know what else to check** — the "Cross-Entity Consumers" table shows every place outside the entity's own files that reads or writes its data
 3. **Verify blast radius** — the "Blast Radius" section lists what to verify after making changes
 
-Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`, `notebooks.md`, `daily-plans.md`, `todos.md`, `authorisation.md`
+Available docs: `expenses.md`, `invoices.md`, `timesheets.md`, `clients.md`, `projects.md`, `transactions.md`, `execution-pipeline.md`, `logging.md`, `calendar.md`, `tickets.md`, `notebooks.md`, `daily-plans.md`, `todos.md`, `authorisation.md`, `agents.md`
 
 ### Keeping Wiring Docs Up to Date (MANDATORY)
 
@@ -270,6 +270,36 @@ Logging configuration and R2 log storage settings. Stored in a **separate** data
 | r2LogPath | R2 key prefix for log files (default: `logs`) |
 | uploadEnabled | Boolean — enable automatic upload of completed log files to R2 |
 | uploadIntervalMinutes | Interval in minutes for the automatic upload cycle |
+
+### aiProviders
+
+Provider-agnostic chat API abstraction for the agent layer (Copilot assistant). Multi-record store in a **separate** database file (`ai-providers.db`) — **not** included in backup archives (holds API keys). Admin-surface only (`/admin/api/ai-providers`). See `.claude/docs/agents.md`.
+
+| Field | Description |
+|-------|-------------|
+| name | Display name |
+| dialect | Freetext label (`anthropic`, `openai`, `gemini`, `custom`) |
+| endpointUrl, method, headers | HTTP request semantics; `{{$.apiKey}}` in a header value injects the key |
+| model | Default model id sent as `{{$.model}}` |
+| wireFormat | Response decoder: `anthropic-sse`, `openai-sse`, `gemini-sse`, or `json` |
+| payloadTemplate | Declarative JSON request body (placeholders + a `$forEachMessage` iteration node). **Stored as a JSON string** — NeDB rejects `$`/`.` keys; serialised on write, hydrated on read |
+| responseTextPath | Dot path to extract text for `wireFormat: json` (default `content.0.text`) |
+| apiKey | Masked on read; retained when an update sends a masked value |
+| enabled | Boolean |
+
+A default Anthropic provider is seeded at boot (`ensureDefaults`) if none exist.
+
+### conversations
+
+Copilot assistant threads. Thin metadata doc; message transcript stored on disk as JSONL at `DATA_DIR/conversations/{id}/transcript.jsonl`. Pipeline-wrapped (per-user privacy via a role `createdBy` pre-filter); **included** in backups. See `.claude/docs/agents.md`.
+
+| Field | Description |
+|-------|-------------|
+| title | Thread title (default "New conversation") |
+| lastMessageAt | ISO timestamp of the most recent message |
+| createdAt, updatedAt | ISO timestamps |
+
+**On disk:** `transcript.jsonl` — one JSON message per line (`{ role, content, createdAt }`). Returned as a `messages` array from the detail endpoint, not stored in the DB doc.
 
 ### aiConfig (single document)
 
@@ -563,7 +593,7 @@ Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods
 - **Settings:** Get/update contractor profile (single document, upserted)
 - **AI Config:** Get/update config (API key masked on read), test connection (sends trivial request to Claude API). Separate from settings — own database, own endpoints.
 - **Logs:** Config CRUD (secret masked on read), test R2 connection, search (supports entity params `startDate`, `endDate`, `level`, `source`, `keyword`, `traceId` + OData `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`), list local files, read log file (with level/source/keyword filtering), upload to R2 (integrity-verified, deletes local), safe delete local file (requires R2 backup verification), download from R2, list R2 logs, pageview tracking (with traceId).
-- **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup
+- **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup. Includes `conversations` (DB + `files/conversations/` transcripts); **excludes** `ai-providers.db` (holds API keys).
 - **Help:** Skill zip download endpoint (`GET /api/help/skills/:skillFolder/download`). Searches `src/help/{topic}/skill/{skillFolder}/` and serves as a zip archive. Help topic content is auto-discovered from `src/help/*/index.md` frontmatter (title, description, tags, optional banner image).
 
 ### OData Query Support
@@ -599,6 +629,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 1. **Top Bar:** App title on the left with hamburger menu toggle, Settings button on the right
 2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Menu items with expandable parent groups. Active item highlighted with blue accent border.
 3. **Main Content Area** (scrollable): List views, form views, or dashboard
+4. **Copilot Pane** (main app only, ~380px, collapsible right pane; toggled from the top bar): stateful assistant with a conversation list + streaming chat. Layout chrome, not a route; absent in embedded mode; hidden when the caller lacks `conversations` read access. Components in `app/src/components/copilot/`. See `.claude/docs/agents.md`.
 
 ### Navigation
 
@@ -654,6 +685,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/system/mcp-auth` | McpAuthPage (OAuth config) |
 | `/system/calendars` | CalendarSourcesPage (ICS feed management) |
 | `/system/ticket-sources` | TicketSourcesPage (Jira & Azure DevOps ticket source management) |
+| `/agents/providers` | AiProvidersPage (AI provider registry: endpoint, payload template, wireFormat, masked key) |
 | `/access/users` | UsersPage (user activation, role assignment, status) |
 | `/access/roles` | RolesPage (role list) |
 | `/access/roles/new` | RoleEditPage (full-page privilege matrix: per-table Read/Create/Update/Delete cells, filters, fls, actions) |

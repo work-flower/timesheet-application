@@ -34,6 +34,16 @@ export const meApi = {
   stopImpersonation: () => request('/me/impersonate', { method: 'DELETE' }),
 };
 
+// Conversations (Copilot assistant threads). The message-send SSE stream is
+// handled separately in copilotStream.js (fetch + ReadableStream).
+export const conversationsApi = {
+  getAll: () => request('/conversations'),
+  getById: (id) => request(`/conversations/${id}`),
+  create: (data = {}) => request('/conversations', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/conversations/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/conversations/${id}`, { method: 'DELETE' }),
+};
+
 // Users (read-only — impersonation picker; requires users.read + roles.read grants)
 export const usersApi = {
   getAll: (params = {}) => {

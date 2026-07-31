@@ -50,7 +50,9 @@ import {
   TicketHorizontalRegular,
   ClipboardTaskListLtrRegular,
   PersonSwapRegular,
+  ChatSparkleRegular,
 } from '@fluentui/react-icons';
+import CopilotPane from '../components/copilot/CopilotPane.jsx';
 
 const SIDEBAR_WIDTH = '220px';
 const SIDEBAR_COLLAPSED = '49px';
@@ -386,9 +388,13 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [appTitle, setAppTitle] = useState('');
   const [impersonateOpen, setImpersonateOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   const isEmbedded = useEmbedded();
   const { canRead, canAction, enabled, me } = useCurrentUser();
+  // Assistant pane uses the conversations collection; hide when the caller has
+  // no read grant under authorisation (always visible in legacy single-user mode).
+  const canUseCopilot = canRead('conversations');
   // `enabled &&` matters: canAction returns true when authorisation is off,
   // but the endpoints are inert then — hide the button in legacy mode
   const canImpersonate = enabled && canAction('users', 'impersonate');
@@ -571,6 +577,15 @@ export default function AppLayout() {
               </Button>
             </Tooltip>
           )}
+          {canUseCopilot && (
+            <Tooltip content="Assistant" relationship="label">
+              <Button
+                appearance={copilotOpen ? 'primary' : 'subtle'}
+                icon={<ChatSparkleRegular />}
+                onClick={() => setCopilotOpen((v) => !v)}
+              />
+            </Tooltip>
+          )}
           <Button appearance="subtle" icon={<QuestionCircleRegular />} onClick={() => navigate('/help')}>
             Help
           </Button>
@@ -595,6 +610,7 @@ export default function AppLayout() {
         <main className={styles.content}>
           <Outlet />
         </main>
+        {canUseCopilot && copilotOpen && <CopilotPane onClose={() => setCopilotOpen(false)} />}
       </div>
     </div>
   );
