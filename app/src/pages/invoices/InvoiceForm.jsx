@@ -59,7 +59,7 @@ import {
   WarningFilled,
 } from '@fluentui/react-icons';
 import { invoicesApi, clientsApi, timesheetsApi, expensesApi, reportsApi, transactionsApi } from '../../api/index.js';
-import { FormSection, FormField } from '../../components/FormSection.jsx';
+import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import ItemPickerDialog from '../../components/ItemPickerDialog.jsx';
 import { useFormTracker } from '../../hooks/useFormTracker.js';
