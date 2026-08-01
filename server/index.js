@@ -25,6 +25,7 @@ import aiConfigRoutes from './routes/aiConfig.js';
 import aiProviderRoutes from './routes/aiProviders.js';
 import evalExampleRoutes from './routes/evalExamples.js';
 import conversationRoutes from './routes/conversations.js';
+import agentRoutes, { agentsReadOnlyRouter } from './routes/agents.js';
 import dashboardRoutes from './routes/dashboard.js';
 import mcpRoutes from './routes/mcp.js';
 import mcpAuthRoutes from './routes/mcpAuth.js';
@@ -53,6 +54,7 @@ import { initCalendarScheduler } from './services/calendarService.js';
 import { initTicketScheduler } from './services/ticketService.js';
 import { ensureRepo, sanitizeTitle } from './services/notebookGitService.js';
 import { ensureDefaults as ensureAiProviderDefaults } from './services/aiProviderService.js';
+import { ensureMasterCard, scanAgents } from './services/agentCardService.js';
 import { runAsSystem } from './pipeline/systemContext.js';
 import { notebooks } from './db/index.js';
 
@@ -164,6 +166,7 @@ app.use('/api/daily-plans', dailyPlanRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/assets', assetsRoutes);
 app.use('/api/conversations', conversationRoutes);
+app.use('/api/agents', agentsReadOnlyRouter); // @mention picker; engine-gated by agents.read
 app.use('/api/gemini-config', geminiFeatureRouter); // feature subset; config verbs on /admin/api
 
 // ── Admin API surface (/admin/api/*) ─────────────────────────────────────────
@@ -181,6 +184,7 @@ adminApi.use('/clients', clientRoutes);
 adminApi.use('/ai-config', aiConfigRoutes);
 adminApi.use('/ai-providers', aiProviderRoutes);
 adminApi.use('/eval-examples', evalExampleRoutes);
+adminApi.use('/agents', agentRoutes);
 adminApi.use('/gemini-config', geminiConfigRoutes);
 adminApi.use('/mcp-auth', mcpAuthRoutes);
 adminApi.use('/backup', backupRoutes);
@@ -286,6 +290,11 @@ app.listen(PORT, () => {
   runAsSystem(() => ensureAiProviderDefaults()).catch((err) =>
     console.error('Failed to seed AI provider defaults:', err.message),
   );
+  // Agent cards: guarantee the reserved master card, then rebuild the index
+  // from the folders (file-led truth; scanAgents runs under system itself).
+  ensureMasterCard()
+    .then(() => scanAgents())
+    .catch((err) => console.error('Agent card boot scan failed:', err.message));
 });
 
 // Graceful shutdown — close singleton Puppeteer browser if running.

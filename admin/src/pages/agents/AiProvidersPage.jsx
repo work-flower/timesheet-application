@@ -58,10 +58,19 @@ const PRESETS = {
       max_tokens: 4096,
       stream: true,
       system: '{{$.system}}',
+      tools: '{{$.tools}}',
       messages: {
         $forEachMessage: {
           user: { role: 'user', content: '{{$m.content}}' },
           assistant: { role: 'assistant', content: '{{$m.content}}' },
+          tool_call: {
+            role: 'assistant',
+            content: [{ type: 'tool_use', id: '{{$m.toolCallId}}', name: '{{$m.name}}', input: '{{$m.input}}' }],
+          },
+          tool_result: {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: '{{$m.toolCallId}}', content: '{{$m.content}}' }],
+          },
         },
       },
     },
@@ -80,12 +89,18 @@ const PRESETS = {
     payloadTemplate: {
       model: '{{$.model}}',
       stream: true,
+      tools: '{{$.tools}}',
       messages: [
         { role: 'system', content: '{{$.system}}' },
         {
           $forEachMessage: {
             user: { role: 'user', content: '{{$m.content}}' },
             assistant: { role: 'assistant', content: '{{$m.content}}' },
+            tool_call: {
+              role: 'assistant',
+              tool_calls: [{ id: '{{$m.toolCallId}}', type: 'function', function: { name: '{{$m.name}}', arguments: '{{$m.inputJson}}' } }],
+            },
+            tool_result: { role: 'tool', tool_call_id: '{{$m.toolCallId}}', content: '{{$m.content}}' },
           },
         },
       ],
@@ -105,10 +120,13 @@ const PRESETS = {
     responseTextPath: 'candidates.0.content.parts.0.text',
     payloadTemplate: {
       systemInstruction: { parts: [{ text: '{{$.system}}' }] },
+      tools: '{{$.tools}}',
       contents: {
         $forEachMessage: {
           user: { role: 'user', parts: [{ text: '{{$m.content}}' }] },
           assistant: { role: 'model', parts: [{ text: '{{$m.content}}' }] },
+          tool_call: { role: 'model', parts: [{ functionCall: { name: '{{$m.name}}', args: '{{$m.input}}' } }] },
+          tool_result: { role: 'user', parts: [{ functionResponse: { name: '{{$m.name}}', response: { content: '{{$m.content}}' } } }] },
         },
       },
     },

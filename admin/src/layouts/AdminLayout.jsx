@@ -230,6 +230,7 @@ const navItems = [
     icon: <BotRegular />,
     prefix: '/agents',
     children: [
+      { to: '/agents/cards', label: 'Agent Cards', icon: <BotRegular /> },
       { to: '/agents/providers', label: 'AI Providers', icon: <BrainCircuitRegular /> },
       { to: '/agents/eval-set', label: 'Routing Eval-set', icon: <BeakerRegular /> },
     ],

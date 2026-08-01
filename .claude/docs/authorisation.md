@@ -74,7 +74,7 @@ Backup: both collections are included in R2 backup archives and restore (backupS
 - **create**: boolean privilege only. **Upserts** additionally require `create: true` (insert branch not scope-checked — documented limitation).
 - **Multiple roles union**: any `true` wins; otherwise filters OR together (`{$or:[...]}`); `create` ORs; actions set-union.
 - **Named actions** (`requireAction(table, action)` route middleware): gates lifecycle endpoints. After the gate passes, routes do a **caller-scoped existence check** (`getById` under user grants → 404 if invisible) then execute the operation under **system identity** (`runAsSystem`) because lifecycle ops perform privileged cross-entity writes (invoice confirm sets locks on timesheets/expenses and bumps the invoice seed) that table grants shouldn't have to cover. Current actions: invoices `confirm/post/unconfirm/updatePayment`, stagedTransactions `submit`, importJobs `abandon`, calendarSources/ticketSources `refresh`.
-- **Attribution**: wildcard pre-hooks stamp `createdBy`/`updatedBy` (acting email, or `system`) on every insert/update when AUTH_ENABLED. These fields are audit-only — **never** used in filter evaluation.
+- **Attribution**: wildcard pre-hooks stamp `createdBy`/`updatedBy` (acting email, or `system`) on every insert/update when AUTH_ENABLED. These fields are audit-only — **never** used in filter evaluation by the engine or services. **Documented exception (agent layer, user-approved):** *role-authored* pre-filters on the `conversations` table may reference `createdBy` via the `$$user.email` macro to give each user private assistant threads — this stays inside the standard role-filter mechanism (admin-authored data, merged by checkAccess phase 3), not hardcoded service logic. The seeded roles carry `{ createdBy: '$$user.email' }` on conversations read/update/delete.
 - **403 surfacing**: pipeline throws `ForbiddenError` (statusCode 403 + machine `code`: `unauthenticated`/`pending`/`disabled`/`forbidden`/`scope_escape`); route catch blocks call `respondError(res, err, fallback)`; a central Express error handler is the safety net.
 
 ## Field-Level Security (fls)
@@ -174,6 +174,14 @@ Full write-through impersonation for System Admin-style users — the app behave
 ## Admin Roles Editor (matrix)
 
 Full-page editor at `/access/roles/new` + `/access/roles/:id` (`RoleEditPage.jsx`; the old dialog editor is gone). One row per registry table — all 19 always shown; rows left at all-none are omitted from the saved payload (default deny). Read/Update/Delete cells cycle No access → All records → Filtered on click; Create is boolean-only (No access → All records). Filter JSON is edited in a dialog (macro hints included); a Filtered cell with empty/unparseable JSON shows a warning icon and save is rejected client-side. Per-op fls popovers (read/create/update, never delete) use the shared `FlsPicker`; the `{access, fls}` wrapper is emitted only when fls is non-empty. Actions are a per-row count-badge popover over `ACTIONS[table]`. Baseline-read rows are tinted and a warning bar appears when any baseline read is missing; new roles pre-grant baseline reads. Cycling a cell never clears its filter/fls state — serialization follows the final mode only (`roleEditorState.js`). Client-side `validatePrivileges` runs before save; dirty tracking is a JSON snapshot wired into the shared unsaved-changes guard.
+
+## Agent Layer (agents + conversations tables)
+
+Two Phase-3 tables ride the standard engine (full wiring in `agents.md`):
+
+- **`agents`** — the rebuildable index over agent card folders. Rule: **whatever agent the caller can see, they can talk to.** `GET /api/agents` (the @mention picker), `@mention` slug resolution (invisible ⇒ not-found ⇒ "unknown agent"), and `find_agent` routing candidates are all resolved through the caller-scoped wrapped collection; a role may narrow visibility with an ordinary pre-filter. **Chat access gate:** the SSE chat endpoint requires the caller to hold *some* `agents` read grant (`assertChatAccess` = caller-scoped `count`, before the stream opens) — no grant, no assistant.
+- **Master no-leak boundary:** the reserved `master` card fronts every turn; its *definition* (boot-guaranteed files) is the ONLY non-caller-scoped resolution in a chat turn. Everything the master *does* — tool calls, candidate filtering, `ask_agent` specialist resolution — executes in the caller's ALS scope. Never wrap the agent loop in `runAsSystem`.
+- **`conversations`** — thin docs + disk transcripts; privacy via the role `createdBy` filter (see the attribution exception above). Legacy mode (AUTH off) bypasses everything as usual.
 
 ## Golden Rules
 

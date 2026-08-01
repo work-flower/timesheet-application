@@ -93,11 +93,35 @@ export function renderTemplate(template, context) {
   return renderNode(template, context, null);
 }
 
-/** Render header values (string interpolation only — e.g. api key injection). */
+// Invisible Unicode that rides along with copy-pasted keys/values: zero-width
+// space/joiners (U+200B-D), word joiner (U+2060), BOM (U+FEFF), soft hyphen
+// (U+00AD). Never intentional in a header value.
+const INVISIBLE_CHARS = /[\u200B\u200C\u200D\u2060\uFEFF\u00AD]/g;
+
+/** HTTP header values must be Latin-1 (ByteString). Strip invisible characters
+ *  silently, turn non-breaking spaces into plain spaces, and fail with a
+ *  NAMED, positioned error for anything else >0xFF - fetch()'s own "Cannot
+ *  convert argument to a ByteString" is undebuggable. */
+function sanitizeHeaderValue(name, value) {
+  const cleaned = String(value).replace(INVISIBLE_CHARS, '').replace(/\u00A0/g, ' ').trim();
+  for (let i = 0; i < cleaned.length; i++) {
+    const code = cleaned.charCodeAt(i);
+    if (code > 0xff) {
+      const hex = code.toString(16).toUpperCase().padStart(4, '0');
+      throw new Error(
+        `Header "${name}" contains a non-Latin-1 character (U+${hex}) at position ${i} - likely pasted invisibly. Re-type the value (or the API key) by hand.`,
+      );
+    }
+  }
+  return cleaned;
+}
+
+
 export function renderHeaders(headers, context) {
   const out = {};
   for (const [key, value] of Object.entries(headers || {})) {
-    out[key] = typeof value === 'string' ? String(renderString(value, context, null)) : value;
+    const rendered = typeof value === 'string' ? String(renderString(value, context, null)) : value;
+    out[key] = typeof rendered === 'string' ? sanitizeHeaderValue(key, rendered) : rendered;
   }
   return out;
 }

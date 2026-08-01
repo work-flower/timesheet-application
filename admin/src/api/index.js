@@ -85,6 +85,17 @@ export const aiProvidersApi = {
   testConnection: (id, data = {}) => request(`/ai-providers/${id}/test-connection`, { method: 'POST', body: JSON.stringify(data) }),
 };
 
+// Agent cards (Agents) — file-led folders; writes go to disk + reindex
+export const agentCardsApi = {
+  getAll: () => request('/agents'),
+  getBySlug: (slug) => request(`/agents/${encodeURIComponent(slug)}`),
+  create: (data) => request('/agents', { method: 'POST', body: JSON.stringify(data) }),
+  update: (slug, data) => request(`/agents/${encodeURIComponent(slug)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (slug) => request(`/agents/${encodeURIComponent(slug)}`, { method: 'DELETE' }),
+  rescan: () => request('/agents/rescan', { method: 'POST', body: '{}' }),
+  getTools: () => request('/agents/tools'),
+};
+
 // Routing eval-set (Agents)
 export const evalExamplesApi = {
   getAll: () => request('/eval-examples'),

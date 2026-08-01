@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { respondError } from '../utils/errors.js';
 import * as conversationService from '../services/conversationService.js';
-import { streamTurn } from '../services/agentChatService.js';
+import { streamTurn, assertChatAccess } from '../services/agentChatService.js';
 
 const router = Router();
 
@@ -67,10 +67,14 @@ router.post('/:id/messages', async (req, res) => {
   const { id } = req.params;
   const userMessage = (req.body?.message || '').trim();
 
-  // Visibility check happens through the wrapped collection (caller-scoped).
+  // Visibility + access gates run BEFORE the SSE stream opens so failures are
+  // proper HTTP statuses: conversation visibility (caller-scoped read) and the
+  // chat access gate (caller must hold an agents read grant — "whatever agent
+  // the user can see, they can talk to"; no grant, no assistant).
   let conversation;
   try {
     conversation = await conversationService.assertVisible(id);
+    await assertChatAccess();
   } catch (err) {
     console.warn(err.message);
     return respondError(res, err, 403);
@@ -105,17 +109,14 @@ router.post('/:id/messages', async (req, res) => {
   try {
     await conversationService.appendMessage(id, { role: 'user', content: userMessage });
 
-    let assistantText = '';
+    // The service persists assistant text and tool exchanges itself (the
+    // master tool loop appends mid-turn); the route only forwards events.
     for await (const event of streamTurn(id, userMessage, { providerId: req.body?.providerId, signal: controller.signal })) {
       if (aborted) break;
-      if (event.type === 'text') assistantText += event.text;
       send(event);
     }
 
     if (!aborted) {
-      if (assistantText) {
-        await conversationService.appendMessage(id, { role: 'assistant', content: assistantText });
-      }
       send({ type: 'done' });
     }
   } catch (err) {

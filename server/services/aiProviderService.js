@@ -12,15 +12,27 @@ import { SUPPORTED_WIRE_FORMATS } from './streamDecoders.js';
  */
 
 // A ready-to-use Anthropic Messages API provider, seeded on first boot.
+// tool_call/tool_result sub-templates render the neutral tool-exchange
+// messages the master loop persists; {{$.tools}} receives the wireFormat-shaped
+// tool definitions (stripped from the payload when empty).
 const ANTHROPIC_TEMPLATE = {
   model: '{{$.model}}',
   max_tokens: 4096,
   stream: true,
   system: '{{$.system}}',
+  tools: '{{$.tools}}',
   messages: {
     $forEachMessage: {
       user: { role: 'user', content: '{{$m.content}}' },
       assistant: { role: 'assistant', content: '{{$m.content}}' },
+      tool_call: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: '{{$m.toolCallId}}', name: '{{$m.name}}', input: '{{$m.input}}' }],
+      },
+      tool_result: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: '{{$m.toolCallId}}', content: '{{$m.content}}' }],
+      },
     },
   },
 };
@@ -46,6 +58,16 @@ const ANTHROPIC_DEFAULTS = {
 function maskSecret(value) {
   if (!value || value.length <= 4) return value ? '****' : '';
   return '*'.repeat(value.length - 4) + value.slice(-4);
+}
+
+// Copy-pasted keys often carry invisible Unicode (zero-widths, word joiner,
+// BOM, soft hyphen, NBSP) that later breaks fetch() header encoding. Clean at
+// save time — mask-retention would otherwise preserve a dirty key forever.
+function cleanSecret(value) {
+  return String(value || '')
+    .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00AD]/g, '')
+    .replace(/\u00A0/g, ' ')
+    .trim();
 }
 
 // payloadTemplate is stored as a JSON string: NeDB rejects object keys starting
@@ -143,7 +165,7 @@ export async function create(data) {
     wireFormat: data.wireFormat || 'json',
     payloadTemplate: JSON.stringify(normaliseTemplate(data.payloadTemplate)),
     responseTextPath: data.responseTextPath || '',
-    apiKey: data.apiKey && !data.apiKey.includes('*') ? data.apiKey : '',
+    apiKey: data.apiKey && !data.apiKey.includes('*') ? cleanSecret(data.apiKey) : '',
     enabled: data.enabled !== false,
     createdAt: now,
     updatedAt: now,
@@ -168,6 +190,8 @@ export async function update(id, data) {
   // Retain stored key when incoming value is masked or blank
   if (!updateData.apiKey || updateData.apiKey.includes('*')) {
     updateData.apiKey = existing.apiKey || '';
+  } else {
+    updateData.apiKey = cleanSecret(updateData.apiKey);
   }
 
   await aiProviders.update({ _id: id }, { $set: updateData });
@@ -213,6 +237,11 @@ export async function testConnection(id, overrides = {}) {
   );
   // Force non-streaming for the probe where the template exposes a stream flag.
   if (rendered && typeof rendered === 'object' && 'stream' in rendered) rendered.stream = false;
+  // The probe grants no tools, so a {{$.tools}} node renders to null — strip it
+  // (same rule as the chat path; endpoints reject "tools": null).
+  if (rendered && typeof rendered === 'object' && (rendered.tools == null || (Array.isArray(rendered.tools) && rendered.tools.length === 0))) {
+    delete rendered.tools;
+  }
 
   const headers = renderHeaders(provider.headers, context);
   const res = await fetch(provider.endpointUrl, {

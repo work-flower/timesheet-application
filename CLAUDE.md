@@ -289,6 +289,19 @@ Provider-agnostic chat API abstraction for the agent layer (Copilot assistant). 
 
 A default Anthropic provider is seeded at boot (`ensureDefaults`) if none exist.
 
+### agents
+
+Agent card index (Phase 3). **File-led**: each card IS its folder at `DATA_DIR/agents/{slug}/` (`manifest.json`, `agent.md` persona, optional `payload_template.json` override, `knowledge/`, `skills/`); this collection is a **rebuildable index** over the folders (boot scan + reindex on admin save + Rescan button). Pipeline-wrapped — a role's `agents` read grant controls which agents the caller can see and therefore talk to. Included in backups (DB + `files/agents/`). The reserved `master` card fronts every conversation (boot-guaranteed, undeletable). See `.claude/docs/agents.md`.
+
+| Field | Description |
+|-------|-------------|
+| slug | Folder name + @mention handle (`[a-z0-9-]`, immutable) |
+| name, description | Identity; description feeds the routing corpus |
+| aiProviderId | Bound AI provider (null = default provider) |
+| enabled | Disabled cards are unroutable and unmentionable |
+| isMaster | True only for the reserved `master` card |
+| hasPayloadTemplate | Whether the folder carries a `payload_template.json` override |
+
 ### evalExamples
 
 Routing eval-set for the agent layer (Phase 2). Labeled `utterance → expectedAgent` examples that serve as both the runtime routing signal (exemplars in the vector index) and the accuracy harness. Standalone store (`eval-examples.db`), admin-surface only (`/admin/api/eval-examples`), **included** in backups (curated, no secrets). See `.claude/docs/agents.md`.
@@ -566,6 +579,7 @@ Full wiring in `.claude/docs/authorisation.md`. Cross-cutting rules:
 6. **Field-level security (fls)**: per role, per table, per operation (`read`/`create`/`update`) an excluded-field list masks fields on read (strings → `***redacted***`, others → `null`), strips them from writes at the pipeline (read-hidden implies write-stripped; replacement-style updates rejected), and 400s `$filter`/`$orderby`/`$summary` references. Multi-role merge is per-op intersection (most permissive). Forms render redacted/read-only controls via `FormDataProvider` + `FormField name="..."`; lists dash hidden numerics. Protected fields (`_id`, timestamps, attribution, lock fields) can never be hidden. Full semantics + sibling-group configuration rules in `authorisation.md` → Field-Level Security.
 7. Background jobs (schedulers, AI parsing, backup, seed) must run under `runAsSystem` or they are denied when enforcement is on.
 8. With `AUTH_ENABLED` unset the app behaves exactly as the legacy single-user build.
+9. **Agent layer**: whatever agent the caller can see (via the `agents` read grant + filter), they can talk to — `@mention` resolution and `find_agent` candidates go through the caller-scoped collection; no grant = no assistant (gate runs before the SSE stream). The only system-scoped resolution in a chat turn is reading the master card's own definition files. `conversations` privacy is a role pre-filter on `createdBy` via `$$user.email` — a documented exception to the "attribution fields never in filters" rule (role-authored filter, not service logic). See `agents.md`.
 
 ### Record Locking
 
@@ -583,7 +597,7 @@ Full logging infrastructure is documented in `logging.md` wiring doc. Key cross-
 ### MCP (Model Context Protocol)
 
 1. The application exposes an MCP endpoint at `POST /mcp` (outside `/api` prefix) for AI assistants via JSON-RPC 2.0.
-2. **Available tools:** `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`, `list_tickets`.
+2. **Available tools:** `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`, `list_calendar_events`, `list_tickets`. Definitions + handlers live in the shared registry `server/services/agentToolRegistry.js` (also consumed by the agent layer); `routes/mcp.js` is the JSON-RPC surface over it.
 3. **Confirmation flow:** All MCP tools follow a confirmation flow — the AI must list projects first, confirm the project with the user, present a summary, and only submit after user confirmation.
 4. **Authentication:** MCP auth configuration managed via `/api/mcp-auth` endpoints. OAuth 2.0 metadata served at `/.well-known/oauth-authorization-server`.
 5. **Upload Expense Image Skill:** Downloadable Claude.ai skill for receipt image upload after expense creation via MCP.
@@ -697,6 +711,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/system/mcp-auth` | McpAuthPage (OAuth config) |
 | `/system/calendars` | CalendarSourcesPage (ICS feed management) |
 | `/system/ticket-sources` | TicketSourcesPage (Jira & Azure DevOps ticket source management) |
+| `/agents/cards`, `/agents/cards/new`, `/agents/cards/:slug` | AgentCardsPage + AgentCardEditPage (card designer over the on-disk folders: agent.md, provider binding, copy-on-write payload template, Rescan) |
 | `/agents/providers` | AiProvidersPage (AI provider registry: endpoint, payload template, wireFormat, masked key) |
 | `/agents/eval-set` | EvalSetPage (routing eval-set CRUD, route probe, Run Evals accuracy/confusion report) |
 | `/access/users` | UsersPage (user activation, role assignment, status) |

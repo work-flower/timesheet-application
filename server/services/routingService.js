@@ -3,6 +3,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import evalExamples from '../db/evalExamples.js';
+import { agents } from '../db/index.js';
+import { runAsSystem } from '../pipeline/systemContext.js';
 import { embed, cosineSim } from './embeddingService.js';
 
 /**
@@ -35,17 +37,37 @@ const TOP_K = 20; // nearest exemplars considered per query
 let memoryIndex = null; // { hash, builtAt, entries: [{ id, label, text, source, vector }] }
 
 /** Stable hash of the routing corpus — any change forces a rebuild. */
-function corpusHash(examples) {
-  const material = examples
-    .map((e) => `${e._id}${e.utterance}${e.expectedAgent}`)
+function corpusHash(items) {
+  const material = items
+    .map((i) => `${i.id}\u0001${i.label}\u0001${i.text}`)
     .sort()
-    .join('');
+    .join('\u0002');
   return createHash('sha256').update(material).digest('hex');
 }
 
+/**
+ * The routing corpus: eval exemplars + enabled agent card descriptions
+ * (source 'card', label = slug; master excluded - it is the router, not a
+ * destination). Cards are read under system identity: the index is GLOBAL and
+ * derived; per-caller visibility applies to CANDIDATES (find_agent tool
+ * handler), never baked into the index.
+ */
 async function loadCorpus() {
-  // Current corpus = eval exemplars. P3: concat agent card descriptions here.
-  return evalExamples.find({});
+  const [examples, cards] = await Promise.all([
+    evalExamples.find({}),
+    runAsSystem(() => agents.find({ enabled: { $ne: false }, isMaster: { $ne: true } })),
+  ]);
+  const items = examples.map((e) => ({
+    id: e._id,
+    label: e.expectedAgent,
+    text: e.utterance,
+    source: 'eval',
+  }));
+  for (const card of cards) {
+    if (!card.description) continue;
+    items.push({ id: `card:${card.slug}`, label: card.slug, text: card.description, source: 'card' });
+  }
+  return items;
 }
 
 /** Mark the in-memory index stale; next getIndex() rebuilds. Cheap + sync. */
@@ -53,18 +75,12 @@ export function invalidateIndex() {
   memoryIndex = null;
 }
 
-async function buildIndex(examples, hash) {
+async function buildIndex(items, hash) {
   const entries = [];
-  if (examples.length) {
-    const vectors = await embed(examples.map((e) => e.utterance));
-    for (let i = 0; i < examples.length; i++) {
-      entries.push({
-        id: examples[i]._id,
-        label: examples[i].expectedAgent,
-        text: examples[i].utterance,
-        source: 'eval',
-        vector: vectors[i],
-      });
+  if (items.length) {
+    const vectors = await embed(items.map((i) => i.text));
+    for (let i = 0; i < items.length; i++) {
+      entries.push({ ...items[i], vector: vectors[i] });
     }
   }
   const index = { hash, builtAt: new Date().toISOString(), entries };
@@ -76,8 +92,8 @@ async function buildIndex(examples, hash) {
 
 /** Get a fresh index (in-memory → flat file → rebuild), validated by corpus hash. */
 async function getIndex() {
-  const examples = await loadCorpus();
-  const hash = corpusHash(examples);
+  const items = await loadCorpus();
+  const hash = corpusHash(items);
 
   if (memoryIndex && memoryIndex.hash === hash) return memoryIndex;
 
@@ -90,7 +106,7 @@ async function getIndex() {
       }
     } catch { /* fall through to rebuild */ }
   }
-  return buildIndex(examples, hash);
+  return buildIndex(items, hash);
 }
 
 /** Aggregate scored entries into ranked candidate agents with reasons. */
@@ -139,11 +155,13 @@ export async function findAgent(utterance, opts = {}) {
 }
 
 /**
- * Leave-one-out evaluation over the whole eval-set.
+ * Leave-one-out evaluation over the eval-set only. Card-description entries
+ * stay IN the pool (they are legitimate routing signal) — only the labeled
+ * eval examples are scored, each with itself excluded from retrieval.
  * @returns {Promise<{ total, correct, accuracy, perAgent, confusion, misroutes }>}
  */
 export async function runEvals() {
-  const examples = await loadCorpus();
+  const examples = await evalExamples.find({});
   await getIndex(); // ensure built once; findAgent reuses the cached index
 
   const perAgent = {}; // agent → { total, correct }

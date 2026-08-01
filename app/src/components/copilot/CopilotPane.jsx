@@ -119,6 +119,18 @@ export default function CopilotPane({ onClose }) {
     const controller = new AbortController();
     abortRef.current = controller;
     let assistantText = '';
+    let currentAgent = null;
+
+    // The master's tool loop can produce text in several rounds separated by
+    // tool calls — flush the buffer into a message bubble at each boundary.
+    const flushAssistant = () => {
+      if (!assistantText) return;
+      const content = assistantText;
+      const agent = currentAgent;
+      setMessages((prev) => [...prev, { role: 'assistant', content, ...(agent ? { agent } : {}) }]);
+      assistantText = '';
+      setStreaming('');
+    };
 
     await streamChat(conversationId, text, {
       signal: controller.signal,
@@ -132,8 +144,17 @@ export default function CopilotPane({ onClose }) {
           case 'thinking':
             setActivity('Thinking…');
             break;
+          case 'agent':
+            currentAgent = event.agent;
+            setActivity(`@${event.agent} is answering…`);
+            break;
           case 'tool_use':
-            setActivity(`Using ${event.name || 'a tool'}…`);
+            flushAssistant();
+            setActivity(
+              event.name === 'find_agent' ? 'Finding the right agent…'
+                : event.name === 'ask_agent' ? `Asking @${event.input?.agent || 'a specialist'}…`
+                : `Using ${event.name || 'a tool'}…`,
+            );
             break;
           case 'error':
             setError(event.message);
@@ -149,10 +170,8 @@ export default function CopilotPane({ onClose }) {
     });
 
     setActivity(null);
+    flushAssistant();
     setStreaming(null);
-    if (assistantText) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: assistantText }]);
-    }
     // Refresh titles/timestamps in the list.
     loadList();
     abortRef.current = null;

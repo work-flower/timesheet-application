@@ -18,6 +18,7 @@ mkdirSync(join(dataDir, 'imports'), { recursive: true });
 mkdirSync(join(dataDir, 'notebooks'), { recursive: true });
 mkdirSync(join(dataDir, 'daily-plans'), { recursive: true });
 mkdirSync(join(dataDir, 'conversations'), { recursive: true });
+mkdirSync(join(dataDir, 'agents'), { recursive: true });
 
 // Raw datastores
 const _clients = Datastore.create({ filename: join(dataDir, 'clients.db'), autoload: true });
@@ -40,6 +41,8 @@ const _calendarEvents = Datastore.create({ filename: join(dataDir, 'calendar-eve
 const _ticketSources = Datastore.create({ filename: join(dataDir, 'ticket-sources.db'), autoload: true });
 const _tickets = Datastore.create({ filename: join(dataDir, 'tickets.db'), autoload: true });
 const _conversations = Datastore.create({ filename: join(dataDir, 'conversations.db'), autoload: true });
+// Rebuildable index over the file-led agent card folders (DATA_DIR/agents/{slug}/)
+const _agents = Datastore.create({ filename: join(dataDir, 'agents.db'), autoload: true });
 
 // One user record per identity — JIT provisioning relies on this for dedup
 _users.ensureIndex({ fieldName: 'email', unique: true }).catch((err) => {
@@ -67,9 +70,10 @@ const calendarEvents = wrapCollection('calendarEvents', _calendarEvents);
 const ticketSources = wrapCollection('ticketSources', _ticketSources);
 const tickets = wrapCollection('tickets', _tickets);
 const conversations = wrapCollection('conversations', _conversations);
+const agents = wrapCollection('agents', _agents);
 
-export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, calendarSources, calendarEvents, ticketSources, tickets, conversations };
+export { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, calendarSources, calendarEvents, ticketSources, tickets, conversations, agents };
 
 // Wrapped-collection lookup keyed exactly as shared/authz/registry.js TABLES —
 // used by generic per-table endpoints (e.g. the roles field-name sampler).
-export const collectionsByName = { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, calendarSources, calendarEvents, ticketSources, tickets, conversations };
+export const collectionsByName = { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, calendarSources, calendarEvents, ticketSources, tickets, conversations, agents };

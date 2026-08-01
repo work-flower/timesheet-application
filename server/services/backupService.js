@@ -14,7 +14,7 @@ import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync
 import { pipeline } from 'stream/promises';
 import crypto from 'crypto';
 import backupConfig from '../db/backupConfig.js';
-import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, conversations } from '../db/index.js';
+import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, conversations, agents } from '../db/index.js';
 import evalExamples from '../db/evalExamples.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,6 +27,7 @@ function getUploadsDir() { return join(getDataDir(), 'uploads'); }
 function getNotebooksDir() { return join(getDataDir(), 'notebooks'); }
 function getDailyPlansDir() { return join(getDataDir(), 'daily-plans'); }
 function getConversationsDir() { return join(getDataDir(), 'conversations'); }
+function getAgentsDir() { return join(getDataDir(), 'agents'); }
 
 
 function copyDirSync(src, dest) {
@@ -192,7 +193,7 @@ export async function createBackup() {
     const key = `${prefix}/${folderName}.tar.gz`;
 
     // Export all collections
-    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs, evalExampleDocs] = await Promise.all([
+    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs, evalExampleDocs, agentDocs] = await Promise.all([
       clients.find({}),
       projects.find({}),
       timesheets.find({}),
@@ -210,6 +211,7 @@ export async function createBackup() {
       roles.find({}),
       conversations.find({}),
       evalExamples.find({}),
+      agents.find({}),
     ]);
 
     const metadata = {
@@ -233,6 +235,7 @@ export async function createBackup() {
         roles: roleDocs.length,
         conversations: conversationDocs.length,
         evalExamples: evalExampleDocs.length,
+        agents: agentDocs.length,
       },
     };
 
@@ -264,6 +267,7 @@ export async function createBackup() {
     archive.append(JSON.stringify(roleDocs, null, 2), { name: `${folderName}/roles.json` });
     archive.append(JSON.stringify(conversationDocs, null, 2), { name: `${folderName}/conversations.json` });
     archive.append(JSON.stringify(evalExampleDocs, null, 2), { name: `${folderName}/evalExamples.json` });
+    archive.append(JSON.stringify(agentDocs, null, 2), { name: `${folderName}/agents.json` });
 
     // Add file directories (documents, expenses, invoices, uploads)
     const fileDirs = [
@@ -274,6 +278,7 @@ export async function createBackup() {
       { dir: getNotebooksDir(), archiveName: 'notebooks' },
       { dir: getDailyPlansDir(), archiveName: 'daily-plans' },
       { dir: getConversationsDir(), archiveName: 'conversations' },
+      { dir: getAgentsDir(), archiveName: 'agents' },
     ];
     for (const { dir, archiveName } of fileDirs) {
       if (existsSync(dir)) {
@@ -395,6 +400,7 @@ export async function restoreFromBackup(backupKey) {
       { name: 'roles', db: roles },
       { name: 'conversations', db: conversations },
       { name: 'evalExamples', db: evalExamples },
+      { name: 'agents', db: agents },
     ];
 
     for (const { name, db } of collections) {
@@ -419,6 +425,7 @@ export async function restoreFromBackup(backupKey) {
       { target: getNotebooksDir(), restoreSubdir: 'files/notebooks' },
       { target: getDailyPlansDir(), restoreSubdir: 'files/daily-plans' },
       { target: getConversationsDir(), restoreSubdir: 'files/conversations' },
+      { target: getAgentsDir(), restoreSubdir: 'files/agents' },
     ];
 
     for (const { target, restoreSubdir } of fileDirs) {

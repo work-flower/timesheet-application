@@ -178,3 +178,37 @@ export function decodeResponse(wireFormat, response, provider) {
 }
 
 export const SUPPORTED_WIRE_FORMATS = Object.keys(DECODERS);
+
+/**
+ * Encode-side twin of the decoders: shape neutral tool definitions
+ * ({ name, description, inputSchema }) into the wire dialect selected by the
+ * SAME wireFormat that picks the response decoder. Templates reference the
+ * result via the exact-placeholder `"tools": "{{$.tools}}"` (raw substitution).
+ * Returns [] when no tools — callers strip the empty node from the payload.
+ */
+export function shapeTools(wireFormat, tools = []) {
+  if (!tools.length) return [];
+  switch (wireFormat) {
+    case 'openai-sse':
+      return tools.map((t) => ({
+        type: 'function',
+        function: { name: t.name, description: t.description, parameters: t.inputSchema },
+      }));
+    case 'gemini-sse':
+      return [{
+        functionDeclarations: tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.inputSchema,
+        })),
+      }];
+    case 'anthropic-sse':
+    case 'json':
+    default:
+      return tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      }));
+  }
+}

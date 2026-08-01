@@ -68,6 +68,15 @@ async function seed() {
       calendarEvents: { read: true },
       ticketSources: { read: true, actions: ['refresh'] },
       tickets: { read: true },
+      // Agent layer: any visible agent is talkable; conversations are private
+      // to their creator via the $$user macro (docs: authorisation.md).
+      agents: { read: true },
+      conversations: {
+        read: { createdBy: '$$user.email' },
+        create: true,
+        update: { createdBy: '$$user.email' },
+        delete: { createdBy: '$$user.email' },
+      },
     }),
     userIds: [],
     createdAt: roleNow,
@@ -84,6 +93,13 @@ async function seed() {
       expenses: { read: { date: { $gte: '$$startOfYear' } } },
       invoices: { read: true },
       documents: { read: true },
+      agents: { read: true },
+      conversations: {
+        read: { createdBy: '$$user.email' },
+        create: true,
+        update: { createdBy: '$$user.email' },
+        delete: { createdBy: '$$user.email' },
+      },
     }),
     userIds: [],
     createdAt: roleNow,

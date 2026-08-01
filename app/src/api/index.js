@@ -34,6 +34,11 @@ export const meApi = {
   stopImpersonation: () => request('/me/impersonate', { method: 'DELETE' }),
 };
 
+// Agents (caller-scoped picker list for @mentions; server enforces visibility)
+export const agentsApi = {
+  getAll: () => request('/agents'),
+};
+
 // Conversations (Copilot assistant threads). The message-send SSE stream is
 // handled separately in copilotStream.js (fetch + ReadableStream).
 export const conversationsApi = {

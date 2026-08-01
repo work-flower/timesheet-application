@@ -62,11 +62,15 @@ export default function ChatView({ messages, streaming, activity, error }) {
   const styles = useStyles();
   const endRef = useRef(null);
 
+  // The transcript also holds the master's tool_call/tool_result exchanges —
+  // internal working, not conversation bubbles.
+  const visibleMessages = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streaming, activity]);
 
-  const hasContent = messages.length > 0 || streaming || activity || error;
+  const hasContent = visibleMessages.length > 0 || streaming || activity || error;
 
   if (!hasContent) {
     return (
@@ -80,8 +84,11 @@ export default function ChatView({ messages, streaming, activity, error }) {
 
   return (
     <div className={styles.root}>
-      {messages.map((m, i) => (
+      {visibleMessages.map((m, i) => (
         <div key={i} className={`${styles.row} ${m.role === 'user' ? styles.userRow : styles.assistantRow}`}>
+          {m.role === 'assistant' && m.agent && (
+            <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>@{m.agent}</Text>
+          )}
           <div className={`${styles.bubble} ${m.role === 'user' ? styles.userBubble : styles.assistantBubble}`}>
             {m.role === 'user' ? m.content : <AssistantContent text={m.content} />}
           </div>
