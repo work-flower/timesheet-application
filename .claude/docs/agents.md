@@ -42,12 +42,15 @@ The agent layer: a **master agent** (the reserved `master` card) fronts every Co
 ### Routing (Phase 2 — admin-surface only; eval-set included in backups)
 | Layer | File |
 |---|---|
-| Embeddings (local, WASM) | `server/services/embeddingService.js` (`@xenova/transformers`, `Xenova/all-MiniLM-L6-v2`, 384-dim, cached at `DATA_DIR/models`) |
+| Embeddings (local) | `server/services/embeddingService.js` (`@xenova/transformers`; model from routingConfig, default `Xenova/all-MiniLM-L6-v2`; native onnx on dev, WASM in the Alpine image; weights cached at `DATA_DIR/models`) |
 | Vector index + routing + eval harness | `server/services/routingService.js` (flat file `DATA_DIR/rag/routing-index.json`, brute-force cosine, `findAgent`, leave-one-out `runEvals`) |
 | Eval-set DB (standalone) | `server/db/evalExamples.js` → `eval-examples.db` |
-| Eval-set service | `server/services/evalService.js` (CRUD, `route` probe, `runEvals`; invalidates the index on mutation) |
-| Route (admin surface only) | `server/routes/evalExamples.js` → `/admin/api/eval-examples` (+ `POST /run`, `POST /route`) |
-| Admin UI | `admin/src/pages/agents/EvalSetPage.jsx` (CRUD + route probe + accuracy/confusion report) |
+| Eval-set service | `server/services/evalService.js` (CRUD, `runEvals`; invalidates the index on mutation) |
+| Route (admin surface only) | `server/routes/evalExamples.js` → `/admin/api/eval-examples` (+ `POST /run`) |
+| Admin UI (eval-set) | `admin/src/pages/agents/EvalSetPage.jsx` (CRUD + Run Evals accuracy/confusion report) |
+| Engine config (single doc, backed up) | `server/db/routingConfig.js` → `routing-config.db`; `server/services/routingConfigService.js` (defaults = original constants) |
+| Engine routes (admin) | `server/routes/routing.js` → `/admin/api/routing` (config, defaults, status, rebuild, tier-aware probe) |
+| Admin UI (engine) | `admin/src/pages/agents/RoutingPage.jsx` (behaviour + advanced config, index status/rebuild, route probe with tier badge) |
 | Admin API client | `admin/src/api/index.js` → `evalExamplesApi` |
 
 ## Golden rules
@@ -110,6 +113,9 @@ Each yields neutral events `{ type: 'text'|'thinking'|'tool_use'|'stop'|'error',
 18. **Tool exchanges are transcript rows** (`role: 'tool_call'|'tool_result'` with `toolCallId`/`name`), persisted by the chat service as they happen; the pane filters them out of bubbles. Specialist turns (`@mention`, `ask_agent`) get user/assistant history only — never the master's tool exchanges (providers reject tool blocks when no tools are declared).
 19. **Tool wire-shaping is keyed by wireFormat, both directions**: `shapeTools()` (encode) and the decoders (tool_use events) live in `streamDecoders.js`; templates carry `"tools": "{{$.tools}}"` plus `tool_call`/`tool_result` role sub-templates. A template without those nodes simply can't tool-call (the master then answers directly) — after upgrading, re-apply the provider preset once.
 20. **Specialist sub-loops are stateless**: brief in, text out, no tools, no conversation access — the master's `ask_agent` brief must be self-contained (the master's agent.md says so).
+21. **Routing consultation is STRUCTURAL, not model-discretionary.** Every master turn, `streamTurn` runs the routing query server-side (one local embed) BEFORE the model call, in three tiers, ALL governed by `routingConfig` (admin → Agents → Routing; read per turn, no restart): score ≥ `autoRouteThreshold` (default 0.92 — effectively "this utterance is in the eval-set") ⇒ ground-truth direct takeover by the specialist (implicit @mention, `agent` event, no master round; `autoRouteEnabled` toggles the tier); score ≥ `evidenceFloor` (default 0.3, `evidenceEnabled` toggles) ⇒ a synthetic `find_agent` tool exchange (`auto: true` rows) is appended to the transcript so the master decides WITH evidence (also saves the round-trip of the model calling the tool); below floor ⇒ nothing attached (small talk stays clean). The master still holds `find_agent` for refined re-queries. Rationale: the eval-set must never depend on the model *choosing* to look — an exact exemplar match that didn't route (because the master answered from general knowledge) is how this shipped broken once. Routing failures never block the turn (warn + continue without evidence).
+22. **Routing engine knobs are config, not constants.** `routingConfig` (single doc, no secrets, INCLUDED in backups) carries: tiers (`autoRouteEnabled/Threshold`, `evidenceEnabled/Floor`, `maxCandidates`) and advanced (`topK`, `aggregation` max|mean, `embeddingModel`, corpus toggles `includeEvalExamples`/`includeCardDescriptions`, `maxToolIterations`). Consumers read it per turn. The **embedding model id is part of the index hash** (with the corpus), so changing model or corpus toggles rebuilds the index lazily on next use; the per-model extractor cache in `embeddingService` swaps pipelines. Caveat the page hints at: `aggregation: mean` dilutes exact exemplar matches (an exact hit averaged with weaker matches can drop below the auto-route threshold) — max is the ground-truth-friendly default.
+23. **The master card's `agent.md` is user-owned — code-default changes don't propagate.** `ensureMasterCard` only creates the file when missing; existing installs keep their prompt. When `DEFAULT_MASTER_AGENT_MD` changes materially (e.g. the evidence-first guidance), the release notes/summary must tell operators to refresh their master card's agent.md in the designer.
 
 ## Golden rules — Routing (Phase 2)
 

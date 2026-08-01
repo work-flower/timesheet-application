@@ -103,7 +103,16 @@ export const evalExamplesApi = {
   update: (id, data) => request(`/eval-examples/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/eval-examples/${id}`, { method: 'DELETE' }),
   run: () => request('/eval-examples/run', { method: 'POST', body: '{}' }),
-  route: (utterance) => request('/eval-examples/route', { method: 'POST', body: JSON.stringify({ utterance }) }),
+};
+
+// Routing engine (Agents) — config, index status, tier-aware probe
+export const routingApi = {
+  getConfig: () => request('/routing/config'),
+  getDefaults: () => request('/routing/defaults'),
+  updateConfig: (data) => request('/routing/config', { method: 'PUT', body: JSON.stringify(data) }),
+  getStatus: () => request('/routing/status'),
+  rebuild: () => request('/routing/rebuild', { method: 'POST', body: '{}' }),
+  probe: (utterance) => request('/routing/probe', { method: 'POST', body: JSON.stringify({ utterance }) }),
 };
 
 // Backup

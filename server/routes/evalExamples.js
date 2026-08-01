@@ -25,16 +25,6 @@ router.post('/run', async (req, res) => {
   }
 });
 
-// POST /admin/api/eval-examples/route — probe: route an arbitrary utterance.
-router.post('/route', async (req, res) => {
-  try {
-    res.json(await evalService.route(req.body?.utterance));
-  } catch (err) {
-    console.warn(err.message);
-    respondError(res, err, 400);
-  }
-});
-
 // GET /admin/api/eval-examples/:id
 router.get('/:id', async (req, res) => {
   try {

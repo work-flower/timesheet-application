@@ -6,6 +6,7 @@ import evalExamples from '../db/evalExamples.js';
 import { agents } from '../db/index.js';
 import { runAsSystem } from '../pipeline/systemContext.js';
 import { embed, cosineSim } from './embeddingService.js';
+import { getConfig as getRoutingConfig } from './routingConfigService.js';
 
 /**
  * Routing service (Phase 2 "it routes").
@@ -32,17 +33,15 @@ function getDataDir() { return process.env.DATA_DIR || join(__dirname, '..', '..
 function getRagDir() { return join(getDataDir(), 'rag'); }
 function getIndexPath() { return join(getRagDir(), 'routing-index.json'); }
 
-const TOP_K = 20; // nearest exemplars considered per query
-
 let memoryIndex = null; // { hash, builtAt, entries: [{ id, label, text, source, vector }] }
 
-/** Stable hash of the routing corpus — any change forces a rebuild. */
-function corpusHash(items) {
+/** Stable hash of the routing corpus + embedding model — any change forces a rebuild. */
+function corpusHash(items, model) {
   const material = items
     .map((i) => `${i.id}\u0001${i.label}\u0001${i.text}`)
     .sort()
     .join('\u0002');
-  return createHash('sha256').update(material).digest('hex');
+  return createHash('sha256').update(`${model}\u0003${material}`).digest('hex');
 }
 
 /**
@@ -52,10 +51,12 @@ function corpusHash(items) {
  * derived; per-caller visibility applies to CANDIDATES (find_agent tool
  * handler), never baked into the index.
  */
-async function loadCorpus() {
+async function loadCorpus(config) {
   const [examples, cards] = await Promise.all([
-    evalExamples.find({}),
-    runAsSystem(() => agents.find({ enabled: { $ne: false }, isMaster: { $ne: true } })),
+    config.includeEvalExamples !== false ? evalExamples.find({}) : [],
+    config.includeCardDescriptions !== false
+      ? runAsSystem(() => agents.find({ enabled: { $ne: false }, isMaster: { $ne: true } }))
+      : [],
   ]);
   const items = examples.map((e) => ({
     id: e._id,
@@ -75,15 +76,15 @@ export function invalidateIndex() {
   memoryIndex = null;
 }
 
-async function buildIndex(items, hash) {
+async function buildIndex(items, hash, model) {
   const entries = [];
   if (items.length) {
-    const vectors = await embed(items.map((i) => i.text));
+    const vectors = await embed(items.map((i) => i.text), model);
     for (let i = 0; i < items.length; i++) {
       entries.push({ ...items[i], vector: vectors[i] });
     }
   }
-  const index = { hash, builtAt: new Date().toISOString(), entries };
+  const index = { hash, model, builtAt: new Date().toISOString(), entries };
   mkdirSync(getRagDir(), { recursive: true });
   writeFileSync(getIndexPath(), JSON.stringify(index));
   memoryIndex = index;
@@ -91,9 +92,10 @@ async function buildIndex(items, hash) {
 }
 
 /** Get a fresh index (in-memory → flat file → rebuild), validated by corpus hash. */
-async function getIndex() {
-  const items = await loadCorpus();
-  const hash = corpusHash(items);
+async function getIndex(config) {
+  const cfg = config || await getRoutingConfig();
+  const items = await loadCorpus(cfg);
+  const hash = corpusHash(items, cfg.embeddingModel);
 
   if (memoryIndex && memoryIndex.hash === hash) return memoryIndex;
 
@@ -106,24 +108,27 @@ async function getIndex() {
       }
     } catch { /* fall through to rebuild */ }
   }
-  return buildIndex(items, hash);
+  return buildIndex(items, hash, cfg.embeddingModel);
 }
 
-/** Aggregate scored entries into ranked candidate agents with reasons. */
-function rank(scored) {
+/** Aggregate scored entries into ranked candidate agents with reasons.
+ *  aggregation 'max' (default) scores an agent by its best match; 'mean'
+ *  averages its retrieved matches (rewards broad support, dilutes one-offs). */
+function rank(scored, aggregation = 'max') {
   const byLabel = new Map();
   for (const s of scored) {
     const cur = byLabel.get(s.label);
     if (!cur) {
-      byLabel.set(s.label, { agent: s.label, score: s.similarity, matches: [s] });
+      byLabel.set(s.label, { agent: s.label, matches: [s] });
     } else {
-      cur.score = Math.max(cur.score, s.similarity);
       cur.matches.push(s);
     }
   }
   const candidates = [...byLabel.values()].map((c) => ({
     agent: c.agent,
-    score: c.score,
+    score: aggregation === 'mean'
+      ? c.matches.reduce((sum, m) => sum + m.similarity, 0) / c.matches.length
+      : Math.max(...c.matches.map((m) => m.similarity)),
     reasons: c.matches
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, 3)
@@ -140,18 +145,43 @@ function rank(scored) {
  * @returns {Promise<{ candidates: Array, top: object|null }>}
  */
 export async function findAgent(utterance, opts = {}) {
-  const index = await getIndex();
+  const config = await getRoutingConfig();
+  const index = await getIndex(config);
   const pool = opts.excludeId ? index.entries.filter((e) => e.id !== opts.excludeId) : index.entries;
   if (!pool.length) return { candidates: [], top: null };
 
-  const [queryVec] = await embed([utterance]);
+  const [queryVec] = await embed([utterance], config.embeddingModel);
   const scored = pool
     .map((e) => ({ label: e.label, text: e.text, source: e.source, similarity: cosineSim(queryVec, e.vector) }))
     .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, TOP_K);
+    .slice(0, Math.max(1, config.topK));
 
-  const candidates = rank(scored);
+  const candidates = rank(scored, config.aggregation);
   return { candidates, top: candidates[0] || null };
+}
+
+/** Index status for the admin Routing page. */
+export async function getIndexStatus() {
+  const config = await getRoutingConfig();
+  const index = await getIndex(config);
+  const counts = { eval: 0, card: 0 };
+  for (const e of index.entries) counts[e.source] = (counts[e.source] || 0) + 1;
+  return {
+    builtAt: index.builtAt,
+    model: index.model || config.embeddingModel,
+    entries: index.entries.length,
+    counts,
+  };
+}
+
+/** Force a full rebuild (admin Rebuild button), bypassing the hash check. */
+export async function rebuildIndex() {
+  const config = await getRoutingConfig();
+  const items = await loadCorpus(config);
+  const hash = corpusHash(items, config.embeddingModel);
+  memoryIndex = null;
+  await buildIndex(items, hash, config.embeddingModel);
+  return getIndexStatus();
 }
 
 /**

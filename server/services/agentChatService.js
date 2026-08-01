@@ -4,6 +4,7 @@ import { decodeResponse, shapeTools } from './streamDecoders.js';
 import { readTranscript, appendMessage } from './conversationService.js';
 import { readCard, MASTER_SLUG } from './agentCardService.js';
 import { findAgent } from './routingService.js';
+import { getConfig as getRoutingConfig } from './routingConfigService.js';
 import { agents } from '../db/index.js';
 
 /**
@@ -194,10 +195,11 @@ async function visibleCandidates(candidates) {
 
 async function toolFindAgent({ query } = {}) {
   if (!query || !query.trim()) return 'find_agent requires a query.';
+  const config = await getRoutingConfig();
   const { candidates } = await findAgent(query.trim());
   const visible = await visibleCandidates(candidates);
   if (!visible.length) return 'No matching specialist agents are available. Answer the user yourself.';
-  return JSON.stringify({ candidates: visible.slice(0, 5) }, null, 2);
+  return JSON.stringify({ candidates: visible.slice(0, Math.max(1, config.maxCandidates)) }, null, 2);
 }
 
 async function toolAskAgent({ agent, brief } = {}, { requestProviderId, signal } = {}) {
@@ -231,6 +233,31 @@ async function executeMasterTool(call, opts) {
 
 // -- Turn orchestration -------------------------------------------------------
 
+// Routing tier thresholds/toggles live in routingConfig (admin → Agents →
+// Routing): autoRouteThreshold — a near-exact match (an utterance present in
+// the eval-set scores ~1.0) is GROUND TRUTH and routes directly, like an
+// implicit @mention; evidenceFloor — weaker matches than this are noise and
+// attach no evidence. Read per turn; changes apply on the next message.
+
+/** Run one specialist turn over the conversation (shared by @mention and
+ *  ground-truth auto-routing). Persists the assistant reply with an agent tag. */
+async function* runSpecialistTurn(conversationId, slug, { providerId, signal }) {
+  const card = readCard(slug);
+  if (!card) {
+    yield { type: 'error', message: `Agent @${slug} has no valid card on disk.` };
+    return;
+  }
+  yield { type: 'agent', agent: slug };
+  const transcript = readTranscript(conversationId);
+  let text = '';
+  for await (const event of runCardStream(card, transcript, { tools: [], requestProviderId: providerId, signal })) {
+    if (event.type === 'text') text += event.text;
+    yield event;
+    if (event.type === 'error') return;
+  }
+  if (text) await appendMessage(conversationId, { role: 'assistant', content: text, agent: slug });
+}
+
 /**
  * Stream one conversation turn. The route has already appended the user
  * message to the transcript. Yields neutral events for the SSE pane; persists
@@ -247,21 +274,41 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
       yield { type: 'error', message: `Unknown or inaccessible agent @${slug}.` };
       return;
     }
-    const card = readCard(slug);
-    if (!card) {
-      yield { type: 'error', message: `Agent @${slug} has no valid card on disk.` };
-      return;
-    }
-    yield { type: 'agent', agent: slug };
-    const transcript = readTranscript(conversationId);
-    let text = '';
-    for await (const event of runCardStream(card, transcript, { tools: [], requestProviderId: providerId, signal })) {
-      if (event.type === 'text') text += event.text;
-      yield event;
-      if (event.type === 'error') return;
-    }
-    if (text) await appendMessage(conversationId, { role: 'assistant', content: text, agent: slug });
+    yield* runSpecialistTurn(conversationId, slug, { providerId, signal });
     return;
+  }
+
+  // -- Structural routing consultation ---------------------------------------
+  // The routing corpus must not depend on the master CHOOSING to look: run the
+  // query server-side (one local embed) on every master turn. A near-exact
+  // eval-set match routes directly (ground truth); anything above the noise
+  // floor is attached to the transcript as a ready-made find_agent exchange,
+  // so the master decides WITH the evidence in front of it (and saves the
+  // round-trip of calling the tool itself).
+  const routingCfg = await getRoutingConfig();
+  try {
+    const { candidates } = await findAgent(userMessage);
+    const visible = await visibleCandidates(candidates);
+    if (visible.length) {
+      const top = visible[0];
+      if (routingCfg.autoRouteEnabled !== false && top.score >= routingCfg.autoRouteThreshold) {
+        yield* runSpecialistTurn(conversationId, top.agent, { providerId, signal });
+        return;
+      }
+      if (routingCfg.evidenceEnabled !== false && top.score >= routingCfg.evidenceFloor) {
+        const toolCallId = `auto_${conversationId}_${readTranscript(conversationId).length}`;
+        await appendMessage(conversationId, {
+          role: 'tool_call', toolCallId, name: 'find_agent', input: { query: userMessage }, auto: true,
+        });
+        await appendMessage(conversationId, {
+          role: 'tool_result', toolCallId, name: 'find_agent',
+          content: JSON.stringify({ candidates: visible.slice(0, Math.max(1, routingCfg.maxCandidates)) }, null, 2), auto: true,
+        });
+      }
+    }
+  } catch (err) {
+    // Routing must never block the conversation (e.g. embedding model missing).
+    console.warn(`Routing consultation failed (continuing without evidence): ${err.message}`);
   }
 
   // -- Master turn with tool loop --------------------------------------------
@@ -271,8 +318,9 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
     slug: MASTER_SLUG, name: 'Master', agentMd: FALLBACK_SYSTEM, aiProviderId: null, payloadTemplate: null,
   };
 
-  for (let iteration = 0; iteration <= MAX_TOOL_ITERATIONS; iteration++) {
-    const finalRound = iteration === MAX_TOOL_ITERATIONS;
+  const maxIterations = Math.max(1, routingCfg.maxToolIterations ?? MAX_TOOL_ITERATIONS);
+  for (let iteration = 0; iteration <= maxIterations; iteration++) {
+    const finalRound = iteration === maxIterations;
     // Last round runs without tools so the model must produce an answer.
     const tools = finalRound ? [] : MASTER_TOOL_DEFS;
     const transcript = readTranscript(conversationId);

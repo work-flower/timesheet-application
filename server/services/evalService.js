@@ -1,5 +1,5 @@
 import evalExamples from '../db/evalExamples.js';
-import { invalidateIndex, findAgent, runEvals as routingRunEvals } from './routingService.js';
+import { invalidateIndex, runEvals as routingRunEvals } from './routingService.js';
 
 /**
  * Routing eval-set — labeled `utterance → expectedAgent` examples.
@@ -62,12 +62,6 @@ export async function remove(id) {
   const removed = await evalExamples.remove({ _id: id });
   invalidateIndex();
   return removed;
-}
-
-/** Probe: route an arbitrary utterance and return ranked candidates + reasons. */
-export async function route(utterance) {
-  if (!utterance || !String(utterance).trim()) throw new Error('Utterance is required');
-  return findAgent(String(utterance).trim());
 }
 
 /** Run the full eval harness → { total, correct, accuracy, perAgent, confusion, misroutes }. */

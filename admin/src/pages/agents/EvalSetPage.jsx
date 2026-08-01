@@ -30,7 +30,6 @@ import {
   DeleteRegular,
   EditRegular,
   PlayRegular,
-  TargetRegular,
   BeakerRegular,
 } from '@fluentui/react-icons';
 import { evalExamplesApi } from '../../api/index.js';
@@ -64,7 +63,6 @@ const useStyles = makeStyles({
   },
   panelTitle: { fontWeight: tokens.fontWeightSemibold, marginBottom: '10px', display: 'block' },
   accuracyBig: { fontSize: tokens.fontSizeHero700, fontWeight: tokens.fontWeightBold },
-  probeRow: { display: 'flex', gap: '8px', alignItems: 'flex-end', marginBottom: '16px' },
   reason: { fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3, fontStyle: 'italic' },
   formGrid: { display: 'flex', flexDirection: 'column', gap: '16px' },
   mono: { fontFamily: 'monospace', fontSize: tokens.fontSizeBase200 },
@@ -84,9 +82,6 @@ export default function EvalSetPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [report, setReport] = useState(null);
   const [running, setRunning] = useState(false);
-  const [probeText, setProbeText] = useState('');
-  const [probeResult, setProbeResult] = useState(null);
-  const [probing, setProbing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -153,19 +148,6 @@ export default function EvalSetPage() {
     }
   };
 
-  const runProbe = async () => {
-    if (!probeText.trim()) return;
-    setProbing(true);
-    setProbeResult(null);
-    try {
-      setProbeResult(await evalExamplesApi.route(probeText.trim()));
-    } catch (err) {
-      showMessage('error', `Route failed: ${err.message}`);
-    } finally {
-      setProbing(false);
-    }
-  };
-
   const agents = [...new Set(examples.map((e) => e.expectedAgent))].sort();
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
@@ -192,30 +174,6 @@ export default function EvalSetPage() {
         <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: 16 }}>
           Labeled examples (utterance → expected agent) train and measure routing. They serve as runtime routing signal and as the accuracy harness below. Add production misroutes here to improve routing over time.
         </Text>
-
-        {/* Route probe */}
-        <div className={styles.panel}>
-          <Text className={styles.panelTitle}><TargetRegular /> Route probe</Text>
-          <div className={styles.probeRow}>
-            <Field label="Try an utterance" style={{ flex: 1 }}>
-              <Input value={probeText} onChange={(e, d) => setProbeText(d.value)} placeholder="e.g. I need to log the hours I worked today" onKeyDown={(e) => { if (e.key === 'Enter') runProbe(); }} />
-            </Field>
-            <Button appearance="outline" onClick={runProbe} disabled={probing || !probeText.trim()}>{probing ? '...' : 'Route'}</Button>
-          </div>
-          {probeResult && (
-            probeResult.top ? (
-              <div>
-                <Text>Top match: <Badge appearance="filled" color="brand">{probeResult.top.agent}</Badge> <span className={styles.mono}>score {probeResult.top.score}</span></Text>
-                <div className={styles.reason}>because: "{probeResult.top.reasons?.[0]?.text}"</div>
-                {probeResult.candidates.length > 1 && (
-                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    others: {probeResult.candidates.slice(1, 4).map((c) => `${c.agent} (${c.score})`).join(', ')}
-                  </Text>
-                )}
-              </div>
-            ) : <Text size={200}>No candidates — add examples first.</Text>
-          )}
-        </div>
 
         {/* Eval report */}
         {report && (

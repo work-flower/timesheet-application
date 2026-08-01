@@ -16,6 +16,7 @@ import crypto from 'crypto';
 import backupConfig from '../db/backupConfig.js';
 import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, conversations, agents } from '../db/index.js';
 import evalExamples from '../db/evalExamples.js';
+import routingConfig from '../db/routingConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -193,7 +194,7 @@ export async function createBackup() {
     const key = `${prefix}/${folderName}.tar.gz`;
 
     // Export all collections
-    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs, evalExampleDocs, agentDocs] = await Promise.all([
+    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs, evalExampleDocs, agentDocs, routingConfigDocs] = await Promise.all([
       clients.find({}),
       projects.find({}),
       timesheets.find({}),
@@ -212,6 +213,7 @@ export async function createBackup() {
       conversations.find({}),
       evalExamples.find({}),
       agents.find({}),
+      routingConfig.find({}),
     ]);
 
     const metadata = {
@@ -236,6 +238,7 @@ export async function createBackup() {
         conversations: conversationDocs.length,
         evalExamples: evalExampleDocs.length,
         agents: agentDocs.length,
+        routingConfig: routingConfigDocs.length,
       },
     };
 
@@ -268,6 +271,7 @@ export async function createBackup() {
     archive.append(JSON.stringify(conversationDocs, null, 2), { name: `${folderName}/conversations.json` });
     archive.append(JSON.stringify(evalExampleDocs, null, 2), { name: `${folderName}/evalExamples.json` });
     archive.append(JSON.stringify(agentDocs, null, 2), { name: `${folderName}/agents.json` });
+    archive.append(JSON.stringify(routingConfigDocs, null, 2), { name: `${folderName}/routingConfig.json` });
 
     // Add file directories (documents, expenses, invoices, uploads)
     const fileDirs = [
@@ -401,6 +405,7 @@ export async function restoreFromBackup(backupKey) {
       { name: 'conversations', db: conversations },
       { name: 'evalExamples', db: evalExamples },
       { name: 'agents', db: agents },
+      { name: 'routingConfig', db: routingConfig },
     ];
 
     for (const { name, db } of collections) {

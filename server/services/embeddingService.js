@@ -25,13 +25,19 @@ const __dirname = dirname(__filename);
 function getDataDir() { return process.env.DATA_DIR || join(__dirname, '..', '..', 'data'); }
 function getModelsDir() { return join(getDataDir(), 'models'); }
 
-const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
-export const EMBEDDING_DIM = 384;
+export const DEFAULT_MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
+export const EMBEDDING_DIM = 384; // dim of the DEFAULT model; other models vary
 
+// Extractor cache keyed by model id — switching the configured model (admin →
+// Routing, advanced) loads the new pipeline on next use; the old one is
+// dropped. The routing index carries the model id in its hash, so a model
+// change also triggers a corpus rebuild there.
 let extractorPromise = null;
+let extractorModel = null;
 
-async function getExtractor() {
-  if (!extractorPromise) {
+async function getExtractor(modelId = DEFAULT_MODEL_ID) {
+  if (!extractorPromise || extractorModel !== modelId) {
+    extractorModel = modelId;
     extractorPromise = (async () => {
       const { pipeline, env } = await import('@xenova/transformers');
       const modelsDir = getModelsDir();
@@ -47,7 +53,7 @@ async function getExtractor() {
       // note re: Alpine/gcompat).
       env.cacheDir = modelsDir;
       env.allowLocalModels = false;
-      return pipeline('feature-extraction', MODEL_ID);
+      return pipeline('feature-extraction', modelId);
     })().catch((err) => {
       extractorPromise = null; // allow retry on transient download failure
       throw err;
@@ -56,18 +62,20 @@ async function getExtractor() {
   return extractorPromise;
 }
 
-/** Embed one or many strings → array of L2-normalized vectors (mean-pooled). */
-export async function embed(texts) {
+/** Embed one or many strings → array of L2-normalized vectors (mean-pooled).
+ *  Pass a model id to embed with a specific model (routing config); defaults
+ *  to the stock model. */
+export async function embed(texts, modelId) {
   const list = Array.isArray(texts) ? texts : [texts];
   if (list.length === 0) return [];
-  const extractor = await getExtractor();
+  const extractor = await getExtractor(modelId || DEFAULT_MODEL_ID);
   const output = await extractor(list, { pooling: 'mean', normalize: true });
   return output.tolist();
 }
 
 /** Embed a single string → one vector. */
-export async function embedOne(text) {
-  const [vec] = await embed([text]);
+export async function embedOne(text, modelId) {
+  const [vec] = await embed([text], modelId);
   return vec;
 }
 

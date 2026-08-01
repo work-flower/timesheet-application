@@ -302,6 +302,10 @@ Agent card index (Phase 3). **File-led**: each card IS its folder at `DATA_DIR/a
 | isMaster | True only for the reserved `master` card |
 | hasPayloadTemplate | Whether the folder carries a `payload_template.json` override |
 
+### routingConfig (single document)
+
+Routing engine configuration (admin → Agents → Routing). Separate database file (`routing-config.db`), no secrets, **included** in backups. Read per turn — changes apply on the next message, no restart. Tiers: `autoRouteEnabled`/`autoRouteThreshold` (ground-truth takeover), `evidenceEnabled`/`evidenceFloor` (evidence attachment), `maxCandidates`. Advanced: `topK`, `aggregation` (`max`|`mean`), `embeddingModel` (HF ONNX id; change triggers lazy reindex — model id is part of the index hash), corpus toggles (`includeEvalExamples`, `includeCardDescriptions`), `maxToolIterations` (master tool-loop rounds). See `.claude/docs/agents.md`.
+
 ### evalExamples
 
 Routing eval-set for the agent layer (Phase 2). Labeled `utterance → expectedAgent` examples that serve as both the runtime routing signal (exemplars in the vector index) and the accuracy harness. Standalone store (`eval-examples.db`), admin-surface only (`/admin/api/eval-examples`), **included** in backups (curated, no secrets). See `.claude/docs/agents.md`.
@@ -619,7 +623,7 @@ Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods
 - **Settings:** Get/update contractor profile (single document, upserted)
 - **AI Config:** Get/update config (API key masked on read), test connection (sends trivial request to Claude API). Separate from settings — own database, own endpoints.
 - **Logs:** Config CRUD (secret masked on read), test R2 connection, search (supports entity params `startDate`, `endDate`, `level`, `source`, `keyword`, `traceId` + OData `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`), list local files, read log file (with level/source/keyword filtering), upload to R2 (integrity-verified, deletes local), safe delete local file (requires R2 backup verification), download from R2, list R2 logs, pageview tracking (with traceId).
-- **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup. Includes `conversations` (DB + `files/conversations/` transcripts) and `evalExamples`; **excludes** `ai-providers.db` (holds API keys) and the derived `rag/` + `models/` dirs (rebuildable).
+- **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup. Includes `conversations` (DB + `files/conversations/` transcripts), `evalExamples`, `agents` (DB + `files/agents/` card folders) and `routingConfig`; **excludes** `ai-providers.db` (holds API keys) and the derived `rag/` + `models/` dirs (rebuildable).
 - **Help:** Skill zip download endpoint (`GET /api/help/skills/:skillFolder/download`). Searches `src/help/{topic}/skill/{skillFolder}/` and serves as a zip archive. Help topic content is auto-discovered from `src/help/*/index.md` frontmatter (title, description, tags, optional banner image).
 
 ### OData Query Support
@@ -713,7 +717,8 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/system/ticket-sources` | TicketSourcesPage (Jira & Azure DevOps ticket source management) |
 | `/agents/cards`, `/agents/cards/new`, `/agents/cards/:slug` | AgentCardsPage + AgentCardEditPage (card designer over the on-disk folders: agent.md, provider binding, copy-on-write payload template, Rescan) |
 | `/agents/providers` | AiProvidersPage (AI provider registry: endpoint, payload template, wireFormat, masked key) |
-| `/agents/eval-set` | EvalSetPage (routing eval-set CRUD, route probe, Run Evals accuracy/confusion report) |
+| `/agents/routing` | RoutingPage (routing tiers + advanced engine config, vector index status/rebuild, tier-aware route probe) |
+| `/agents/eval-set` | EvalSetPage (routing eval-set CRUD, Run Evals accuracy/confusion report) |
 | `/access/users` | UsersPage (user activation, role assignment, status) |
 | `/access/roles` | RolesPage (role list) |
 | `/access/roles/new` | RoleEditPage (full-page privilege matrix: per-table Read/Create/Update/Delete cells, filters, fls, actions) |
