@@ -14,6 +14,19 @@ COPY package.json package-lock.json* ./
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN npm ci --omit=dev
+# Alpine (musl) cannot load onnxruntime-node's glibc-linked native binding
+# (and the gcompat shim segfaults at import), so force @xenova/transformers
+# onto the pure-WASM onnxruntime-web backend: stub the nested native package
+# and patch the hardcoded under-Node backend chooser. Single-threaded WASM is
+# configured in server/services/embeddingService.js (numThreads=1 — Node
+# cannot spawn ort-web's blob: workers). The trailing grep fails the BUILD
+# loudly if a package update ever changes the chooser line.
+RUN STUB=node_modules/@xenova/transformers/node_modules/onnxruntime-node \
+ && rm -rf "$STUB" && mkdir -p "$STUB" \
+ && printf '{"name":"onnxruntime-node","version":"0.0.0-wasm-stub","main":"index.js"}' > "$STUB/package.json" \
+ && printf 'module.exports = require("onnxruntime-web");\n' > "$STUB/index.js" \
+ && sed -i 's/typeof process !== .undefined. && process?.release?.name === .node./false/' node_modules/@xenova/transformers/src/backends/onnx.js \
+ && grep -q "if (false)" node_modules/@xenova/transformers/src/backends/onnx.js
 COPY server/ server/
 COPY shared/ shared/
 COPY scripts/ scripts/

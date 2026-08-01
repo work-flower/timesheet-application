@@ -5,14 +5,19 @@ import { mkdirSync } from 'fs';
 /**
  * Local text embeddings for routing RAG (Phase 2 "it routes").
  *
- * Uses @xenova/transformers (v2) with a small sentence-embedding model. v2 runs
- * onnxruntime-web (WASM) in Node, so it works on node:20-alpine (musl) with no
- * native binding and no Dockerfile change — @huggingface/transformers v3 only
- * ships a Node build bound to native onnxruntime-node (glibc-only, no musl
- * binary), so it cannot run on Alpine. The model (~23 MB) downloads from the HF
- * hub on first use and is cached under DATA_DIR/models on the host volume;
- * offline deploys pre-seed that directory. The pipeline is a lazy singleton —
- * nothing loads until the first embed() call, so importing this module is cheap.
+ * Uses @xenova/transformers (v2) with a small sentence-embedding model.
+ * Backends differ by environment, deliberately:
+ *   - macOS/glibc dev: transformers.js statically selects the NATIVE
+ *     onnxruntime-node backend under Node (no supported WASM switch exists).
+ *   - Alpine (musl) Docker image: the native glibc-linked binding cannot load
+ *     (and gcompat segfaults at import), so the Dockerfile stubs the nested
+ *     onnxruntime-node package onto pure-WASM onnxruntime-web and patches the
+ *     backend chooser; numThreads=1 below keeps ort-web off Node-incompatible
+ *     blob: workers.
+ * The model (~23 MB) downloads from the HF hub on first use and is cached
+ * under DATA_DIR/models on the host volume; offline deploys pre-seed that
+ * directory. The pipeline is a lazy singleton — nothing loads until the first
+ * embed() call, so importing this module is cheap.
  */
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,9 +36,15 @@ async function getExtractor() {
       const { pipeline, env } = await import('@xenova/transformers');
       const modelsDir = getModelsDir();
       mkdirSync(modelsDir, { recursive: true });
+      // In the Docker image the Dockerfile stubs onnxruntime-node onto the
+      // pure-WASM onnxruntime-web backend; ort-web's multi-threaded WASM tries
+      // to spawn blob: workers, which Node's worker_threads rejects — force
+      // single-threaded. No-op on the native (macOS dev) backend.
+      if (env?.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1;
       // Cache downloaded weights on the host volume; always resolve from the hub
-      // (cached) rather than a bundled local model directory. v2 runs the WASM
-      // backend in Node by default — no device option needed.
+      // (cached) rather than a bundled local model directory. Under Node the
+      // native onnxruntime-node backend is selected automatically (see module
+      // note re: Alpine/gcompat).
       env.cacheDir = modelsDir;
       env.allowLocalModels = false;
       return pipeline('feature-extraction', MODEL_ID);
