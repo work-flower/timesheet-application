@@ -659,7 +659,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 1. **Top Bar:** App title on the left with hamburger menu toggle, Settings button on the right
 2. **Left Sidebar** (~220px, collapsible to icon-only with tooltips): Menu items with expandable parent groups. Active item highlighted with blue accent border.
 3. **Main Content Area** (scrollable): List views, form views, or dashboard
-4. **Copilot Pane** (main app only, ~380px, collapsible right pane; toggled from the top bar): stateful assistant with a conversation list + streaming chat. Layout chrome, not a route; absent in embedded mode; hidden when the caller lacks `conversations` read access. Components in `app/src/components/copilot/`. See `.claude/docs/agents.md`.
+4. **Copilot Pane** (main app only, collapsible right pane; toggled from the top bar): stateful assistant with a conversation list + streaming chat. **Resizable** — drag the left edge (320px–75vw, double-click resets) or the header expand/restore toggle; width persisted per client in localStorage (`copilot-pane-width`), default 380px. Layout chrome, not a route; absent in embedded mode; hidden when the caller lacks `conversations` read access. Components in `app/src/components/copilot/`. See `.claude/docs/agents.md`.
 
 ### Navigation
 

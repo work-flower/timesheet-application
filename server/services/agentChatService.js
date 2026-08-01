@@ -203,12 +203,12 @@ async function toolFindAgent({ query } = {}) {
 }
 
 async function toolAskAgent({ agent, brief } = {}, { requestProviderId, signal } = {}) {
-  if (!agent || !brief) return 'ask_agent requires both "agent" and "brief".';
+  if (!agent || !brief) return { content: 'ask_agent requires both "agent" and "brief".', consulted: null };
   // Caller-scoped resolution: invisible ⇒ not-found (visibility = talkability).
   const doc = await agents.findOne({ slug: agent, enabled: { $ne: false }, isMaster: { $ne: true } });
-  if (!doc) return `Agent "${agent}" was not found or is not accessible.`;
+  if (!doc) return { content: `Agent "${agent}" was not found or is not accessible.`, consulted: null };
   const card = readCard(agent);
-  if (!card) return `Agent "${agent}" has no valid card on disk.`;
+  if (!card) return { content: `Agent "${agent}" has no valid card on disk.`, consulted: null };
 
   let text = '';
   let error = null;
@@ -217,17 +217,23 @@ async function toolAskAgent({ agent, brief } = {}, { requestProviderId, signal }
     if (event.type === 'text') text += event.text;
     else if (event.type === 'error') error = event.message;
   }
-  if (error) return `Specialist "${agent}" failed: ${error}`;
-  return text || `Specialist "${agent}" returned no answer.`;
+  if (error) return { content: `Specialist "${agent}" failed: ${error}`, consulted: null };
+  // Only a specialist that actually answered counts as consulted (attribution).
+  return { content: text || `Specialist "${agent}" returned no answer.`, consulted: text ? agent : null };
 }
 
+/** Execute a master tool → { content, consultedAgent } (consultedAgent set only
+ *  when ask_agent got a real specialist answer — drives response attribution). */
 async function executeMasterTool(call, opts) {
   try {
-    if (call.name === 'find_agent') return await toolFindAgent(call.input);
-    if (call.name === 'ask_agent') return await toolAskAgent(call.input, opts);
-    return `Unknown tool: ${call.name}`;
+    if (call.name === 'find_agent') return { content: await toolFindAgent(call.input), consultedAgent: null };
+    if (call.name === 'ask_agent') {
+      const { content, consulted } = await toolAskAgent(call.input, opts);
+      return { content, consultedAgent: consulted };
+    }
+    return { content: `Unknown tool: ${call.name}`, consultedAgent: null };
   } catch (err) {
-    return `Tool error: ${err.message}`;
+    return { content: `Tool error: ${err.message}`, consultedAgent: null };
   }
 }
 
@@ -319,6 +325,9 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
   };
 
   const maxIterations = Math.max(1, routingCfg.maxToolIterations ?? MAX_TOOL_ITERATIONS);
+  // Specialists that actually answered via ask_agent this turn — the master's
+  // subsequent responses are attributed to them ("via @slug" in the pane).
+  const consulted = [];
   for (let iteration = 0; iteration <= maxIterations; iteration++) {
     const finalRound = iteration === maxIterations;
     // Last round runs without tools so the model must produce an answer.
@@ -342,14 +351,22 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
       }
     }
 
-    if (text) await appendMessage(conversationId, { role: 'assistant', content: text });
+    if (text) {
+      await appendMessage(conversationId, {
+        role: 'assistant', content: text, ...(consulted.length ? { agents: [...consulted] } : {}),
+      });
+    }
     if (!toolCalls.length) return; // final answer delivered
 
     for (const call of toolCalls) {
       const toolCallId = call.id || `tc_${conversationId}_${iteration}_${toolCalls.indexOf(call)}`;
       await appendMessage(conversationId, { role: 'tool_call', toolCallId, name: call.name, input: call.input || {} });
-      const result = await executeMasterTool({ ...call, id: toolCallId }, { requestProviderId: providerId, signal });
+      const { content: result, consultedAgent } = await executeMasterTool({ ...call, id: toolCallId }, { requestProviderId: providerId, signal });
       await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: call.name, content: result });
+      if (consultedAgent && !consulted.includes(consultedAgent)) {
+        consulted.push(consultedAgent);
+        yield { type: 'consulted', agents: [...consulted] };
+      }
     }
     // Loop continues: next round's transcript includes the tool exchange.
   }

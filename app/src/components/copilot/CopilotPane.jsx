@@ -1,17 +1,29 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { makeStyles, tokens, Text, Button, Tooltip } from '@fluentui/react-components';
-import { DismissRegular, ArrowLeftRegular } from '@fluentui/react-icons';
+import { DismissRegular, ArrowLeftRegular, ArrowMaximizeRegular, ArrowMinimizeRegular } from '@fluentui/react-icons';
 import { conversationsApi } from '../../api/index.js';
 import { streamChat } from '../../api/copilotStream.js';
 import ConversationList from './ConversationList.jsx';
 import ChatView from './ChatView.jsx';
 import ChatInput from './ChatInput.jsx';
 
-const PANE_WIDTH = '380px';
+// Pane width is user-resizable (drag the left edge, or the expand toggle) and
+// persisted per client in localStorage — long agent responses need the room.
+const WIDTH_STORAGE_KEY = 'copilot-pane-width';
+const DEFAULT_WIDTH = 380;
+const MIN_WIDTH = 320;
+const maxWidth = () => Math.min(900, Math.round(window.innerWidth * 0.75));
+const wideWidth = () => Math.min(820, Math.round(window.innerWidth * 0.7));
+const clampWidth = (w) => Math.max(MIN_WIDTH, Math.min(maxWidth(), Math.round(w)));
+
+function loadStoredWidth() {
+  const stored = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
+  return Number.isFinite(stored) && stored >= MIN_WIDTH ? clampWidth(stored) : DEFAULT_WIDTH;
+}
 
 const useStyles = makeStyles({
   pane: {
-    width: PANE_WIDTH,
+    position: 'relative',
     flexShrink: 0,
     borderLeft: `1px solid ${tokens.colorNeutralStroke2}`,
     backgroundColor: tokens.colorNeutralBackground1,
@@ -19,6 +31,19 @@ const useStyles = makeStyles({
     flexDirection: 'column',
     height: '100%',
     overflow: 'hidden',
+  },
+  resizeHandle: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '5px',
+    cursor: 'col-resize',
+    zIndex: 5,
+    '&:hover': { backgroundColor: tokens.colorBrandBackground2 },
+  },
+  resizeHandleActive: {
+    backgroundColor: tokens.colorBrandBackground2Pressed,
   },
   header: {
     display: 'flex',
@@ -43,6 +68,43 @@ export default function CopilotPane({ onClose }) {
   const [activity, setActivity] = useState(null);
   const [error, setError] = useState(null);
   const abortRef = useRef(null);
+
+  // -- Resizable width (persisted per client) --------------------------------
+  const [width, setWidth] = useState(loadStoredWidth);
+  const [resizing, setResizing] = useState(false);
+
+  const persistWidth = (w) => localStorage.setItem(WIDTH_STORAGE_KEY, String(w));
+
+  const onResizeStart = useCallback((e) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setResizing(true);
+    let latest = width;
+    const onMove = (ev) => {
+      latest = clampWidth(window.innerWidth - ev.clientX);
+      setWidth(latest);
+    };
+    const onUp = (ev) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      setResizing(false);
+      persistWidth(clampWidth(window.innerWidth - ev.clientX));
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [width]);
+
+  const resetWidth = () => {
+    setWidth(DEFAULT_WIDTH);
+    persistWidth(DEFAULT_WIDTH);
+  };
+
+  const isWide = width >= (DEFAULT_WIDTH + wideWidth()) / 2;
+  const toggleWide = () => {
+    const next = isWide ? DEFAULT_WIDTH : wideWidth();
+    setWidth(next);
+    persistWidth(next);
+  };
 
   const loadList = useCallback(async () => {
     try {
@@ -119,15 +181,18 @@ export default function CopilotPane({ onClose }) {
     const controller = new AbortController();
     abortRef.current = controller;
     let assistantText = '';
-    let currentAgent = null;
+    let currentAgent = null; // direct takeover (@mention / auto-route)
+    let consultedAgents = []; // specialists answered via master delegation
 
     // The master's tool loop can produce text in several rounds separated by
     // tool calls — flush the buffer into a message bubble at each boundary.
     const flushAssistant = () => {
       if (!assistantText) return;
       const content = assistantText;
-      const agent = currentAgent;
-      setMessages((prev) => [...prev, { role: 'assistant', content, ...(agent ? { agent } : {}) }]);
+      const attribution = currentAgent
+        ? { agent: currentAgent }
+        : consultedAgents.length ? { agents: [...consultedAgents] } : {};
+      setMessages((prev) => [...prev, { role: 'assistant', content, ...attribution }]);
       assistantText = '';
       setStreaming('');
     };
@@ -147,6 +212,9 @@ export default function CopilotPane({ onClose }) {
           case 'agent':
             currentAgent = event.agent;
             setActivity(`@${event.agent} is answering…`);
+            break;
+          case 'consulted':
+            consultedAgents = event.agents || [];
             break;
           case 'tool_use':
             flushAssistant();
@@ -183,7 +251,17 @@ export default function CopilotPane({ onClose }) {
   const busy = streaming != null;
 
   return (
-    <div className={styles.pane}>
+    <div
+      className={styles.pane}
+      style={{ width, transition: resizing ? 'none' : 'width 150ms ease' }}
+    >
+      {/* Drag to resize; double-click to reset to the default width. */}
+      <div
+        className={`${styles.resizeHandle} ${resizing ? styles.resizeHandleActive : ''}`}
+        onPointerDown={onResizeStart}
+        onDoubleClick={resetWidth}
+        title="Drag to resize — double-click to reset"
+      />
       <div className={styles.header}>
         {activeId != null && (
           <Tooltip content="Back to conversations" relationship="label">
@@ -191,6 +269,14 @@ export default function CopilotPane({ onClose }) {
           </Tooltip>
         )}
         <Text className={styles.title}>Assistant</Text>
+        <Tooltip content={isWide ? 'Restore width' : 'Expand'} relationship="label">
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={isWide ? <ArrowMinimizeRegular /> : <ArrowMaximizeRegular />}
+            onClick={toggleWide}
+          />
+        </Tooltip>
         <Tooltip content="Close" relationship="label">
           <Button appearance="subtle" size="small" icon={<DismissRegular />} onClick={onClose} />
         </Tooltip>

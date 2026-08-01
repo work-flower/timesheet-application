@@ -86,8 +86,13 @@ export default function ChatView({ messages, streaming, activity, error }) {
     <div className={styles.root}>
       {visibleMessages.map((m, i) => (
         <div key={i} className={`${styles.row} ${m.role === 'user' ? styles.userRow : styles.assistantRow}`}>
-          {m.role === 'assistant' && m.agent && (
-            <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>@{m.agent}</Text>
+          {/* Attribution: "@slug" = the specialist answered directly
+              (@mention / auto-route); "via @slug" = the master consulted it
+              through ask_agent and is relaying. Master-only answers show nothing. */}
+          {m.role === 'assistant' && (m.agent || m.agents?.length > 0) && (
+            <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
+              {m.agent ? `@${m.agent}` : `via ${m.agents.map((a) => `@${a}`).join(', ')}`}
+            </Text>
           )}
           <div className={`${styles.bubble} ${m.role === 'user' ? styles.userBubble : styles.assistantBubble}`}>
             {m.role === 'user' ? m.content : <AssistantContent text={m.content} />}
