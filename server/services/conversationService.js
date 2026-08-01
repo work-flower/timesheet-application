@@ -97,15 +97,23 @@ export function readTranscript(id) {
 }
 
 /** Append one message to the transcript and bump lastMessageAt. Message shape:
- *  { role: 'user'|'assistant', content, agent?, createdAt } */
+ *  { role: 'user'|'assistant', content, agent?, createdAt }
+ *  The first user message auto-titles a still-default conversation (subject
+ *  shown in the pane header/list; user-editable there afterwards). */
 export async function appendMessage(id, message) {
   mkdirSync(getConversationDir(id), { recursive: true });
   const entry = { createdAt: new Date().toISOString(), ...message };
   appendFileSync(getTranscriptPath(id), JSON.stringify(entry) + '\n');
-  await conversations.update(
-    { _id: id },
-    { $set: { lastMessageAt: entry.createdAt, updatedAt: entry.createdAt } },
-  );
+
+  const set = { lastMessageAt: entry.createdAt, updatedAt: entry.createdAt };
+  if (entry.role === 'user') {
+    const existing = await conversations.findOne({ _id: id });
+    if (existing && (!existing.title || existing.title === 'New conversation')) {
+      const subject = String(entry.content || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (subject) set.title = subject;
+    }
+  }
+  await conversations.update({ _id: id }, { $set: set });
   return entry;
 }
 

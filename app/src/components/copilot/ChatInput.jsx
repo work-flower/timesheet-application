@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { makeStyles, tokens, Textarea, Button, Text } from '@fluentui/react-components';
 import { SendRegular, BotRegular } from '@fluentui/react-icons';
 import { agentsApi } from '../../api/index.js';
@@ -52,6 +52,13 @@ export default function ChatInput({ onSend, disabled }) {
   const styles = useStyles();
   const [value, setValue] = useState('');
   const [agents, setAgents] = useState([]);
+  const inputRef = useRef(null);
+
+  // Focus the composer when the conversation opens, and re-focus after a turn
+  // completes (the textarea is disabled while streaming and drops focus).
+  useEffect(() => {
+    if (!disabled) inputRef.current?.focus();
+  }, [disabled]);
 
   useEffect(() => {
     agentsApi.getAll()
@@ -101,6 +108,7 @@ export default function ChatInput({ onSend, disabled }) {
         </div>
       )}
       <Textarea
+        ref={inputRef}
         className={styles.textarea}
         value={value}
         onChange={(e, d) => setValue(d.value)}

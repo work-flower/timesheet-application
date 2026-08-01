@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { makeStyles, tokens, Text, Button, Tooltip } from '@fluentui/react-components';
+import { makeStyles, tokens, Text, Button, Tooltip, Input } from '@fluentui/react-components';
 import { DismissRegular, ArrowLeftRegular, ArrowMaximizeRegular, ArrowMinimizeRegular } from '@fluentui/react-icons';
 import { conversationsApi } from '../../api/index.js';
 import { streamChat } from '../../api/copilotStream.js';
@@ -55,6 +55,7 @@ const useStyles = makeStyles({
     flexShrink: 0,
   },
   title: { fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase400, flex: 1 },
+  subjectInput: { flex: 1, minWidth: 0 },
   chatArea: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 },
 });
 
@@ -106,6 +107,7 @@ export default function CopilotPane({ onClose }) {
     persistWidth(next);
   };
 
+
   const loadList = useCallback(async () => {
     try {
       const data = await conversationsApi.getAll();
@@ -118,6 +120,28 @@ export default function CopilotPane({ onClose }) {
   }, []);
 
   useEffect(() => { loadList(); }, [loadList]);
+
+  // -- Editable conversation subject (auto-saves on blur/Enter) --------------
+  // Display value derives from the list (so server-side auto-titling flows in
+  // via loadList); subjectDraft is non-null only while the user is editing.
+  const [subjectDraft, setSubjectDraft] = useState(null);
+  const listTitle = conversations.find((c) => c._id === activeId)?.title || '';
+
+  useEffect(() => { setSubjectDraft(null); }, [activeId]);
+
+  const commitSubject = useCallback(async () => {
+    if (subjectDraft == null) return;
+    const next = subjectDraft.trim();
+    setSubjectDraft(null);
+    if (!next || next === listTitle) return;
+    try {
+      await conversationsApi.update(activeId, { title: next });
+      await loadList();
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [subjectDraft, listTitle, activeId, loadList]);
+
 
   const openConversation = useCallback(async (id) => {
     setActiveId(id);
@@ -268,7 +292,25 @@ export default function CopilotPane({ onClose }) {
             <Button appearance="subtle" size="small" icon={<ArrowLeftRegular />} onClick={() => setActiveId(null)} />
           </Tooltip>
         )}
-        <Text className={styles.title}>Assistant</Text>
+        {activeId == null ? (
+          <Text className={styles.title}>Assistant</Text>
+        ) : (
+          <Input
+            className={styles.subjectInput}
+            appearance="underline"
+            size="small"
+            value={subjectDraft ?? listTitle}
+            placeholder="Conversation subject…"
+            onFocus={() => setSubjectDraft(listTitle)}
+            onChange={(e, d) => setSubjectDraft(d.value)}
+            onBlur={commitSubject}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') setSubjectDraft(null);
+            }}
+            title="Conversation subject — saves automatically"
+          />
+        )}
         <Tooltip content={isWide ? 'Restore width' : 'Expand'} relationship="label">
           <Button
             appearance="subtle"
