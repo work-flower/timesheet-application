@@ -175,7 +175,10 @@ export default function ExpenseForm() {
   const isNew = !id;
   const { registerGuard } = useUnsavedChanges();
   const { navigate, navigateUnguarded, goBack } = useAppNavigate();
-  const { canCreate, canUpdate, fls } = useCurrentUser();
+  const { canCreate, canUpdate, canAction, fls } = useCurrentUser();
+  // Attachment management (upload + delete) is the expenses.upload action —
+  // the Scan flow also ends in an attach, so it's gated by the same hint.
+  const canUpload = canAction('expenses', 'upload');
 
   // Field-level security: read-hidden fields render redacted; the strip set
   // (read ∪ mode-op) is removed from create defaults, QS prefill and payloads
@@ -599,7 +602,7 @@ export default function ExpenseForm() {
         locked={isLocked}
       >
         {/* FormCommandBar renders children even when locked, so gate here. */}
-        {!isLocked && (
+        {!isLocked && canUpload && (
           <Tooltip
             content={cameraSupported ? 'Scan a receipt with the camera' : CAMERA_UNSUPPORTED_MESSAGE}
             // "description", not "label": a label relationship overwrites the
@@ -800,7 +803,7 @@ export default function ExpenseForm() {
               onUpload={handleUpload}
               onDelete={handleDeleteAttachment}
               uploading={uploading}
-              readOnly={!!isLocked || tableFls.read.has('attachments') || tableFls.update.has('attachments')}
+              readOnly={!!isLocked || !canUpload || tableFls.read.has('attachments') || tableFls.update.has('attachments')}
             />
           )}
         </div>

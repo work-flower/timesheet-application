@@ -13,7 +13,7 @@ Knowledge base / notebook entity. Markdown-native content stored as files on dis
 | **Service** | `server/services/notebookService.js` | CRUD, soft delete, content file I/O, media, thumbnail, git wrappers, encrypted content writes |
 | **Shared parser** | `shared/notebookContentParse.js` | Pure functions: `parseContentMeta`, `extractEntityReferences`, `extractFirstImageRef` — used by server (plain saves) and client (encrypted saves) |
 | **Crypto utility** | `app/src/utils/notebookCrypto.js` | Browser-side AES-256-GCM + PBKDF2 (Web Crypto API). `encrypt`, `decrypt`, `isEncryptedBlob`, `WrongPasswordError` |
-| **Routes** | `server/routes/notebooks.js` | REST endpoints, multer for media upload |
+| **Routes** | `server/routes/notebooks.js` | REST endpoints; multipart via `createUpload`/`contextualDiskStorage` from `server/pipeline/uploads.js` (never raw multer). Attach-style file ops (media/artifact/TTS-audio upload, artifact delete/rename) are gated by `requireAction('notebooks','upload')`; `/import` stays under the `create` privilege (upload IS the create) |
 | **Server mount** | `server/index.js` | `app.use('/api/notebooks', notebookRoutes)` |
 | **API client** | `app/src/api/index.js` | `notebooksApi` export |
 | **Form** | `app/src/pages/notebooks/NotebookForm.jsx` | Edit form with Milkdown editor |

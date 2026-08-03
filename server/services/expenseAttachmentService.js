@@ -2,6 +2,7 @@ import { join, resolve } from 'path';
 import { mkdirSync, unlinkSync, rmSync, existsSync, writeFileSync } from 'fs';
 import sharp from 'sharp';
 import { expenses } from '../db/index.js';
+import { assertNotLocked } from './lockCheck.js';
 
 const dataDir = resolve(process.env.DATA_DIR || join(process.cwd(), 'data'));
 const expensesDir = join(dataDir, 'expenses');
@@ -28,6 +29,7 @@ export async function saveAttachments(expenseId, files) {
 
   const expense = await expenses.findOne({ _id: expenseId });
   if (!expense) throw new Error('Expense not found');
+  assertNotLocked(expense);
 
   const newAttachments = [];
 
@@ -67,6 +69,7 @@ export async function saveAttachments(expenseId, files) {
 export async function removeAttachment(expenseId, filename) {
   const expense = await expenses.findOne({ _id: expenseId });
   if (!expense) throw new Error('Expense not found');
+  assertNotLocked(expense);
 
   // Delete files from disk
   const filePath = getFilePath(expenseId, filename);

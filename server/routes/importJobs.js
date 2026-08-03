@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { respondError } from '../utils/errors.js';
-import multer from 'multer';
+import { createUpload } from '../pipeline/uploads.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync, renameSync, existsSync, rmSync } from 'fs';
@@ -12,7 +12,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 function getDataDir() { return process.env.DATA_DIR || join(__dirname, '..', '..', 'data'); }
 
-const upload = multer({ dest: join(getDataDir(), 'uploads_tmp') });
+// No upload action here: the file upload IS the create/update of the job, so
+// the importJobs create/update privileges apply (note: POST also needs update —
+// the handler sets filePath after moving the file).
+const upload = createUpload({ dest: join(getDataDir(), 'uploads_tmp') });
 
 const router = Router();
 

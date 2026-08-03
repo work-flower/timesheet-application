@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { respondError } from '../utils/errors.js';
-import multer from 'multer';
+import { createUpload } from '../pipeline/uploads.js';
+import { requireAction } from '../pipeline/authorisation.js';
 import * as expenseService from '../services/expenseService.js';
 import * as attachmentService from '../services/expenseAttachmentService.js';
 import { parseReceipt } from '../services/expenseParserService.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = createUpload(); // in-memory files (multer default)
 
 // POST /parse-receipts must come before /:id
 router.post('/parse-receipts', upload.any(), async (req, res) => {
@@ -120,8 +121,11 @@ router.post('/:id/unlink-transaction', async (req, res) => {
   }
 });
 
-// Attachment endpoints
-router.post('/:id/attachments', upload.array('files', 10), async (req, res) => {
+// Attachment endpoints — managing attached files (add and remove) is the
+// expenses.upload action, gated BEFORE the body is parsed. Execution stays
+// under the caller's identity: saveAttachments' scoped findOne turns
+// out-of-scope expenses into not-found, and attribution records the uploader.
+router.post('/:id/attachments', requireAction('expenses', 'upload'), upload.array('files', 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
@@ -134,13 +138,14 @@ router.post('/:id/attachments', upload.array('files', 10), async (req, res) => {
   }
 });
 
-router.delete('/:id/attachments/:filename', async (req, res) => {
+router.delete('/:id/attachments/:filename', requireAction('expenses', 'upload'), async (req, res) => {
   try {
     const attachments = await attachmentService.removeAttachment(req.params.id, req.params.filename);
     res.json(attachments);
   } catch (err) {
-    console.error(err.message);
-    respondError(res, err, 500);
+    // 400 fallback: not-found and lock rejections are managed outcomes
+    console.warn(err.message);
+    respondError(res, err, 400);
   }
 });
 

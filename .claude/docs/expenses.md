@@ -29,9 +29,9 @@ ExpenseList.jsx     → ReceiptUploadDialog.jsx ─┴→ CameraCapturePane.jsx 
 
 | What | File | Notes |
 |------|------|-------|
-| Route | `server/routes/expenses.js` | 13 endpoints: CRUD, types, parse-receipts, link/unlink, attachments (upload, delete, serve file, serve thumbnail) |
+| Route | `server/routes/expenses.js` | 13 endpoints: CRUD, types, parse-receipts, link/unlink, attachments (upload, delete, serve file, serve thumbnail). Multipart via `createUpload` from `server/pipeline/uploads.js` (never multer directly); attachment upload + delete gated by `requireAction('expenses','upload')` before the body is parsed |
 | Service | `server/services/expenseService.js` | VAT golden rule, currency inheritance, lock checks, enrichment, getDistinctTypes, linkTransaction/unlinkTransaction. `getAll`: `$expand` (project, client) |
-| Attachments | `server/services/expenseAttachmentService.js` | File storage + sharp thumbnails at `DATA_DIR/expenses/{id}/` |
+| Attachments | `server/services/expenseAttachmentService.js` | File storage + sharp thumbnails at `DATA_DIR/expenses/{id}/`. `saveAttachments`/`removeAttachment` call `assertNotLocked` — attachment mutation on locked (invoiced) expenses 400s server-side |
 | Receipt parser | `server/services/expenseParserService.js` | Sends file to Claude API, extracts date/amount/vat/type/description/externalRef |
 | DB collection | `server/db/index.js` | `expenses` — wrapped NeDB via execution pipeline |
 
@@ -95,6 +95,8 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 
 **External reference:** Captures invoice numbers, order IDs, receipt numbers. Populated automatically by AI receipt scanning, carried over from transaction references, available in MCP `create_expense` tool.
 
+**Attachment authorisation (AUTH_ENABLED):** managing attached files — upload AND delete — is the named `expenses.upload` action (registry: `shared/authz/registry.js`), NOT the `update` privilege. The route gate runs before multer so denied callers never stream the body; execution stays under the caller's identity (real attribution, scoping, fls). UI affordances (form Upload/Scan, list Scan Receipt, mobile upload page messaging) key off `canAction('expenses','upload')`. `parse-receipts` stays ungated (stateless AI parse, no DB write).
+
 ## Key Business Logic (where it lives)
 
 | Rule | Location | Detail |
@@ -151,6 +153,8 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 - Check: Cascade delete in expenseService.remove
 - Check: Cascade delete in clientService.remove and projectService.remove
 - Check: AttachmentGallery component props/API calls
+- Check: routes still use `createUpload` (never raw multer) and keep the `requireAction('expenses','upload')` gate before the upload middleware
+- Check: `assertNotLocked` still guards saveAttachments/removeAttachment
 
 ## PDF Report
 
@@ -180,6 +184,8 @@ Also included in the Combined PDF — see `invoices.md` → Invoice PDF Generati
 - **Navigation-guard dialog** → `guardSave` returns `{ok: true, stay: true}` (see `/forms-guide` → Navigation Guard). It must **not** return `{ok: false}` — that reads as "the save failed", so the guard leaves `isDirty` set and a later Save creates a duplicate of the record that already exists.
 
 **Known gap (pre-existing, not introduced here):** in `saveForm`, if the attach fails *and* a subsequent `linkTransaction` then throws, the outer catch returns `{ok: false}` and `attachFailed` is discarded — the user is stranded on `/expenses/new` with a created record, and the next Save duplicates it.
+
+**Attachment upload 403'd for everyone under AUTH_ENABLED (fixed).** The per-request AsyncLocalStorage store did not survive multer's body parsing (busboy's completion fires from socket I/O whose async context predates `als.run`), so `saveAttachments`' wrapped `expenses.findOne` saw `auth: null` → `checkAccess` → 403 `Not authenticated`, regardless of the caller's grants. This was never a role/privilege problem — full details, fix (`server/pipeline/uploads.js`), and the routes-never-import-multer rule are in `authorisation.md` → Lessons Learned.
 
 **MediaStream teardown belongs to the component that owns the stream.** `CameraCapturePane` acquires on mount and releases on unmount, giving one release point that React enforces — consumers control the camera purely by mounting/unmounting. The non-obvious leak: if `getUserMedia` resolves *after* unmount (user closes the dialog while the permission prompt is open), the stream is never assigned to the ref and the camera light stays on for the life of the tab. The `cancelled` flag in the effect stops the local stream in that window.
 

@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { respondError } from '../utils/errors.js';
 import { resolve } from 'path';
-import multer from 'multer';
+import { createUpload } from '../pipeline/uploads.js';
+import { requireAction } from '../pipeline/authorisation.js';
 import * as dailyPlanService from '../services/dailyPlanService.js';
 import * as dailyPlanAiService from '../services/dailyPlanAiService.js';
 
-const audioUpload = multer({ storage: multer.memoryStorage() });
+const audioUpload = createUpload();
 
 const router = Router();
 
@@ -317,9 +318,12 @@ router.get('/:id/briefing/audio', (req, res) => {
   }
 });
 
-// POST /api/daily-plans/:id/briefing/audio — upload generated WAV
-router.post('/:id/briefing/audio', audioUpload.single('file'), (req, res) => {
+// POST /api/daily-plans/:id/briefing/audio — upload generated WAV.
+// Gated by dailyPlans.upload; the caller-scoped getById makes nonexistent or
+// out-of-scope plans 404 instead of silently writing files to disk.
+router.post('/:id/briefing/audio', requireAction('dailyPlans', 'upload'), audioUpload.single('file'), async (req, res) => {
   try {
+    if (!(await dailyPlanService.exists(req.params.id))) return res.status(404).json({ error: 'Daily plan not found' });
     if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
     dailyPlanService.saveAudio(req.params.id, 'briefing', req.file.buffer);
     res.json({ success: true });
@@ -344,9 +348,11 @@ router.get('/:id/recap/audio', (req, res) => {
   }
 });
 
-// POST /api/daily-plans/:id/recap/audio — upload generated WAV
-router.post('/:id/recap/audio', audioUpload.single('file'), (req, res) => {
+// POST /api/daily-plans/:id/recap/audio — upload generated WAV (same gating
+// as the briefing route above)
+router.post('/:id/recap/audio', requireAction('dailyPlans', 'upload'), audioUpload.single('file'), async (req, res) => {
   try {
+    if (!(await dailyPlanService.exists(req.params.id))) return res.status(404).json({ error: 'Daily plan not found' });
     if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
     dailyPlanService.saveAudio(req.params.id, 'recap', req.file.buffer);
     res.json({ success: true });

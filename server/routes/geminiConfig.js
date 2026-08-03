@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { respondError } from '../utils/errors.js';
 import { basename, join } from 'path';
-import multer from 'multer';
+import { createUpload } from '../pipeline/uploads.js';
 import {
   getConfig,
   updateConfig,
@@ -15,7 +15,9 @@ import {
   getBackgroundMusicSettings,
 } from '../services/geminiConfigService.js';
 
-const upload = multer({ storage: multer.memoryStorage() });
+// No action gate: admin surface, superuser boundary, unwrapped store — the
+// wrapper is for ALS preservation (log enrichment) and the no-direct-multer rule.
+const upload = createUpload();
 
 // Two surfaces: feature endpoints (TTS, status, background music playback) are used
 // by the MAIN app and stay on /api; config endpoints (API key, test, uploads) are

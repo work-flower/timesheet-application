@@ -49,6 +49,7 @@ export default function ExpenseAttachmentUpload() {
       const formData = new FormData();
       formData.append('files', file);
       const res = await fetch(`/api/expenses/${id}/attachments`, { method: 'POST', body: formData });
+      if (res.status === 403) throw new Error("You don't have permission to upload receipts.");
       if (!res.ok) throw new Error(`Upload failed (${res.status})`);
       setPhase(phases.DONE);
     } catch (err) {

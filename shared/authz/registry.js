@@ -30,12 +30,18 @@ export const TABLES = [
 ];
 
 // Named non-CRUD lifecycle actions per table. Default deny applies to actions too.
+// upload: manage files attached to existing records (add AND remove/rename) —
+// gates the attach-style multipart endpoints. Create-style uploads (import-jobs
+// POST, notebooks/import) stay under the table's CRUD create privilege.
 export const ACTIONS = {
   invoices: ['confirm', 'post', 'unconfirm', 'updatePayment'],
   stagedTransactions: ['submit'],
   importJobs: ['abandon'],
   calendarSources: ['refresh'],
   ticketSources: ['refresh'],
+  expenses: ['upload'],
+  notebooks: ['upload'],
+  dailyPlans: ['upload'],
   // impersonate: act as another user for a session (System Admin capability).
   // Holders cannot themselves be impersonated (guard rail in identity.js/me.js).
   users: ['impersonate'],

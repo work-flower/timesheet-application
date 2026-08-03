@@ -69,6 +69,12 @@ export async function getAll(query = {}) {
   return formatResponse(items, totalCount, query.$count === 'true');
 }
 
+// Lean caller-scoped existence probe — unlike getById it does no cross-entity
+// enrichment, so it works for callers without todo/timesheet/notebook reads.
+export async function exists(id) {
+  return !!(await dailyPlans.findOne({ _id: id }));
+}
+
 export async function getById(id) {
   const plan = await dailyPlans.findOne({ _id: id });
   if (!plan) return null;

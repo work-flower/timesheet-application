@@ -236,7 +236,7 @@ function deriveRange(startDate, endDate) {
 export default function ExpenseList() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const { canCreate, fls } = useCurrentUser();
+  const { canCreate, canAction, fls } = useCurrentUser();
   const hidden = fls('expenses').read;
   const gridColumns = useMemo(() => makeColumns(hidden), [hidden]);
 
@@ -344,14 +344,18 @@ export default function ExpenseList() {
         searchValue={search}
         onSearchChange={setSearch}
       >
-        <Button
-          appearance="subtle"
-          icon={<ScanDashRegular />}
-          size="small"
-          onClick={() => setReceiptDialogOpen(true)}
-        >
-          Scan Receipt
-        </Button>
+        {/* The scan flow creates expenses AND attaches the receipts, so it
+            needs both the create privilege and the expenses.upload action. */}
+        {canCreate('expenses') && canAction('expenses', 'upload') && (
+          <Button
+            appearance="subtle"
+            icon={<ScanDashRegular />}
+            size="small"
+            onClick={() => setReceiptDialogOpen(true)}
+          >
+            Scan Receipt
+          </Button>
+        )}
       </CommandBar>
       <div className={styles.filters}>
         <Text size={200} weight="semibold">Period:</Text>

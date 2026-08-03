@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { respondError } from '../utils/errors.js';
-import multer from 'multer';
+import { createUpload, contextualDiskStorage } from '../pipeline/uploads.js';
+import { requireAction } from '../pipeline/authorisation.js';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
 import * as notebookService from '../services/notebookService.js';
@@ -8,11 +9,13 @@ import { buildNotebookPdf } from '../services/notebookPdfService.js';
 
 const router = Router();
 
-// Multer with memory storage for import (no notebook ID yet)
-const importUpload = multer({ storage: multer.memoryStorage() });
+// Memory storage for import (no notebook ID yet)
+const importUpload = createUpload();
 
-// Multer setup for media uploads — resolves notebook folder via title
-const storage = multer.diskStorage({
+// Media/artifact uploads write straight into the notebook folder. The
+// destination resolver reads the wrapped notebooks collection, so it needs
+// contextualDiskStorage (runs mid-parse) — which also makes it caller-scoped.
+const storage = contextualDiskStorage({
   destination: async (req, _file, cb) => {
     try {
       const dir = await notebookService.getNotebookDir(req.params.id);
@@ -28,7 +31,21 @@ const storage = multer.diskStorage({
     cb(null, safe);
   },
 });
-const upload = multer({ storage });
+const upload = createUpload({ storage });
+
+// Attach-style file ops (media, artifacts, TTS audio) are the notebooks.upload
+// action — including remove/rename. Out-of-scope notebooks must 404 before the
+// body is consumed, hence this pre-multer existence check.
+const requireNotebook = async (req, res, next) => {
+  try {
+    const existing = await notebookService.getById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    next();
+  } catch (err) {
+    console.warn('Notebook lookup failed:', err.message);
+    respondError(res, err, 400);
+  }
+};
 
 // --- Standard CRUD ---
 
@@ -416,7 +433,7 @@ router.put('/:id/content/encrypted', async (req, res) => {
 
 // --- Audio (TTS) ---
 
-const audioUpload = multer({ storage: multer.memoryStorage() });
+const audioUpload = createUpload();
 
 // GET /api/notebooks/:id/audio — serve cached TTS audio
 router.get('/:id/audio', async (req, res) => {
@@ -440,7 +457,7 @@ router.get('/:id/audio', async (req, res) => {
 });
 
 // POST /api/notebooks/:id/audio — upload generated TTS audio
-router.post('/:id/audio', audioUpload.single('file'), async (req, res) => {
+router.post('/:id/audio', requireAction('notebooks', 'upload'), audioUpload.single('file'), async (req, res) => {
   try {
     const existing = await notebookService.getById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -459,7 +476,7 @@ router.post('/:id/audio', audioUpload.single('file'), async (req, res) => {
 
 // --- Media ---
 
-router.post('/:id/media', upload.single('file'), async (req, res) => {
+router.post('/:id/media', requireAction('notebooks', 'upload'), requireNotebook, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     res.json({
@@ -496,7 +513,7 @@ router.get('/:id/artifacts', async (req, res) => {
   }
 });
 
-router.post('/:id/artifacts', upload.single('file'), async (req, res) => {
+router.post('/:id/artifacts', requireAction('notebooks', 'upload'), requireNotebook, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     // Stage the folder in git
@@ -523,7 +540,7 @@ router.get('/:id/artifacts/:filename/content', async (req, res) => {
   }
 });
 
-router.delete('/:id/artifacts/:filename', async (req, res) => {
+router.delete('/:id/artifacts/:filename', requireAction('notebooks', 'upload'), async (req, res) => {
   try {
     const result = await notebookService.deleteArtifact(req.params.id, req.params.filename);
     res.json(result);
@@ -533,7 +550,7 @@ router.delete('/:id/artifacts/:filename', async (req, res) => {
   }
 });
 
-router.put('/:id/artifacts/:filename', async (req, res) => {
+router.put('/:id/artifacts/:filename', requireAction('notebooks', 'upload'), async (req, res) => {
   try {
     const { newName } = req.body;
     if (!newName) return res.status(400).json({ error: 'newName is required' });

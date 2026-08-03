@@ -20,8 +20,8 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Routes | `server/routes/dailyPlans.js` | ~22 endpoints: CRUD, content, todos, timesheets, meeting notes, notebooks, change-date, recap (generate/status/content), briefing (generate/status/content/check-days) |
-| Service | `server/services/dailyPlanService.js` | CRUD, todo/timesheet/meeting-note/notebook linking, file-based content/recap/briefing management, recap status detection from filesystem |
+| Routes | `server/routes/dailyPlans.js` | ~22 endpoints: CRUD, content, todos, timesheets, meeting notes, notebooks, change-date, recap (generate/status/content), briefing (generate/status/content/check-days). TTS audio uploads use `createUpload` from `server/pipeline/uploads.js` (never raw multer), are gated by `requireAction('dailyPlans','upload')`, and 404 via the caller-scoped `exists()` probe before writing to disk |
+| Service | `server/services/dailyPlanService.js` | CRUD, todo/timesheet/meeting-note/notebook linking, file-based content/recap/briefing management, recap status detection from filesystem. `exists(id)` — lean caller-scoped existence probe (no cross-entity enrichment, unlike `getById`) |
 | AI service | `server/services/dailyPlanAiService.js` | generateRecap, generateBriefing, checkBriefingDays, generateMeetingSummary. File-based state machine (backup → generate → restore on failure). |
 | DB collection | `server/db/index.js` | `dailyPlans` — wrapped NeDB via execution pipeline |
 

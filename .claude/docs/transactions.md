@@ -32,7 +32,7 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Import job route | `server/routes/importJobs.js` | CRUD + abandon endpoint, multer file upload, triggers async processFile |
+| Import job route | `server/routes/importJobs.js` | CRUD + abandon endpoint, file upload via `createUpload` from `server/pipeline/uploads.js` (never raw multer), triggers async processFile. No `upload` action: the upload IS the create/update, so CRUD privileges apply — note POST needs `importJobs.create` AND `update` (handler sets filePath after moving the file) |
 | Import job service | `server/services/importJobService.js` | create, processFile (async background), abandon, cascade delete (staged txs + upload dir) |
 | Staged tx route | `server/routes/stagedTransactions.js` | CRUD + submit + check-duplicates |
 | Staged tx service | `server/services/stagedTransactionService.js` | CRUD, createBulk, submit (transforms to transactions), checkDuplicates |
