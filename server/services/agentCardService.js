@@ -17,7 +17,8 @@ import {
  * to") and list views. Never treat the DB doc as the source of truth.
  *
  * Folder contents:
- *   manifest.json          — { name, description, aiProviderId|null, enabled }
+ *   manifest.json          — { name, description, aiProviderId|null, enabled,
+ *                              tools: [registry tool names granted to this card] }
  *   agent.md               — the agent's persona/system prompt (provider-agnostic)
  *   payload_template.json  — OPTIONAL override of the provider's payload template
  *                            (resolution: card template ?? provider template)
@@ -51,19 +52,23 @@ function getManifestPath(slug) { return join(getCardDir(slug), 'manifest.json');
 function getAgentMdPath(slug) { return join(getCardDir(slug), 'agent.md'); }
 function getPayloadTemplatePath(slug) { return join(getCardDir(slug), 'payload_template.json'); }
 
-const DEFAULT_MASTER_AGENT_MD = `You are the master assistant for a UK contractor timesheet and invoicing application. You front every conversation and delegate to specialist agents.
+const DEFAULT_MASTER_AGENT_MD = `You are the master assistant for a UK contractor timesheet and invoicing application. You front every conversation, delegate to specialist agents, and use the app tools granted to you.
 
-You have two tools:
-- find_agent: returns candidate specialist agents with similarity scores and the matched examples (evidence). Routing evidence for the user's latest message is usually ALREADY attached to the conversation as a find_agent result — weigh it before answering; only call find_agent yourself for a different or refined query.
+You always have two built-in tools:
+- find_agent: returns candidate specialists AND app tools with similarity scores and the matched examples (evidence). Routing evidence for the user's latest message is usually ALREADY attached to the conversation as a find_agent result — weigh it before answering; only call find_agent yourself for a different or refined query.
 - ask_agent: delegate a task to a specialist agent by slug with a clear, self-contained brief. The specialist has no access to this conversation — include everything it needs in the brief.
 
+You may also hold granted app tools:
+- READ tools (list_projects, list_recent_timesheets, ...) run immediately and return real data — always prefer them over answering from memory.
+- WRITE tools (create_timesheet, create_expense, ...) NEVER execute when you call them: the user is shown a confirmation card instead. After proposing, tell the user to confirm or decline the card, and never claim the write happened until the conversation shows it was confirmed and executed.
+
 How to work:
-1. Check the attached routing evidence first. If the top candidate clearly fits the user's request, delegate via ask_agent and relay its answer in your own words — prefer delegating to a matching specialist over answering from your own general knowledge.
+1. Check the attached routing evidence first. Candidates are kind "agent" (a specialist — delegate via ask_agent) or kind "tool" (the request looks like a direct action — use that tool if you hold it). If the top candidate clearly fits, act on it; prefer delegating or using tools over answering from general knowledge.
 2. If candidates are close or ambiguous, ask the user which they meant rather than guessing.
-3. If no specialist fits (no evidence, or scores are weak and unrelated), answer yourself and say plainly when you lack the data to do so.
+3. If no specialist or tool fits, answer yourself and say plainly when you lack the data to do so.
 4. Small talk and questions about this app's usage need no routing.
 
-Be concise and professional. Never invent data about timesheets, expenses or invoices.`;
+Be concise and professional. Never invent data about timesheets, expenses or invoices — read it with a tool, or delegate.`;
 
 // -- File primitives ---------------------------------------------------------
 
@@ -90,10 +95,18 @@ export function readCard(slug) {
     aiProviderId: manifest.aiProviderId || null,
     enabled: slug === MASTER_SLUG ? true : manifest.enabled !== false,
     isMaster: slug === MASTER_SLUG,
+    // Granted app-tool names. Stale names (tool retired from the registry) are
+    // kept here and skipped at loop assembly — the tool may come back.
+    tools: normaliseTools(manifest.tools),
     agentMd,
     payloadTemplate,
     hasPayloadTemplate: payloadTemplate != null,
   };
+}
+
+function normaliseTools(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim()))];
 }
 
 function listFilenames(slug, sub) {
@@ -107,7 +120,7 @@ export function readCardFiles(slug) {
   return { knowledge: listFilenames(slug, 'knowledge'), skills: listFilenames(slug, 'skills') };
 }
 
-function writeCardFiles(slug, { name, description, aiProviderId, enabled, agentMd, payloadTemplate }) {
+function writeCardFiles(slug, { name, description, aiProviderId, enabled, tools, agentMd, payloadTemplate }) {
   const dir = getCardDir(slug);
   mkdirSync(join(dir, 'knowledge'), { recursive: true });
   mkdirSync(join(dir, 'skills'), { recursive: true });
@@ -116,6 +129,7 @@ function writeCardFiles(slug, { name, description, aiProviderId, enabled, agentM
     description: description || '',
     aiProviderId: aiProviderId || null,
     enabled: enabled !== false,
+    tools: normaliseTools(tools),
   };
   writeFileSync(getManifestPath(slug), JSON.stringify(manifest, null, 2) + '\n');
   writeFileSync(getAgentMdPath(slug), agentMd || '');
@@ -157,6 +171,7 @@ export async function scanAgents() {
         aiProviderId: card.aiProviderId,
         enabled: card.enabled,
         isMaster: card.isMaster,
+        tools: card.tools,
         hasPayloadTemplate: card.hasPayloadTemplate,
         updatedAt: now,
       };
@@ -231,6 +246,7 @@ export async function createCard(data) {
     description: data.description || '',
     aiProviderId: data.aiProviderId || null,
     enabled: data.enabled !== false,
+    tools: data.tools,
     agentMd: data.agentMd || '',
     payloadTemplate: normaliseTemplate(data.payloadTemplate),
   });
@@ -248,6 +264,7 @@ export async function updateCard(slug, data) {
     description: data.description != null ? data.description : existing.description,
     aiProviderId: 'aiProviderId' in data ? (data.aiProviderId || null) : existing.aiProviderId,
     enabled: isMaster ? true : (data.enabled != null ? data.enabled : existing.enabled),
+    tools: 'tools' in data ? data.tools : existing.tools,
     agentMd: data.agentMd != null ? data.agentMd : existing.agentMd,
     payloadTemplate: 'payloadTemplate' in data
       ? normaliseTemplate(data.payloadTemplate)

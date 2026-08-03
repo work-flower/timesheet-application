@@ -152,10 +152,10 @@ export default function RoutingPage() {
         <div className={styles.section}>
           <Text className={styles.sectionTitle}><SettingsRegular /> Behaviour</Text>
           <Text className={styles.sectionHint}>
-            Every master turn the router scores the message against the corpus (eval examples + card descriptions), then:
-            score ≥ auto-route threshold → the specialist answers directly (ground truth);
-            score ≥ evidence floor → candidates are attached and the master decides;
-            below → the master answers on its own.
+            Every master turn the router scores the message against the corpus (eval examples + card descriptions + tool descriptions), then:
+            score ≥ auto-route threshold AND the match is an agent → the specialist answers directly (ground truth);
+            score ≥ evidence floor → candidates (agents and tools) are attached and the master decides;
+            below → the master answers on its own. Tool matches never auto-route — they are evidence.
           </Text>
           <div className={styles.grid}>
             <Field label="Ground-truth auto-route">
@@ -215,9 +215,27 @@ export default function RoutingPage() {
             <Field label="Corpus: card descriptions">
               <Switch checked={config.includeCardDescriptions !== false} onChange={(e, d) => set('includeCardDescriptions')(d.checked)} label={config.includeCardDescriptions !== false ? 'Included' : 'Excluded'} />
             </Field>
-            <Field label="Master tool-loop rounds" hint="Tool iterations before the master is forced to produce a final answer without tools.">
+            <Field label="Corpus: tool descriptions" hint="Registry tool descriptions rank as kind:tool entries — evidence for action requests and the find_tool lookup pool. Tool matches never auto-route.">
+              <Switch checked={config.includeToolDescriptions !== false} onChange={(e, d) => set('includeToolDescriptions')(d.checked)} label={config.includeToolDescriptions !== false ? 'Included' : 'Excluded'} />
+            </Field>
+            <Field label="Agent tool-loop rounds" hint="Tool iterations before an agent is forced to produce a final answer without tools.">
               <Input type="number" min={1} max={10} value={String(config.maxToolIterations)} onChange={(e, d) => set('maxToolIterations')(d.value)} />
             </Field>
+            <div className={styles.fullWidth}>
+              <Field
+                label="Tool delivery"
+                hint="static: every granted tool definition is sent each round (best quality for small registries). discover: agents get a find_tool meta-tool — a grant/privilege-filtered vector lookup injects only the matched definitions for the rest of the turn (leaner context, one extra round per action)."
+              >
+                <Dropdown
+                  value={config.toolDelivery === 'discover' ? 'discover' : 'static'}
+                  selectedOptions={[config.toolDelivery === 'discover' ? 'discover' : 'static']}
+                  onOptionSelect={(e, d) => set('toolDelivery')(d.optionValue)}
+                >
+                  <Option value="static">static — inject all granted tools</Option>
+                  <Option value="discover">discover — find_tool lookup injects matches</Option>
+                </Dropdown>
+              </Field>
+            </div>
           </div>
         </div>
 
@@ -231,8 +249,8 @@ export default function RoutingPage() {
                 <span className={styles.statusValue}>{status.entries}</span>
               </div>
               <div className={styles.statusItem}>
-                <span className={styles.statusLabel}>Eval / Card</span>
-                <span className={styles.statusValue}>{status.counts?.eval || 0} / {status.counts?.card || 0}</span>
+                <span className={styles.statusLabel}>Eval / Card / Tool</span>
+                <span className={styles.statusValue}>{status.counts?.eval || 0} / {status.counts?.card || 0} / {status.counts?.tool || 0}</span>
               </div>
               <div className={styles.statusItem}>
                 <span className={styles.statusLabel}>Model</span>
@@ -270,13 +288,15 @@ export default function RoutingPage() {
                   <Tooltip content={tierMeta?.hint || ''} relationship="description">
                     <Badge appearance="filled" color={tierMeta?.color || 'informative'}>{tierMeta?.label || probeResult.tier}</Badge>
                   </Tooltip>
-                  {' '}→ <Badge appearance="tint" color="brand">{probeResult.top.agent}</Badge>{' '}
+                  {' '}→ <Badge appearance="tint" color={probeResult.top.kind === 'tool' ? 'warning' : 'brand'}>
+                    {probeResult.top.kind === 'tool' ? `tool: ${probeResult.top.target}` : (probeResult.top.agent || probeResult.top.target)}
+                  </Badge>{' '}
                   <span className={styles.mono} style={{ fontSize: 12 }}>score {probeResult.top.score}</span>
                 </Text>
                 <div className={styles.reason}>because: "{probeResult.top.reasons?.[0]?.text}"</div>
                 {probeResult.candidates.length > 1 && (
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    others: {probeResult.candidates.slice(1).map((c) => `${c.agent} (${c.score})`).join(', ')}
+                    others: {probeResult.candidates.slice(1).map((c) => `${c.kind === 'tool' ? 'tool:' : ''}${c.target || c.agent} (${c.score})`).join(', ')}
                   </Text>
                 )}
               </div>

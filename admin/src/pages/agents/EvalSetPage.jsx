@@ -24,6 +24,8 @@ import {
   TableHeaderCell,
   TableBody,
   TableCell,
+  Dropdown,
+  Option,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -32,7 +34,7 @@ import {
   PlayRegular,
   BeakerRegular,
 } from '@fluentui/react-icons';
-import { evalExamplesApi } from '../../api/index.js';
+import { evalExamplesApi, agentCardsApi } from '../../api/index.js';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 
 const useStyles = makeStyles({
@@ -68,7 +70,7 @@ const useStyles = makeStyles({
   mono: { fontFamily: 'monospace', fontSize: tokens.fontSizeBase200 },
 });
 
-const EMPTY = { utterance: '', expectedAgent: '' };
+const EMPTY = { utterance: '', expectedAgent: '', targetKind: 'agent' };
 
 export default function EvalSetPage() {
   const styles = useStyles();
@@ -82,6 +84,7 @@ export default function EvalSetPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [report, setReport] = useState(null);
   const [running, setRunning] = useState(false);
+  const [registryTools, setRegistryTools] = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -93,6 +96,10 @@ export default function EvalSetPage() {
     }
   }, []);
 
+  useEffect(() => {
+    agentCardsApi.getTools().then(setRegistryTools).catch(() => setRegistryTools([]));
+  }, []);
+
   useEffect(() => { load(); }, [load]);
 
   const showMessage = (intent, text) => {
@@ -101,11 +108,15 @@ export default function EvalSetPage() {
   };
 
   const openAdd = () => { setEditing(null); setForm(EMPTY); setDialogOpen(true); };
-  const openEdit = (ex) => { setEditing(ex); setForm({ utterance: ex.utterance, expectedAgent: ex.expectedAgent }); setDialogOpen(true); };
+  const openEdit = (ex) => {
+    setEditing(ex);
+    setForm({ utterance: ex.utterance, expectedAgent: ex.expectedAgent, targetKind: ex.targetKind === 'tool' ? 'tool' : 'agent' });
+    setDialogOpen(true);
+  };
 
   const handleSave = async () => {
     if (!form.utterance.trim() || !form.expectedAgent.trim()) {
-      showMessage('error', 'Utterance and expected agent are required.');
+      showMessage('error', 'Utterance and expected target are required.');
       return;
     }
     setSaving(true);
@@ -148,7 +159,9 @@ export default function EvalSetPage() {
     }
   };
 
-  const agents = [...new Set(examples.map((e) => e.expectedAgent))].sort();
+  const agents = [...new Set(examples.filter((e) => e.targetKind !== 'tool').map((e) => e.expectedAgent))].sort();
+  // Report keys are kind-prefixed (agent:vat-help / tool:create_timesheet).
+  const reportTargets = report ? Object.keys(report.perAgent || {}).sort() : [];
 
   if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spinner label="Loading..." /></div>;
 
@@ -172,7 +185,7 @@ export default function EvalSetPage() {
         )}
 
         <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: 16 }}>
-          Labeled examples (utterance → expected agent) train and measure routing. They serve as runtime routing signal and as the accuracy harness below. Add production misroutes here to improve routing over time.
+          Labeled examples (utterance → expected agent or tool) train and measure routing. They serve as runtime routing signal and as the accuracy harness below. Add production misroutes here to improve routing over time.
         </Text>
 
         {/* Eval report */}
@@ -188,18 +201,18 @@ export default function EvalSetPage() {
             <Table size="small" style={{ marginBottom: 12 }}>
               <TableHeader>
                 <TableRow>
-                  <TableHeaderCell>Agent</TableHeaderCell>
+                  <TableHeaderCell>Target</TableHeaderCell>
                   <TableHeaderCell>Accuracy</TableHeaderCell>
                   <TableHeaderCell>Confusion (predicted → count)</TableHeaderCell>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {agents.map((a) => {
+                {reportTargets.map((a) => {
                   const pa = report.perAgent?.[a];
                   const conf = report.confusion?.[a] || {};
                   return (
                     <TableRow key={a}>
-                      <TableCell>{a}</TableCell>
+                      <TableCell className={styles.mono}>{a}</TableCell>
                       <TableCell>{pa ? `${(pa.accuracy * 100).toFixed(0)}% (${pa.correct}/${pa.total})` : '—'}</TableCell>
                       <TableCell className={styles.mono}>
                         {Object.entries(conf).map(([p, n]) => `${p}: ${n}`).join('  ·  ')}
@@ -232,7 +245,9 @@ export default function EvalSetPage() {
           <div className={styles.cardList}>
             {examples.map((ex) => (
               <div key={ex._id} className={styles.card}>
-                <Badge appearance="tint" color="brand">{ex.expectedAgent}</Badge>
+                <Badge appearance="tint" color={ex.targetKind === 'tool' ? 'warning' : 'brand'}>
+                  {ex.targetKind === 'tool' ? `tool: ${ex.expectedAgent}` : ex.expectedAgent}
+                </Badge>
                 <span className={styles.utterance}>{ex.utterance}</span>
                 <div className={styles.cardActions}>
                   <Tooltip content="Edit" relationship="label">
@@ -254,15 +269,40 @@ export default function EvalSetPage() {
             <DialogTitle>{editing ? 'Edit Example' : 'Add Example'}</DialogTitle>
             <DialogContent>
               <div className={styles.formGrid}>
-                <Field label="Utterance" required hint="A phrase a user might type that should route to the agent below.">
+                <Field label="Utterance" required hint="A phrase a user might type that should route to the target below.">
                   <Input value={form.utterance} onChange={(e, d) => setForm((f) => ({ ...f, utterance: d.value }))} placeholder="e.g. log 8 hours on the migration project" />
                 </Field>
-                <Field label="Expected agent" required hint="The agent slug this utterance should route to.">
-                  <Input value={form.expectedAgent} onChange={(e, d) => setForm((f) => ({ ...f, expectedAgent: d.value }))} placeholder="e.g. timesheet-agent" list="agent-slugs" />
+                <Field label="Target kind" hint="agent: routes to a specialist card. tool: matches an app tool (evidence for action requests — tools never take over a turn).">
+                  <Dropdown
+                    value={form.targetKind === 'tool' ? 'tool' : 'agent'}
+                    selectedOptions={[form.targetKind === 'tool' ? 'tool' : 'agent']}
+                    onOptionSelect={(e, d) => setForm((f) => ({ ...f, targetKind: d.optionValue, expectedAgent: '' }))}
+                  >
+                    <Option value="agent">agent</Option>
+                    <Option value="tool">tool</Option>
+                  </Dropdown>
                 </Field>
-                <datalist id="agent-slugs">
-                  {agents.map((a) => <option key={a} value={a} />)}
-                </datalist>
+                {form.targetKind === 'tool' ? (
+                  <Field label="Expected tool" required hint="The registry tool this utterance signals.">
+                    <Dropdown
+                      value={form.expectedAgent}
+                      selectedOptions={form.expectedAgent ? [form.expectedAgent] : []}
+                      onOptionSelect={(e, d) => setForm((f) => ({ ...f, expectedAgent: d.optionValue }))}
+                      placeholder="Select tool..."
+                    >
+                      {registryTools.map((t) => <Option key={t.name} value={t.name}>{t.name}</Option>)}
+                    </Dropdown>
+                  </Field>
+                ) : (
+                  <>
+                    <Field label="Expected agent" required hint="The agent slug this utterance should route to.">
+                      <Input value={form.expectedAgent} onChange={(e, d) => setForm((f) => ({ ...f, expectedAgent: d.value }))} placeholder="e.g. timesheet-agent" list="agent-slugs" />
+                    </Field>
+                    <datalist id="agent-slugs">
+                      {agents.map((a) => <option key={a} value={a} />)}
+                    </datalist>
+                  </>
+                )}
               </div>
             </DialogContent>
             <DialogActions>

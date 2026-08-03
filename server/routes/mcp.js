@@ -37,7 +37,11 @@ router.post('/', async (req, res) => {
   }
 
   if (method === 'tools/list') {
-    return res.json(jsonrpc(id, { tools }));
+    // Strip agent-layer metadata (kind, access) — the MCP wire surface stays
+    // exactly { name, description, inputSchema } as before the metadata existed.
+    return res.json(jsonrpc(id, {
+      tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+    }));
   }
 
   if (method === 'tools/call') {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { makeStyles, tokens, Text, Button, Tooltip, Input } from '@fluentui/react-components';
 import { DismissRegular, ArrowLeftRegular, ArrowMaximizeRegular, ArrowMinimizeRegular } from '@fluentui/react-icons';
 import { conversationsApi } from '../../api/index.js';
-import { streamChat } from '../../api/copilotStream.js';
+import { streamChat, streamProposalConfirm } from '../../api/copilotStream.js';
 import ConversationList from './ConversationList.jsx';
 import ChatView from './ChatView.jsx';
 import ChatInput from './ChatInput.jsx';
@@ -182,6 +182,78 @@ export default function CopilotPane({ onClose }) {
     }
   }, [activeId, loadList]);
 
+  // One stream handler shared by chat turns and proposal-confirm resumes.
+  // The loop can produce text in several rounds separated by tool calls —
+  // flushAssistant turns the buffer into a message bubble at each boundary.
+  const makeStreamHandler = useCallback(() => {
+    let assistantText = '';
+    let currentAgent = null; // direct takeover (@mention / auto-route / resume)
+    let consultedAgents = []; // specialists answered via master delegation
+
+    const flushAssistant = () => {
+      if (!assistantText) return;
+      const content = assistantText;
+      const attribution = currentAgent
+        ? { agent: currentAgent }
+        : consultedAgents.length ? { agents: [...consultedAgents] } : {};
+      setMessages((prev) => [...prev, { role: 'assistant', content, ...attribution }]);
+      assistantText = '';
+      setStreaming('');
+    };
+
+    const onEvent = (event) => {
+      switch (event.type) {
+        case 'text':
+          assistantText += event.text;
+          setActivity(null);
+          setStreaming(assistantText);
+          break;
+        case 'thinking':
+          setActivity('Thinking…');
+          break;
+        case 'agent':
+          currentAgent = event.agent;
+          setActivity(`@${event.agent} is answering…`);
+          break;
+        case 'consulted':
+          consultedAgents = event.agents || [];
+          break;
+        case 'proposal':
+          // A write was proposed — render its action card in place.
+          flushAssistant();
+          setMessages((prev) => [...prev, { role: 'proposal', ...event.proposal }]);
+          setActivity(null);
+          break;
+        case 'proposal_resolved':
+          setMessages((prev) => prev.map((m) => (
+            m.role === 'proposal' && m.proposalId === event.proposalId
+              ? { ...m, status: event.status, result: event.content }
+              : m
+          )));
+          break;
+        case 'tool_use':
+          flushAssistant();
+          setActivity(
+            event.name === 'find_agent' ? 'Finding the right agent…'
+              : event.name === 'ask_agent' ? `Asking @${event.input?.agent || 'a specialist'}…`
+              : `Using ${event.name || 'a tool'}…`,
+          );
+          break;
+        case 'error':
+          setError(event.message);
+          setActivity(null);
+          break;
+        case 'done':
+        case 'stop':
+          break;
+        default:
+          break;
+      }
+    };
+
+    return { onEvent, flushAssistant };
+  }, []);
+
   const send = useCallback(async (text) => {
     let conversationId = activeId;
     // Create a conversation on first message if none is active.
@@ -204,70 +276,58 @@ export default function CopilotPane({ onClose }) {
 
     const controller = new AbortController();
     abortRef.current = controller;
-    let assistantText = '';
-    let currentAgent = null; // direct takeover (@mention / auto-route)
-    let consultedAgents = []; // specialists answered via master delegation
+    const handler = makeStreamHandler();
 
-    // The master's tool loop can produce text in several rounds separated by
-    // tool calls — flush the buffer into a message bubble at each boundary.
-    const flushAssistant = () => {
-      if (!assistantText) return;
-      const content = assistantText;
-      const attribution = currentAgent
-        ? { agent: currentAgent }
-        : consultedAgents.length ? { agents: [...consultedAgents] } : {};
-      setMessages((prev) => [...prev, { role: 'assistant', content, ...attribution }]);
-      assistantText = '';
-      setStreaming('');
-    };
-
-    await streamChat(conversationId, text, {
-      signal: controller.signal,
-      onEvent: (event) => {
-        switch (event.type) {
-          case 'text':
-            assistantText += event.text;
-            setActivity(null);
-            setStreaming(assistantText);
-            break;
-          case 'thinking':
-            setActivity('Thinking…');
-            break;
-          case 'agent':
-            currentAgent = event.agent;
-            setActivity(`@${event.agent} is answering…`);
-            break;
-          case 'consulted':
-            consultedAgents = event.agents || [];
-            break;
-          case 'tool_use':
-            flushAssistant();
-            setActivity(
-              event.name === 'find_agent' ? 'Finding the right agent…'
-                : event.name === 'ask_agent' ? `Asking @${event.input?.agent || 'a specialist'}…`
-                : `Using ${event.name || 'a tool'}…`,
-            );
-            break;
-          case 'error':
-            setError(event.message);
-            setActivity(null);
-            break;
-          case 'done':
-          case 'stop':
-            break;
-          default:
-            break;
-        }
-      },
-    });
+    await streamChat(conversationId, text, { signal: controller.signal, onEvent: handler.onEvent });
 
     setActivity(null);
-    flushAssistant();
+    handler.flushAssistant();
     setStreaming(null);
     // Refresh titles/timestamps in the list.
     loadList();
     abortRef.current = null;
-  }, [activeId, loadList]);
+  }, [activeId, loadList, makeStreamHandler]);
+
+  // -- Action-card proposals -------------------------------------------------
+  const [busyProposalId, setBusyProposalId] = useState(null);
+
+  // Confirm executes the write server-side and RESUMES the proposing agent's
+  // loop — a stream, handled exactly like a chat turn.
+  const confirmProposal = useCallback(async (proposalId) => {
+    if (!activeId || streaming != null) return;
+    setError(null);
+    setBusyProposalId(proposalId);
+    setStreaming('');
+    setActivity('Executing…');
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const handler = makeStreamHandler();
+
+    await streamProposalConfirm(activeId, proposalId, { signal: controller.signal, onEvent: handler.onEvent });
+
+    setActivity(null);
+    handler.flushAssistant();
+    setStreaming(null);
+    setBusyProposalId(null);
+    loadList();
+    abortRef.current = null;
+  }, [activeId, streaming, makeStreamHandler, loadList]);
+
+  const declineProposal = useCallback(async (proposalId) => {
+    if (!activeId) return;
+    setBusyProposalId(proposalId);
+    try {
+      await conversationsApi.declineProposal(activeId, proposalId);
+      setMessages((prev) => prev.map((m) => (
+        m.role === 'proposal' && m.proposalId === proposalId ? { ...m, status: 'declined' } : m
+      )));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyProposalId(null);
+    }
+  }, [activeId]);
 
   // Abort any in-flight stream on unmount.
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -335,7 +395,16 @@ export default function CopilotPane({ onClose }) {
         />
       ) : (
         <div className={styles.chatArea}>
-          <ChatView messages={messages} streaming={streaming} activity={activity} error={error} />
+          <ChatView
+            messages={messages}
+            streaming={streaming}
+            activity={activity}
+            error={error}
+            onConfirmProposal={confirmProposal}
+            onDeclineProposal={declineProposal}
+            busyProposalId={busyProposalId}
+            proposalsDisabled={busy}
+          />
           <ChatInput onSend={send} disabled={busy} />
         </div>
       )}

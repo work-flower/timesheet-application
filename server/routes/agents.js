@@ -40,9 +40,11 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /admin/api/agents/tools — the app tool registry (for future grants UI)
+// GET /admin/api/agents/tools — the app tool registry (card designer grant
+// checkboxes + eval-set tool targets). kind: read executes in-loop, write
+// becomes an action-card proposal; access: the { table, op } it exercises.
 router.get('/tools', (req, res) => {
-  res.json(appTools.map(({ name, description }) => ({ name, description })));
+  res.json(appTools.map(({ name, description, kind, access }) => ({ name, description, kind, access })));
 });
 
 // POST /admin/api/agents/rescan — reindex hand-edited/dropped-in folders

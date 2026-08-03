@@ -300,23 +300,25 @@ Agent card index (Phase 3). **File-led**: each card IS its folder at `DATA_DIR/a
 | aiProviderId | Bound AI provider (null = default provider) |
 | enabled | Disabled cards are unroutable and unmentionable |
 | isMaster | True only for the reserved `master` card |
+| tools | Granted app-tool names from the shared registry (`agentToolRegistry.js`). Reads execute in-loop under the caller's identity; writes become action-card proposals requiring user confirmation. Stale names are skipped at runtime |
 | hasPayloadTemplate | Whether the folder carries a `payload_template.json` override |
 
 ### routingConfig (single document)
 
-Routing engine configuration (admin → Agents → Routing). Separate database file (`routing-config.db`), no secrets, **included** in backups. Read per turn — changes apply on the next message, no restart. Tiers: `autoRouteEnabled`/`autoRouteThreshold` (ground-truth takeover), `evidenceEnabled`/`evidenceFloor` (evidence attachment), `maxCandidates`. Advanced: `topK`, `aggregation` (`max`|`mean`), `embeddingModel` (HF ONNX id; change triggers lazy reindex — model id is part of the index hash), corpus toggles (`includeEvalExamples`, `includeCardDescriptions`), `maxToolIterations` (master tool-loop rounds). See `.claude/docs/agents.md`.
+Routing engine configuration (admin → Agents → Routing). Separate database file (`routing-config.db`), no secrets, **included** in backups. Read per turn — changes apply on the next message, no restart. Tiers: `autoRouteEnabled`/`autoRouteThreshold` (ground-truth takeover — agent-kind matches only; tool matches are evidence-only), `evidenceEnabled`/`evidenceFloor` (evidence attachment), `maxCandidates`. Advanced: `topK`, `aggregation` (`max`|`mean`), `embeddingModel` (HF ONNX id; change triggers lazy reindex — model id is part of the index hash), corpus toggles (`includeEvalExamples`, `includeCardDescriptions`, `includeToolDescriptions`), `maxToolIterations` (agent tool-loop rounds), `toolDelivery` (`static` = all granted tool defs injected each round; `discover` = a `find_tool` meta-tool injects only vector-matched defs, turn-scoped). See `.claude/docs/agents.md`.
 
 ### evalExamples
 
-Routing eval-set for the agent layer (Phase 2). Labeled `utterance → expectedAgent` examples that serve as both the runtime routing signal (exemplars in the vector index) and the accuracy harness. Standalone store (`eval-examples.db`), admin-surface only (`/admin/api/eval-examples`), **included** in backups (curated, no secrets). See `.claude/docs/agents.md`.
+Routing eval-set for the agent layer (Phase 2). Labeled `utterance → expected target` examples that serve as both the runtime routing signal (exemplars in the vector index) and the accuracy harness. Standalone store (`eval-examples.db`), admin-surface only (`/admin/api/eval-examples`), **included** in backups (curated, no secrets). See `.claude/docs/agents.md`.
 
 | Field | Description |
 |-------|-------------|
-| utterance | A phrase that should route to `expectedAgent` |
-| expectedAgent | Agent slug this utterance targets (free text; cards arrive in P3) |
+| utterance | A phrase that should route to the target below |
+| expectedAgent | Target this utterance routes to: agent slug or registry tool name (per `targetKind`) |
+| targetKind | `agent` (default; missing on old docs = agent) or `tool` |
 | createdAt, updatedAt | ISO timestamps |
 
-`POST /admin/api/eval-examples/run` returns leave-one-out accuracy + a per-agent confusion table + misroutes. `POST /admin/api/eval-examples/route` probes an arbitrary utterance. Local embeddings (`@xenova/transformers`, WASM) cached at `DATA_DIR/models`; derived vector index at `DATA_DIR/rag/routing-index.json` (rebuildable, not backed up).
+`POST /admin/api/eval-examples/run` returns leave-one-out accuracy + a confusion table with kind-prefixed labels (`agent:vat-help` / `tool:create_timesheet`) + misroutes. Local embeddings (`@xenova/transformers`, WASM) cached at `DATA_DIR/models`; derived vector index at `DATA_DIR/rag/routing-index.json` (rebuildable, not backed up).
 
 ### conversations
 
@@ -328,7 +330,7 @@ Copilot assistant threads. Thin metadata doc; message transcript stored on disk 
 | lastMessageAt | ISO timestamp of the most recent message |
 | createdAt, updatedAt | ISO timestamps |
 
-**On disk:** `transcript.jsonl` — one JSON message per line (`{ role, content, createdAt }`). Returned as a `messages` array from the detail endpoint, not stored in the DB doc.
+**On disk:** `transcript.jsonl` — one JSON message per line, append-only. Roles: `user`, `assistant` (+ `agent`/`agents` attribution tags), `tool_call`/`tool_result` (agent-tagged for non-master loops), `proposal` (pending action card: proposed write tool + input + proposing agent) and `proposal_resolution` (`confirmed`/`declined`/`failed`). The detail endpoint returns a folded `messages` array (proposals enriched with `status`/`result`, resolution rows dropped); confirm/decline endpoints at `POST /api/conversations/:id/proposals/:pid/confirm` (SSE — executes then resumes the proposing agent) and `/decline` (JSON). See `.claude/docs/agents.md`.
 
 ### aiConfig (single document)
 
@@ -583,7 +585,7 @@ Full wiring in `.claude/docs/authorisation.md`. Cross-cutting rules:
 6. **Field-level security (fls)**: per role, per table, per operation (`read`/`create`/`update`) an excluded-field list masks fields on read (strings → `***redacted***`, others → `null`), strips them from writes at the pipeline (read-hidden implies write-stripped; replacement-style updates rejected), and 400s `$filter`/`$orderby`/`$summary` references. Multi-role merge is per-op intersection (most permissive). Forms render redacted/read-only controls via `FormDataProvider` + `FormField name="..."`; lists dash hidden numerics. Protected fields (`_id`, timestamps, attribution, lock fields) can never be hidden. Full semantics + sibling-group configuration rules in `authorisation.md` → Field-Level Security.
 7. Background jobs (schedulers, AI parsing, backup, seed) must run under `runAsSystem` or they are denied when enforcement is on.
 8. With `AUTH_ENABLED` unset the app behaves exactly as the legacy single-user build.
-9. **Agent layer**: whatever agent the caller can see (via the `agents` read grant + filter), they can talk to — `@mention` resolution and `find_agent` candidates go through the caller-scoped collection; no grant = no assistant (gate runs before the SSE stream). The only system-scoped resolution in a chat turn is reading the master card's own definition files. `conversations` privacy is a role pre-filter on `createdBy` via `$$user.email` — a documented exception to the "attribution fields never in filters" rule (role-authored filter, not service logic). See `agents.md`.
+9. **Agent layer**: whatever agent the caller can see (via the `agents` read grant + filter), they can talk to — `@mention` resolution and `find_agent` candidates go through the caller-scoped collection; no grant = no assistant (gate runs before the SSE stream). The only system-scoped resolution in a chat turn is reading the master card's own definition files. App tools granted to cards execute under the **caller's** identity (pipeline enforces roles/scoping/fls; unusable tools are pre-filtered from offers), and write tools never execute inline — they become action-card proposals the user must confirm (confirm re-executes under the caller). `conversations` privacy is a role pre-filter on `createdBy` via `$$user.email` — a documented exception to the "attribution fields never in filters" rule (role-authored filter, not service logic). See `agents.md`.
 
 ### Record Locking
 

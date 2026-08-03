@@ -45,7 +45,7 @@ export async function getAll(query = {}) {
 export async function getById(id) {
   const doc = await conversations.findOne({ _id: id });
   if (!doc) return null;
-  return { ...doc, messages: readTranscript(id) };
+  return { ...doc, messages: foldTranscript(readTranscript(id)) };
 }
 
 export async function create(data = {}) {
@@ -115,6 +115,40 @@ export async function appendMessage(id, message) {
   }
   await conversations.update({ _id: id }, { $set: set });
   return entry;
+}
+
+/**
+ * Fold the append-only transcript for the DETAIL endpoint: proposal rows are
+ * enriched with their resolution ({ status, result }); resolution rows are
+ * dropped (they exist for provider context + audit, not for display). The raw
+ * transcript (readTranscript) stays untouched — the provider path folds nothing.
+ */
+export function foldTranscript(rows) {
+  const resolutions = new Map();
+  for (const m of rows) {
+    if (m.role === 'proposal_resolution') resolutions.set(m.proposalId, m);
+  }
+  const out = [];
+  for (const m of rows) {
+    if (m.role === 'proposal_resolution') continue;
+    if (m.role === 'proposal') {
+      const r = resolutions.get(m.proposalId);
+      out.push({ ...m, status: r ? r.status : 'pending', result: r ? r.content : null });
+    } else {
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+/** Look up one proposal + its resolution (if any) from the raw transcript. */
+export function findProposal(id, proposalId) {
+  const rows = readTranscript(id);
+  const proposal = rows.find((m) => m.role === 'proposal' && m.proposalId === proposalId) || null;
+  const resolution = proposal
+    ? rows.find((m) => m.role === 'proposal_resolution' && m.proposalId === proposalId) || null
+    : null;
+  return { proposal, resolution };
 }
 
 /** Ensure the conversation exists and belongs to the caller's scope (wrapped read). */

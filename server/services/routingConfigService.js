@@ -19,8 +19,13 @@ import routingConfig from '../db/routingConfig.js';
  *   embeddingModel — HF model id (ONNX/Xenova export). Changing it downloads
  *     the new model on next use and rebuilds the index (model id is part of
  *     the index hash)
- *   includeCardDescriptions / includeEvalExamples — corpus source toggles
- *   maxToolIterations — master tool-loop rounds before a forced final answer
+ *   includeCardDescriptions / includeEvalExamples / includeToolDescriptions —
+ *     corpus source toggles (tool descriptions rank as kind:'tool' entries)
+ *   maxToolIterations — agent tool-loop rounds before a forced final answer
+ *   toolDelivery — how granted app-tool definitions reach an agent's context:
+ *     'static' (default) injects all granted defs every round; 'discover' gives
+ *     agents a find_tool meta-tool — a deterministic grant/privilege-filtered
+ *     vector lookup that injects only the matched defs for the rest of the turn
  */
 
 export const DEFAULTS = {
@@ -34,11 +39,13 @@ export const DEFAULTS = {
   embeddingModel: 'Xenova/all-MiniLM-L6-v2',
   includeCardDescriptions: true,
   includeEvalExamples: true,
+  includeToolDescriptions: true,
   maxToolIterations: 4,
+  toolDelivery: 'static',
 };
 
 const NUMERIC_FIELDS = ['autoRouteThreshold', 'evidenceFloor', 'maxCandidates', 'topK', 'maxToolIterations'];
-const BOOLEAN_FIELDS = ['autoRouteEnabled', 'evidenceEnabled', 'includeCardDescriptions', 'includeEvalExamples'];
+const BOOLEAN_FIELDS = ['autoRouteEnabled', 'evidenceEnabled', 'includeCardDescriptions', 'includeEvalExamples', 'includeToolDescriptions'];
 
 function normalise(data) {
   const out = {};
@@ -53,6 +60,9 @@ function normalise(data) {
   }
   if ('aggregation' in data) {
     out.aggregation = data.aggregation === 'mean' ? 'mean' : 'max';
+  }
+  if ('toolDelivery' in data) {
+    out.toolDelivery = data.toolDelivery === 'discover' ? 'discover' : 'static';
   }
   if ('embeddingModel' in data) {
     const model = String(data.embeddingModel || '').trim();

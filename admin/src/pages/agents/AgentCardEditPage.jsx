@@ -57,6 +57,9 @@ export default function AgentCardEditPage() {
   const [form, setForm] = useState({
     slug: '', name: '', description: '', aiProviderId: '', enabled: true, agentMd: '',
   });
+  // Tool grants: registry catalogue + this card's granted names (manifest.tools).
+  const [registryTools, setRegistryTools] = useState([]);
+  const [grantedTools, setGrantedTools] = useState([]);
   // Copy-on-write template state: the editor ALWAYS shows the effective
   // template; it only persists to the card folder once deliberately edited.
   const [templateText, setTemplateText] = useState('');
@@ -87,8 +90,12 @@ export default function AgentCardEditPage() {
   useEffect(() => {
     (async () => {
       try {
-        const providerList = await aiProvidersApi.getAll();
+        const [providerList, toolList] = await Promise.all([
+          aiProvidersApi.getAll(),
+          agentCardsApi.getTools().catch(() => []),
+        ]);
         setProviders(providerList);
+        setRegistryTools(toolList);
         if (!isNew) {
           const detail = await agentCardsApi.getBySlug(slug);
           setCard(detail);
@@ -100,6 +107,7 @@ export default function AgentCardEditPage() {
             enabled: detail.enabled !== false,
             agentMd: detail.agentMd || '',
           });
+          setGrantedTools(Array.isArray(detail.tools) ? detail.tools : []);
           setOriginalProviderId(detail.aiProviderId || '');
           setHasOverride(!!detail.hasPayloadTemplate);
           setTemplateText(
@@ -142,6 +150,18 @@ export default function AgentCardEditPage() {
     setTemplateText(inheritedTemplateText(form.aiProviderId, providers));
   };
 
+  const toggleTool = (name, checked) => {
+    setGrantedTools((prev) => (checked ? [...new Set([...prev, name])] : prev.filter((t) => t !== name)));
+  };
+
+  // Granted names no longer in the registry (tool retired from the code
+  // registry) — kept on the manifest, skipped at runtime; shown so they can
+  // be revoked deliberately.
+  const staleGrants = useMemo(
+    () => grantedTools.filter((t) => !registryTools.some((rt) => rt.name === t)),
+    [grantedTools, registryTools],
+  );
+
   const handleSave = async () => {
     if (!form.name.trim()) return showMessage('error', 'Name is required.');
     if (isNew && !/^[a-z0-9][a-z0-9-]{1,48}$/.test(form.slug)) {
@@ -163,6 +183,7 @@ export default function AgentCardEditPage() {
         description: form.description,
         aiProviderId: form.aiProviderId || null,
         enabled: form.enabled,
+        tools: grantedTools,
         agentMd: form.agentMd,
         payloadTemplate,
       };
@@ -173,6 +194,7 @@ export default function AgentCardEditPage() {
       } else {
         const updated = await agentCardsApi.update(slug, payload);
         setCard(updated);
+        setGrantedTools(Array.isArray(updated.tools) ? updated.tools : []);
         setHasOverride(!!updated.hasPayloadTemplate);
         setTemplateDirty(false);
         setOriginalProviderId(updated.aiProviderId || '');
@@ -261,6 +283,49 @@ export default function AgentCardEditPage() {
               placeholder="You are the ... specialist for this application. ..."
             />
           </Field>
+        </div>
+
+        <div className={styles.section}>
+          <Text className={styles.sectionTitle}>Tools</Text>
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: 12 }}>
+            App tools this agent may use. Read tools run immediately during a conversation;
+            write tools always propose an action card the user must confirm.
+            Execution runs under the caller's identity — security roles still apply.
+          </Text>
+          {registryTools.length === 0 ? (
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>Tool registry unavailable.</Text>
+          ) : (
+            <div className={styles.grid}>
+              {registryTools.map((t) => (
+                <Checkbox
+                  key={t.name}
+                  checked={grantedTools.includes(t.name)}
+                  onChange={(e, d) => toggleTool(t.name, d.checked)}
+                  label={
+                    <span>
+                      <span className={styles.mono}>{t.name}</span>{' '}
+                      <Badge appearance="tint" size="small" color={t.kind === 'write' ? 'warning' : 'informative'}>
+                        {t.kind === 'write' ? 'write — needs confirmation' : 'read'}
+                      </Badge>
+                      <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
+                        {(t.description || '').split('\n')[0]}
+                      </Text>
+                    </span>
+                  }
+                />
+              ))}
+            </div>
+          )}
+          {staleGrants.length > 0 && (
+            <MessageBar intent="warning" style={{ marginTop: 8 }}>
+              <MessageBarBody>
+                Granted tools no longer in the registry (skipped at runtime — untick to revoke):{' '}
+                {staleGrants.map((t) => (
+                  <Checkbox key={t} checked onChange={(e, d) => toggleTool(t, d.checked)} label={<span className={styles.mono}>{t}</span>} />
+                ))}
+              </MessageBarBody>
+            </MessageBar>
+          )}
         </div>
 
         <div className={styles.section}>

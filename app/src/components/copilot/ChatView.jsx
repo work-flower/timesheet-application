@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { makeStyles, tokens, Text, Spinner } from '@fluentui/react-components';
 import SafeMarkdown from '../SafeMarkdown.jsx';
+import ActionCard from './ActionCard.jsx';
 
 const useStyles = makeStyles({
   root: { flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' },
@@ -58,13 +59,18 @@ function AssistantContent({ text }) {
   );
 }
 
-export default function ChatView({ messages, streaming, activity, error }) {
+export default function ChatView({
+  messages, streaming, activity, error,
+  onConfirmProposal, onDeclineProposal, busyProposalId, proposalsDisabled,
+}) {
   const styles = useStyles();
   const endRef = useRef(null);
 
-  // The transcript also holds the master's tool_call/tool_result exchanges —
-  // internal working, not conversation bubbles.
-  const visibleMessages = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+  // The transcript also holds the tool_call/tool_result exchanges — internal
+  // working, not conversation bubbles. Proposal rows DO render (action cards).
+  const visibleMessages = messages.filter(
+    (m) => m.role === 'user' || m.role === 'assistant' || m.role === 'proposal',
+  );
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -94,9 +100,19 @@ export default function ChatView({ messages, streaming, activity, error }) {
               {m.agent ? `@${m.agent}` : `via ${m.agents.map((a) => `@${a}`).join(', ')}`}
             </Text>
           )}
-          <div className={`${styles.bubble} ${m.role === 'user' ? styles.userBubble : styles.assistantBubble}`}>
-            {m.role === 'user' ? m.content : <AssistantContent text={m.content} />}
-          </div>
+          {m.role === 'proposal' ? (
+            <ActionCard
+              proposal={m}
+              onConfirm={onConfirmProposal}
+              onDecline={onDeclineProposal}
+              busy={busyProposalId === m.proposalId}
+              disabled={proposalsDisabled}
+            />
+          ) : (
+            <div className={`${styles.bubble} ${m.role === 'user' ? styles.userBubble : styles.assistantBubble}`}>
+              {m.role === 'user' ? m.content : <AssistantContent text={m.content} />}
+            </div>
+          )}
         </div>
       ))}
 

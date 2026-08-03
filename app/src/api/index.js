@@ -47,6 +47,9 @@ export const conversationsApi = {
   create: (data = {}) => request('/conversations', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/conversations/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/conversations/${id}`, { method: 'DELETE' }),
+  // Confirm streams (see copilotStream.streamProposalConfirm); decline is plain JSON.
+  declineProposal: (id, proposalId) =>
+    request(`/conversations/${id}/proposals/${encodeURIComponent(proposalId)}/decline`, { method: 'POST', body: '{}' }),
 };
 
 // Users (read-only — impersonation picker; requires users.read + roles.read grants)

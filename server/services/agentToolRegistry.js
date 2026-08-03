@@ -1,3 +1,5 @@
+import als from '../logging/asyncContext.js';
+import { isAuthEnabled } from '../pipeline/authFlag.js';
 import * as projectService from './projectService.js';
 import * as timesheetService from './timesheetService.js';
 import * as expenseService from './expenseService.js';
@@ -8,13 +10,23 @@ import * as ticketService from './ticketService.js';
  * Provider-neutral application tool registry — the single source of truth for
  * app tools, shared by BOTH consumers:
  *   - the MCP endpoint (server/routes/mcp.js) exposes them over JSON-RPC
- *   - the agent layer (P3+) grants them to cards and executes them in-loop
+ *   - the agent layer grants them to cards and executes them in-loop
  *
  * `tools` entries are JSON-Schema tool definitions ({ name, description,
- * inputSchema }); `handlers` maps name → async (args) → string. Handlers call
- * pipeline-wrapped services, so they run under whatever identity is in the ALS
- * scope — caller-scoped from HTTP requests, system from background jobs.
- * Extracted verbatim from routes/mcp.js (P3); the MCP surface is unchanged.
+ * inputSchema }) plus platform metadata the model never sees:
+ *   kind   — 'read' executes immediately in an agent loop; 'write' becomes an
+ *            action-card proposal requiring user confirmation.
+ *   access — { table, op } the tool ultimately exercises; used to pre-filter
+ *            tools the caller's roles could never use (the pipeline still
+ *            enforces at execution — this only avoids dead-end offers).
+ * MCP strips the metadata in routes/mcp.js so its wire surface is unchanged.
+ *
+ * `handlers` maps name → async (args) → string. Handlers call pipeline-wrapped
+ * services, so they run under whatever identity is in the ALS scope —
+ * caller-scoped from HTTP requests, system from background jobs.
+ *
+ * Registering/retiring a tool is a code change here; see the "Adding /
+ * retiring a tool" runbook in .claude/docs/agents.md for the downstream chain.
  */
 
 // -- Tool definitions --------------------------------------------------------
@@ -31,6 +43,8 @@ Returns: projectId, name, clientName, workingHoursPerDay.`,
         search: { type: 'string', description: 'Filter projects by name or client name' },
       },
     },
+    kind: 'read',
+    access: { table: 'projects', op: 'read' },
   },
   {
     name: 'create_timesheet',
@@ -53,6 +67,8 @@ Follow this flow for EVERY entry (each entry is an independent session — never
       },
       required: ['projectId'],
     },
+    kind: 'write',
+    access: { table: 'timesheets', op: 'create' },
   },
   {
     name: 'create_expense',
@@ -80,6 +96,8 @@ Follow this flow (each entry is an independent session — never reuse projectId
       },
       required: ['projectId', 'amount'],
     },
+    kind: 'write',
+    access: { table: 'expenses', op: 'create' },
   },
   {
     name: 'list_recent_timesheets',
@@ -90,6 +108,8 @@ Follow this flow (each entry is an independent session — never reuse projectId
         days: { type: 'number', description: 'Number of days to look back (default: 7)' },
       },
     },
+    kind: 'read',
+    access: { table: 'timesheets', op: 'read' },
   },
   {
     name: 'list_recent_expenses',
@@ -100,6 +120,8 @@ Follow this flow (each entry is an independent session — never reuse projectId
         days: { type: 'number', description: 'Number of days to look back (default: 30)' },
       },
     },
+    kind: 'read',
+    access: { table: 'expenses', op: 'read' },
   },
   {
     name: 'list_calendar_events',
@@ -111,6 +133,8 @@ Follow this flow (each entry is an independent session — never reuse projectId
         endDate: { type: 'string', description: 'YYYY-MM-DD end of range (default: same as startDate)' },
       },
     },
+    kind: 'read',
+    access: { table: 'calendarEvents', op: 'read' },
   },
   {
     name: 'list_tickets',
@@ -123,8 +147,29 @@ Follow this flow (each entry is an independent session — never reuse projectId
         search: { type: 'string', description: 'Search in ticket title' },
       },
     },
+    kind: 'read',
+    access: { table: 'tickets', op: 'read' },
   },
 ];
+
+export const toolsByName = new Map(tools.map((t) => [t.name, t]));
+
+/**
+ * Pre-flight privilege check: can the CURRENT ALS identity ever use this tool?
+ * Mirrors the requireAction predicate (pipeline/authorisation.js) — pass when
+ * auth is off, execution is system/superuser, or the caller holds a truthy
+ * grant for the tool's { table, op }. Tools without access metadata always
+ * pass. The pipeline still enforces (with record scoping) at execution time;
+ * this only avoids offering tools that are guaranteed to be denied.
+ */
+export function canUseTool(tool) {
+  if (!tool?.access) return true;
+  if (!isAuthEnabled()) return true;
+  const auth = als.getStore()?.auth;
+  if (auth?.system || auth?.superuser) return true;
+  const grant = auth?.grants?.[tool.access.table]?.[tool.access.op];
+  return grant !== undefined && grant !== false;
+}
 
 // -- Tool handlers -----------------------------------------------------------
 

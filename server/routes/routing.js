@@ -62,7 +62,8 @@ router.post('/probe', async (req, res) => {
     const { candidates, top } = await findAgent(utterance);
     let tier = 'below-floor';
     if (top) {
-      if (config.autoRouteEnabled !== false && top.score >= config.autoRouteThreshold) tier = 'auto-route';
+      // Only AGENT-kind candidates can auto-route (tool matches are evidence-only).
+      if (top.kind === 'agent' && config.autoRouteEnabled !== false && top.score >= config.autoRouteThreshold) tier = 'auto-route';
       else if (config.evidenceEnabled !== false && top.score >= config.evidenceFloor) tier = 'evidence';
     }
     res.json({

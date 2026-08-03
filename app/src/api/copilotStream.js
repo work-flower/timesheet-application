@@ -1,29 +1,29 @@
 import { getTraceId } from './traceId.js';
 
 /**
- * Stream a chat turn from the Copilot SSE endpoint.
+ * SSE clients for the Copilot pane.
  *
- * The message endpoint is a POST that returns text/event-stream, so neither the
- * shared request() helper (always .json()s) nor EventSource (GET-only, no custom
- * headers) fits — we read the ReadableStream directly and parse SSE frames.
+ * These endpoints are POSTs that return text/event-stream, so neither the
+ * shared request() helper (always .json()s) nor EventSource (GET-only, no
+ * custom headers) fits — we read the ReadableStream directly and parse frames.
  *
- * onEvent receives neutral events: { type: 'text'|'thinking'|'tool_use'|'stop'|'error'|'done', ... }.
- * Pass an AbortSignal to cancel the turn (the server aborts the upstream call on
- * client disconnect).
+ * onEvent receives neutral events: { type: 'text'|'thinking'|'tool_use'|
+ * 'agent'|'consulted'|'proposal'|'proposal_resolved'|'stop'|'error'|'done', ... }.
+ * Pass an AbortSignal to cancel (the server aborts upstream on disconnect).
  */
-export async function streamChat(conversationId, message, { providerId, onEvent, signal } = {}) {
-  const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+async function streamSse(url, body, { onEvent, signal } = {}) {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Trace-Id': getTraceId() },
-    body: JSON.stringify({ message, providerId }),
+    body: JSON.stringify(body),
     signal,
   });
 
   if (!res.ok || !res.body) {
     let detail = `Request failed: ${res.status}`;
     try {
-      const body = await res.json();
-      if (body?.error) detail = body.error;
+      const resBody = await res.json();
+      if (resBody?.error) detail = resBody.error;
     } catch { /* non-JSON error */ }
     onEvent?.({ type: 'error', message: detail });
     return;
@@ -59,4 +59,24 @@ export async function streamChat(conversationId, message, { providerId, onEvent,
       } catch { /* skip malformed frame */ }
     }
   }
+}
+
+/** Stream a chat turn. */
+export function streamChat(conversationId, message, { providerId, onEvent, signal } = {}) {
+  return streamSse(
+    `/api/conversations/${conversationId}/messages`,
+    { message, providerId },
+    { onEvent, signal },
+  );
+}
+
+/** Confirm an action-card proposal: the server executes the write under the
+ *  caller's identity, then resumes the proposing agent's loop — so the
+ *  response is a stream (proposal_resolved first, then narration). */
+export function streamProposalConfirm(conversationId, proposalId, { onEvent, signal } = {}) {
+  return streamSse(
+    `/api/conversations/${conversationId}/proposals/${encodeURIComponent(proposalId)}/confirm`,
+    {},
+    { onEvent, signal },
+  );
 }
