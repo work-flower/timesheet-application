@@ -20,7 +20,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Route | `server/routes/timesheets.js` | 5 endpoints: standard CRUD |
-| Service | `server/services/timesheetService.js` | Rate/hours golden rule, days/amount computation, enrichment, lock checks. `getAll`: `$expand` (project, client), `groupBy` (week/month/year/day), `$summary` (server-side field sums across all matching records). `create`/`update`: persists `clientId` from project for direct `$filter` support. `getById`: returns computed effectiveRate/effectiveWorkingHours for display |
+| Service | `server/services/timesheetService.js` | Rate/hours golden rule, days/amount computation, enrichment, lock checks. `getAll`: legacy params `projectId`, `clientId` (resolved live via the client's projects, mirroring expenseService; `projectId` takes precedence), `startDate`/`endDate`; `$expand` (project, client), `groupBy` (week/month/year/day), `$summary` (server-side field sums across all matching records). `create`/`update`: persists `clientId` from project for direct `$filter` support. `getById`: returns computed effectiveRate/effectiveWorkingHours for display |
 | DB collection | `server/db/index.js` | `timesheets` — wrapped NeDB via execution pipeline |
 
 ## Shared Utilities
@@ -46,8 +46,9 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | **Project cascade** | `projectService.js` remove | Deletes all timesheets for project | Destroys data |
 | **Timesheet report** | `reportService.js` buildTimesheetPdf | Reads timesheets by project/date range or by IDs (for invoice) | PDF generation, read-only |
 | **Dashboard** | `dashboardService.js` | Queries timesheets for hours/earnings totals, uninvoiced count | Read-only |
-| **MCP create_timesheet** | `server/routes/mcp.js` | Calls `timesheetService.create()` with projectId, date, hours, notes | Creates timesheets |
-| **MCP list_recent** | `server/routes/mcp.js` | Calls `timesheetService.getAll()` with date range | Read-only |
+| **Agent tool create_timesheet** | `server/services/agentToolRegistry.js` | Calls `timesheetService.create()` with projectId, date, hours, notes (exposed over MCP + agent layer) | Creates timesheets |
+| **Agent tool list_recent_timesheets** | `server/services/agentToolRegistry.js` | Calls `timesheetService.getAll()` with date range | Read-only |
+| **Agent tool list_unbilled_items** | `server/services/agentToolRegistry.js` | Reads a client's unbilled timesheets (`clientId` legacy param + `$filter=invoiceId eq null`) | Read-only |
 | **Dashboard (frontend)** | `app/src/pages/Dashboard.jsx` | Fetches weekly/monthly hours, recent entries grid | Read-only |
 | **ClientForm (frontend)** | `app/src/pages/clients/ClientForm.jsx` | Timesheets tab displays client's timesheets in DataGrid | Read-only |
 | **ProjectForm (frontend)** | `app/src/pages/projects/ProjectForm.jsx` | Timesheets tab displays project's timesheets in DataGrid | Read-only |
@@ -121,3 +122,5 @@ Also included in the Combined PDF — see `invoices.md` → Invoice PDF Generati
 
 - **Fluent UI v9 SpinButton** — MUST use uncontrolled mode (`defaultValue`, not `value`). Controlled mode breaks typing. `data.value` is `null` during typing; always parse `data.displayValue` as fallback: `const val = data.value ?? parseFloat(data.displayValue); if (val != null && !isNaN(val)) ...`
 - **OData URL filtering** — `$summary` provides server-side aggregation across all matching records (ignoring pagination). The summary footer must use `$summary` values, not client-side computation from the current page. `odata-filter-to-ast` is used for parsing `$filter` from URL back to UI state — its AST uses typed nodes (`EqExpr`, `GeExpr`, etc.) not a generic `op` field.
+- **`clientId` legacy param was silently ignored (fixed)** — `getAll` only handled `projectId`/`startDate`/`endDate`, so callers passing `clientId` (the InvoiceForm timesheet picker) received EVERY client's timesheets and relied on downstream filtering. Now resolved LIVE via the client's projects (mirroring expenseService), deliberately NOT via the stored `clientId` snapshot: the snapshot is absent on pre-backfill records (seed data now stamps it) and goes stale when a project is reassigned to another client (no cascade exists — `projectService.update` doesn't touch timesheets, and `timesheetService.update` only re-stamps when `hours`/`projectId` change). The direct OData `$filter=clientId eq '...'` path (list views, Dashboard links) still queries the stored snapshot and inherits both caveats.
+- **`$filter=invoiceId eq null` matched nothing (fixed in `server/odata.js`)** — the AST value extraction used `??`, which swallowed null literals and leaked the AST node into the NeDB query. The Dashboard's uninvoiced-entries card links to `/timesheets?$filter=invoiceId eq null` and showed an empty list. `eq null` now compiles to a null-or-absent `$or`; `ne null` to `$exists + $ne`.

@@ -52,8 +52,10 @@ function corpusHash(items, model) {
 /**
  * The routing corpus: eval exemplars (kind from the example's targetKind) +
  * enabled agent card descriptions (kind 'agent', label = slug; master excluded
- * — it is the router, not a destination) + registry tool descriptions (kind
- * 'tool', label = tool name). Cards are read under system identity: the index
+ * — it is the router, not a destination) + effective tool descriptions (kind
+ * 'tool', label = tool name; admin-managed definitions hydrated into the
+ * registry's live-binding cache — mutations invalidate this index via
+ * agentToolService). Cards are read under system identity: the index
  * is GLOBAL and derived; per-caller visibility/grants apply to CANDIDATES
  * (filterCandidates in the chat service), never baked into the index.
  */

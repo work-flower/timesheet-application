@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import als from '../logging/asyncContext.js';
-import { tools, handlers } from '../services/agentToolRegistry.js';
+import { tools, toolsByName, handlers } from '../services/agentToolRegistry.js';
 
 const router = Router();
 
-// Tool definitions + handlers live in services/agentToolRegistry.js (shared
-// with the agent layer). This route is the MCP JSON-RPC surface over them.
+// Handlers live in services/agentToolRegistry.js (shared with the agent
+// layer); tool definitions are admin-managed records hydrated into the
+// registry's tools/toolsByName cache. This route is the MCP JSON-RPC surface
+// over them.
 
 // -- JSON-RPC 2.0 handler ----------------------------------------------------
 
@@ -47,7 +49,10 @@ router.post('/', async (req, res) => {
   if (method === 'tools/call') {
     const toolName = params?.name;
     const toolArgs = params?.arguments || {};
-    const handler = handlers[toolName];
+    // Resolve definition → handlerName → fn (definitions may map any handler;
+    // deleted/disabled definitions fall out of toolsByName → "Unknown tool").
+    const def = toolsByName.get(toolName);
+    const handler = def ? handlers[def.handlerName]?.fn : undefined;
 
     // Enrich ALS context with tool name
     const store = als.getStore();

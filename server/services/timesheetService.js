@@ -8,6 +8,12 @@ export async function getAll(query = {}) {
 
   if (query.projectId) {
     baseFilter.projectId = query.projectId;
+  } else if (query.clientId) {
+    // Resolve live via the client's projects (like expenseService) rather
+    // than the stored clientId snapshot — the snapshot is absent on
+    // pre-backfill records and goes stale if a project is reassigned.
+    const clientProjects = await projects.find({ clientId: query.clientId });
+    baseFilter.projectId = { $in: clientProjects.map((p) => p._id) };
   }
 
   if (query.startDate || query.endDate) {

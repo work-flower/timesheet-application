@@ -254,6 +254,7 @@ async function seed() {
     if (d <= today) {
       await timesheets.insert({
         projectId: proj2._id,
+        clientId: proj2.clientId,
         date: dateStr,
         hours: 8,
         days: 1,
@@ -275,6 +276,7 @@ async function seed() {
 
     await timesheets.insert({
       projectId: proj3._id,
+      clientId: proj3.clientId,
       date: dateStr,
       hours: 7.5,
       days: 1,

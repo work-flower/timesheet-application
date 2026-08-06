@@ -46,7 +46,12 @@ function astToNedb(node) {
 
     case 'EqExpr': case 'NeExpr': case 'GtExpr': case 'GeExpr': case 'LtExpr': case 'LeExpr': {
       const field = node.left?.value;
-      const value = node.right?.value ?? node.right;
+      // Don't use ?? here — a null literal arrives as { type: 'Primitive',
+      // value: null } and ?? would swallow the null and leak the AST node
+      // into the query (matching nothing).
+      const value = node.right && typeof node.right === 'object' && 'value' in node.right
+        ? node.right.value
+        : node.right;
       const op = nedbOps[node.type];
 
       // NeDB null handling: { field: null } only matches explicit null, not missing fields.

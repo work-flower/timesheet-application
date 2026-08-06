@@ -16,6 +16,7 @@ import EvalSetPage from './pages/agents/EvalSetPage.jsx';
 import RoutingPage from './pages/agents/RoutingPage.jsx';
 import AgentCardsPage from './pages/agents/AgentCardsPage.jsx';
 import AgentCardEditPage from './pages/agents/AgentCardEditPage.jsx';
+import AgentToolsPage from './pages/agents/AgentToolsPage.jsx';
 import UsersPage from './pages/access/UsersPage.jsx';
 import RolesPage from './pages/access/RolesPage.jsx';
 import RoleEditPage from './pages/access/RoleEditPage.jsx';
@@ -45,6 +46,7 @@ export default function App() {
               <Route path="/agents/cards" element={<AgentCardsPage />} />
               <Route path="/agents/cards/new" element={<AgentCardEditPage />} />
               <Route path="/agents/cards/:slug" element={<AgentCardEditPage />} />
+              <Route path="/agents/tools" element={<AgentToolsPage />} />
               <Route path="/access/users" element={<UsersPage />} />
               <Route path="/access/roles" element={<RolesPage />} />
               <Route path="/access/roles/new" element={<RoleEditPage />} />

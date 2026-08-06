@@ -275,9 +275,12 @@ function resolveGrantedTools(card) {
 }
 
 /** Execute a READ app tool under the caller's ALS identity. Errors become
- *  result text so the loop can continue and the model can adjust. */
+ *  result text so the loop can continue and the model can adjust. Resolves
+ *  definition → handlerName → fn: definitions may map any code handler, and
+ *  deleted/disabled definitions fall out of toolsByName. */
 async function executeAppTool(call) {
-  const handler = appHandlers[call.name];
+  const def = toolsByName.get(call.name);
+  const handler = def ? appHandlers[def.handlerName]?.fn : undefined;
   if (!handler) return `Unknown tool: ${call.name}`;
   try {
     return await handler(call.input || {});
@@ -680,7 +683,10 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
 export async function executeProposal(conversationId, proposal) {
   let status = 'confirmed';
   let content = '';
-  const handler = appHandlers[proposal.name];
+  // Definition → handlerName → fn; a definition deleted or disabled between
+  // proposal and confirm resolves to no handler → the failed path.
+  const def = toolsByName.get(proposal.name);
+  const handler = def ? appHandlers[def.handlerName]?.fn : undefined;
   if (!handler) {
     status = 'failed';
     content = `Tool "${proposal.name}" is no longer available.`;

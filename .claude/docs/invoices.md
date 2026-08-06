@@ -24,7 +24,7 @@ InvoiceForm.jsx → invoicesApi (api/index.js) → routes/invoices.js → invoic
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Route | `server/routes/invoices.js` | 16 endpoints: CRUD, lifecycle, addLine, recalculate, consistency-check, payment, PDF serve/generate, link/unlink tx |
-| Service | `server/services/invoiceService.js` | Lifecycle, line management, totals, consistency checks, cascade via removeByClientId, getNextInvoiceNumber, linkTransaction/unlinkTransaction. `getAll`: `$expand` (client). `getById`: returns clientProjects with effectiveRate/vatPercent |
+| Service | `server/services/invoiceService.js` | Lifecycle, line management, totals, consistency checks, cascade via removeByClientId, getNextInvoiceNumber, linkTransaction/unlinkTransaction. `getAll`: legacy params `clientId`, `status`, `paymentStatus`, `startDate`/`endDate` (invoiceDate range); `$expand` (client). `getById`: returns clientProjects with effectiveRate/vatPercent |
 | Invoice PDF | `server/services/invoicePdfService.js` | Builds pdfmake doc definition with VAT grouping, bank details, draft watermark |
 | PDF combine | `server/services/pdfCombineService.js` | Merges invoice + timesheet report + expense report into single PDF |
 | DB collection | `server/db/index.js` | `invoices` — wrapped NeDB via execution pipeline |
@@ -46,6 +46,7 @@ InvoiceForm.jsx → invoicesApi (api/index.js) → routes/invoices.js → invoic
 | **Transaction service** | `server/services/transactionService.js` | `getById` finds linked invoices, computes balance | Read-only |
 | **VAT report** | `server/services/vatReportService.js` | Reads invoice lines for output VAT aggregation by rate | Read-only |
 | **Income & Expense report** | `server/services/incomeExpenseReportService.js` | Reads invoices for income aggregation by client/month | Read-only |
+| **Agent tools (read)** | `server/services/agentToolRegistry.js` | `list_invoices`/`get_invoice` read via `invoiceService.getAll`/`getById` (exposed over MCP + agent layer); `list_unbilled_items` reads `invoiceId eq null` timesheets/expenses | Read-only |
 | **Dashboard (frontend)** | `app/src/pages/Dashboard.jsx` | Fetches posted invoices for unpaid summary card | Read-only |
 | **ClientForm (frontend)** | `app/src/pages/clients/ClientForm.jsx` | Invoices tab displays client's invoices in DataGrid | Read-only |
 | **ProjectForm (frontend)** | `app/src/pages/projects/ProjectForm.jsx` | Invoices tab displays client's invoices in DataGrid | Read-only |

@@ -17,6 +17,9 @@ import backupConfig from '../db/backupConfig.js';
 import { clients, projects, timesheets, settings, documents, expenses, invoices, transactions, importJobs, stagedTransactions, notebooks, dailyPlans, todos, users, roles, conversations, agents } from '../db/index.js';
 import evalExamples from '../db/evalExamples.js';
 import routingConfig from '../db/routingConfig.js';
+import agentToolDefs from '../db/agentToolDefs.js';
+import { reloadTools } from './agentToolRegistry.js';
+import { invalidateIndex } from './routingService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -194,7 +197,7 @@ export async function createBackup() {
     const key = `${prefix}/${folderName}.tar.gz`;
 
     // Export all collections
-    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs, evalExampleDocs, agentDocs, routingConfigDocs] = await Promise.all([
+    const [clientDocs, projectDocs, timesheetDocs, settingsDocs, documentDocs, expenseDocs, invoiceDocs, transactionDocs, importJobDocs, stagedTransactionDocs, notebookDocs, dailyPlanDocs, todoDocs, userDocs, roleDocs, conversationDocs, evalExampleDocs, agentDocs, routingConfigDocs, agentToolDefDocs] = await Promise.all([
       clients.find({}),
       projects.find({}),
       timesheets.find({}),
@@ -214,6 +217,7 @@ export async function createBackup() {
       evalExamples.find({}),
       agents.find({}),
       routingConfig.find({}),
+      agentToolDefs.find({}),
     ]);
 
     const metadata = {
@@ -239,6 +243,7 @@ export async function createBackup() {
         evalExamples: evalExampleDocs.length,
         agents: agentDocs.length,
         routingConfig: routingConfigDocs.length,
+        agentTools: agentToolDefDocs.length,
       },
     };
 
@@ -272,6 +277,7 @@ export async function createBackup() {
     archive.append(JSON.stringify(evalExampleDocs, null, 2), { name: `${folderName}/evalExamples.json` });
     archive.append(JSON.stringify(agentDocs, null, 2), { name: `${folderName}/agents.json` });
     archive.append(JSON.stringify(routingConfigDocs, null, 2), { name: `${folderName}/routingConfig.json` });
+    archive.append(JSON.stringify(agentToolDefDocs, null, 2), { name: `${folderName}/agentTools.json` });
 
     // Add file directories (documents, expenses, invoices, uploads)
     const fileDirs = [
@@ -406,6 +412,7 @@ export async function restoreFromBackup(backupKey) {
       { name: 'evalExamples', db: evalExamples },
       { name: 'agents', db: agents },
       { name: 'routingConfig', db: routingConfig },
+      { name: 'agentTools', db: agentToolDefs },
     ];
 
     for (const { name, db } of collections) {
@@ -446,6 +453,11 @@ export async function restoreFromBackup(backupKey) {
         mkdirSync(target, { recursive: true });
       }
     }
+
+    // Restored tool definitions must go live without a restart: rebuild the
+    // registry's effective tool cache and drop the routing vector index.
+    await reloadTools();
+    invalidateIndex();
 
     return { success: true, metadata };
   } finally {

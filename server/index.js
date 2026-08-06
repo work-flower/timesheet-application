@@ -27,6 +27,7 @@ import evalExampleRoutes from './routes/evalExamples.js';
 import routingRoutes from './routes/routing.js';
 import conversationRoutes from './routes/conversations.js';
 import agentRoutes, { agentsReadOnlyRouter } from './routes/agents.js';
+import agentToolRoutes from './routes/agentTools.js';
 import dashboardRoutes from './routes/dashboard.js';
 import mcpRoutes from './routes/mcp.js';
 import mcpAuthRoutes from './routes/mcpAuth.js';
@@ -55,6 +56,7 @@ import { initCalendarScheduler } from './services/calendarService.js';
 import { initTicketScheduler } from './services/ticketService.js';
 import { ensureRepo, sanitizeTitle } from './services/notebookGitService.js';
 import { ensureDefaults as ensureAiProviderDefaults } from './services/aiProviderService.js';
+import { ensureDefaults as ensureAgentToolDefaults } from './services/agentToolService.js';
 import { ensureMasterCard, scanAgents } from './services/agentCardService.js';
 import { runAsSystem } from './pipeline/systemContext.js';
 import { notebooks } from './db/index.js';
@@ -187,6 +189,7 @@ adminApi.use('/ai-providers', aiProviderRoutes);
 adminApi.use('/eval-examples', evalExampleRoutes);
 adminApi.use('/routing', routingRoutes);
 adminApi.use('/agents', agentRoutes);
+adminApi.use('/agent-tools', agentToolRoutes);
 adminApi.use('/gemini-config', geminiConfigRoutes);
 adminApi.use('/mcp-auth', mcpAuthRoutes);
 adminApi.use('/backup', backupRoutes);
@@ -280,6 +283,15 @@ app.use((err, req, res, next) => {
 
 // Ensure notebooks git repo exists before starting
 ensureRepo();
+
+// Insert any code-registry seed tool definitions missing by name (defaults
+// are guaranteed present) and hydrate the effective tool cache BEFORE the
+// server accepts requests — MCP tools/list, agent grant resolution and the
+// routing corpus all read the cache, and an empty cache is indistinguishable
+// from "no tools".
+await runAsSystem(() => ensureAgentToolDefaults()).catch((err) =>
+  console.error('Failed to seed agent tool defaults:', err.message),
+);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

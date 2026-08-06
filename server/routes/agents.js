@@ -40,9 +40,11 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /admin/api/agents/tools — the app tool registry (card designer grant
-// checkboxes + eval-set tool targets). kind: read executes in-loop, write
-// becomes an action-card proposal; access: the { table, op } it exercises.
+// GET /admin/api/agents/tools — enabled effective tools from the registry
+// cache (card designer grant checkboxes + eval-set tool targets). Disabled
+// definitions drop out and surface as stale grants in the card designer.
+// kind: read executes in-loop, write becomes an action-card proposal;
+// access: the { table, op } it exercises. Both come from the mapped handler.
 router.get('/tools', (req, res) => {
   res.json(appTools.map(({ name, description, kind, access }) => ({ name, description, kind, access })));
 });

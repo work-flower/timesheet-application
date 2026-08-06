@@ -60,7 +60,7 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 | **Project cascade** | `server/services/projectService.js` remove | Deletes all project's expenses + attachment dirs on project delete | Destroys data |
 | **Expense report** | `server/services/expenseReportService.js` | Reads expenses by project/date range or by IDs for PDF generation | Read-only |
 | **Dashboard** | `server/services/dashboardService.js` | Queries expenses for monthly/YTD totals and by-client breakdown | Read-only |
-| **MCP tool** | `server/routes/mcp.js` | `create_expense` — calls `expenseService.create()` directly | Creates expenses |
+| **Agent tools** | `server/services/agentToolRegistry.js` | `create_expense` calls `expenseService.create()`; `list_recent_expenses` and `list_unbilled_items` (`clientId` + `$filter=invoiceId eq null`) read via `getAll` (exposed over MCP + agent layer) | Creates + reads expenses |
 | **Transaction service** | `server/services/transactionService.js` | `getById` finds linked expenses, computes balance | Read-only |
 | **VAT report** | `server/services/vatReportService.js` | Reads expense vatAmount/amount by date range for VAT analysis | Read-only |
 | **Income & Expense report** | `server/services/incomeExpenseReportService.js` | Reads expense amounts by type/date range for financial analysis | Read-only |

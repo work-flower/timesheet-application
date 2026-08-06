@@ -15,6 +15,7 @@ export async function getAll(query = {}) {
 
   if (query.clientId) baseFilter.clientId = query.clientId;
   if (query.status) baseFilter.status = query.status;
+  if (query.paymentStatus) baseFilter.paymentStatus = query.paymentStatus;
   if (query.startDate || query.endDate) {
     baseFilter.invoiceDate = {};
     if (query.startDate) baseFilter.invoiceDate.$gte = query.startDate;

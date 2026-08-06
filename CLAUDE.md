@@ -300,12 +300,25 @@ Agent card index (Phase 3). **File-led**: each card IS its folder at `DATA_DIR/a
 | aiProviderId | Bound AI provider (null = default provider) |
 | enabled | Disabled cards are unroutable and unmentionable |
 | isMaster | True only for the reserved `master` card |
-| tools | Granted app-tool names from the shared registry (`agentToolRegistry.js`). Reads execute in-loop under the caller's identity; writes become action-card proposals requiring user confirmation. Stale names are skipped at runtime |
+| tools | Granted app-tool names from the tool-definitions store (see `agentToolDefs`). Reads execute in-loop under the caller's identity; writes become action-card proposals requiring user confirmation. Stale names are skipped at runtime |
 | hasPayloadTemplate | Whether the folder carries a `payload_template.json` override |
 
 ### routingConfig (single document)
 
 Routing engine configuration (admin → Agents → Routing). Separate database file (`routing-config.db`), no secrets, **included** in backups. Read per turn — changes apply on the next message, no restart. Tiers: `autoRouteEnabled`/`autoRouteThreshold` (ground-truth takeover — agent-kind matches only; tool matches are evidence-only), `evidenceEnabled`/`evidenceFloor` (evidence attachment), `maxCandidates`. Advanced: `topK`, `aggregation` (`max`|`mean`), `embeddingModel` (HF ONNX id; change triggers lazy reindex — model id is part of the index hash), corpus toggles (`includeEvalExamples`, `includeCardDescriptions`, `includeToolDescriptions`), `maxToolIterations` (agent tool-loop rounds), `toolDelivery` (`static` = all granted tool defs injected each round; `discover` = a `find_tool` meta-tool injects only vector-matched defs, turn-scoped). See `.claude/docs/agents.md`.
+
+### agentToolDefs
+
+Admin-managed app tool definitions (admin → Agents → App Tools). Each record maps a model-visible definition onto a code-side handler in `server/services/agentToolRegistry.js` — handlers (and their `kind: read/write` + `access: {table, op}` safety metadata) stay in code; `GET /admin/api/agent-tools/handlers` lists the mappable handler names dynamically. Standalone store (`agent-tools.db`), admin-surface only (`/admin/api/agent-tools`), **included** in backups (no secrets). Seeded from the code registry's `seedDefinitions`: any seed absent by name is inserted at boot, so defaults are guaranteed present — disable (don't delete) a default to opt out. Mutations hydrate the registry's effective tool cache (`reloadTools`) and invalidate the routing index — definition edits are runtime data, no restart. See `.claude/docs/agents.md`.
+
+| Field | Description |
+|-------|-------------|
+| name | Tool name (`[a-z][a-z0-9_]{1,63}`, unique, **immutable** after create — the join key for card grants, transcripts, proposals, eval examples) |
+| description | Model-visible; feeds the routing corpus |
+| inputSchema | JSON Schema object (stored as a plain object; keys starting with `$` or containing `.` rejected at save — NeDB constraint, schemas must be self-contained) |
+| handlerName | Code handler this definition executes; must exist in the registry at save time. N definitions may map one handler (variants) |
+| enabled | Disabled tools drop out of MCP tools/list, agent grant resolution and the routing corpus |
+| createdAt, updatedAt | ISO timestamps |
 
 ### evalExamples
 
@@ -603,7 +616,7 @@ Full logging infrastructure is documented in `logging.md` wiring doc. Key cross-
 ### MCP (Model Context Protocol)
 
 1. The application exposes an MCP endpoint at `POST /mcp` (outside `/api` prefix) for AI assistants via JSON-RPC 2.0.
-2. **Available tools:** `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`, `list_calendar_events`, `list_tickets`. Definitions + handlers live in the shared registry `server/services/agentToolRegistry.js` (also consumed by the agent layer); `routes/mcp.js` is the JSON-RPC surface over it.
+2. **Available tools:** seeded defaults `list_projects`, `create_timesheet`, `create_expense`, `list_recent_timesheets`, `list_recent_expenses`, `list_calendar_events`, `list_tickets`, `list_invoices`, `get_invoice`, `list_unbilled_items`. Tool definitions are admin-managed records (see `agentToolDefs`); handlers + safety metadata live in the shared registry `server/services/agentToolRegistry.js` (also consumed by the agent layer); `routes/mcp.js` is the JSON-RPC surface over the registry's effective tool cache.
 3. **Confirmation flow:** All MCP tools follow a confirmation flow — the AI must list projects first, confirm the project with the user, present a summary, and only submit after user confirmation.
 4. **Authentication:** MCP auth configuration managed via `/api/mcp-auth` endpoints. OAuth 2.0 metadata served at `/.well-known/oauth-authorization-server`.
 5. **Upload Expense Image Skill:** Downloadable Claude.ai skill for receipt image upload after expense creation via MCP.
@@ -625,12 +638,12 @@ Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods
 - **Settings:** Get/update contractor profile (single document, upserted)
 - **AI Config:** Get/update config (API key masked on read), test connection (sends trivial request to Claude API). Separate from settings — own database, own endpoints.
 - **Logs:** Config CRUD (secret masked on read), test R2 connection, search (supports entity params `startDate`, `endDate`, `level`, `source`, `keyword`, `traceId` + OData `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$select`), list local files, read log file (with level/source/keyword filtering), upload to R2 (integrity-verified, deletes local), safe delete local file (requires R2 backup verification), download from R2, list R2 logs, pageview tracking (with traceId).
-- **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup. Includes `conversations` (DB + `files/conversations/` transcripts), `evalExamples`, `agents` (DB + `files/agents/` card folders) and `routingConfig`; **excludes** `ai-providers.db` (holds API keys) and the derived `rag/` + `models/` dirs (rebuildable).
+- **Backup:** Config CRUD (secret masked on read), test connection, manual backup (creates .tar.gz in R2), list backups, restore (replaces all data), delete backup. Includes `conversations` (DB + `files/conversations/` transcripts), `evalExamples`, `agents` (DB + `files/agents/` card folders), `routingConfig` and `agentToolDefs` (`agent-tools.db`); **excludes** `ai-providers.db` (holds API keys) and the derived `rag/` + `models/` dirs (rebuildable). Restore re-hydrates the registry's tool cache and invalidates the routing index.
 - **Help:** Skill zip download endpoint (`GET /api/help/skills/:skillFolder/download`). Searches `src/help/{topic}/skill/{skillFolder}/` and serves as a zip archive. Help topic content is auto-discovered from `src/help/*/index.md` frontmatter (title, description, tags, optional banner image).
 
 ### OData Query Support
 
-All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startswith, endswith, and, or, parentheses), `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`. Without `$count`: plain array response. With `$count=true`: `{ "@odata.count": N, "value": [...] }`.
+All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startswith, endswith, and, or, parentheses), `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`. Null comparisons work: `field eq null` matches explicit-null AND absent fields; `field ne null` matches only present non-null values. Without `$count`: plain array response. With `$count=true`: `{ "@odata.count": N, "value": [...] }`.
 
 **Virtual fields in `$filter`:** Services can define virtual field names that are resolved before the DB query. The notebook service supports `tagsAll`, `relatedProjectNamesAll`, `relatedClientNamesAll`, `relatedTimesheetLabelsAll` — these resolve array fields or cross-entity lookups into real NeDB conditions.
 
@@ -719,6 +732,7 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | `/system/ticket-sources` | TicketSourcesPage (Jira & Azure DevOps ticket source management) |
 | `/agents/cards`, `/agents/cards/new`, `/agents/cards/:slug` | AgentCardsPage + AgentCardEditPage (card designer over the on-disk folders: agent.md, provider binding, copy-on-write payload template, Rescan) |
 | `/agents/providers` | AiProvidersPage (AI provider registry: endpoint, payload template, wireFormat, masked key) |
+| `/agents/tools` | AgentToolsPage (app tool definitions: description/schema/handler mapping, enable/disable; handlers stay in code) |
 | `/agents/routing` | RoutingPage (routing tiers + advanced engine config, vector index status/rebuild, tier-aware route probe) |
 | `/agents/eval-set` | EvalSetPage (routing eval-set CRUD, Run Evals accuracy/confusion report) |
 | `/access/users` | UsersPage (user activation, role assignment, status) |

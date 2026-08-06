@@ -85,6 +85,17 @@ export const aiProvidersApi = {
   testConnection: (id, data = {}) => request(`/ai-providers/${id}/test-connection`, { method: 'POST', body: JSON.stringify(data) }),
 };
 
+// Agent tool definitions (Agents) — admin-managed records mapped onto
+// code-side handlers; /handlers lists the mappable handler names
+export const agentToolsApi = {
+  getAll: () => request('/agent-tools'),
+  getById: (id) => request(`/agent-tools/${id}`),
+  getHandlers: () => request('/agent-tools/handlers'),
+  create: (data) => request('/agent-tools', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/agent-tools/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/agent-tools/${id}`, { method: 'DELETE' }),
+};
+
 // Agent cards (Agents) — file-led folders; writes go to disk + reindex
 export const agentCardsApi = {
   getAll: () => request('/agents'),
