@@ -139,8 +139,9 @@ export default function TimesheetForm() {
           setLoadedData(data);
           resetBase(data);
         } else {
+          const defaultHours = active[0]?.effectiveWorkingHours || 8;
           const defaults = active.length > 0
-            ? { date: today, hours: 8, projectId: active[0]._id, ...computeDaysAmount(8, active[0]._id, active) }
+            ? { date: today, hours: defaultHours, projectId: active[0]._id, ...computeDaysAmount(defaultHours, active[0]._id, active) }
             : { date: today, hours: 8 };
           // No phantom defaults in fields this user cannot see or set
           for (const f of stripSet) delete defaults[f];
@@ -184,7 +185,11 @@ export default function TimesheetForm() {
       } else {
         next[field] = raw;
         if (field === 'projectId') {
-          Object.assign(next, computeDaysAmount(prev.hours, raw, allProjects));
+          // Switching project resets hours to that project's daily hours
+          const proj = allProjects.find((p) => p._id === raw);
+          const hours = proj?.effectiveWorkingHours ?? prev.hours;
+          next.hours = hours;
+          Object.assign(next, computeDaysAmount(hours, raw, allProjects));
         }
       }
       return next;
@@ -325,7 +330,7 @@ export default function TimesheetForm() {
             </FormField>
             <FormField name="hours">
               <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
-                <Input type="number" name="hours" value={String(selectedProject.effectiveWorkingHours ?? form.hours ?? '')} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
+                <Input type="number" name="hours" value={String(form.hours ?? '')} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
               </Field>
             </FormField>
             <div className={styles.daysAmountCell}>
