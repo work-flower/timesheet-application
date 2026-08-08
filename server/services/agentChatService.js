@@ -6,6 +6,7 @@ import { readCard, MASTER_SLUG } from './agentCardService.js';
 import { toolsByName, handlers as appHandlers, canUseTool } from './agentToolRegistry.js';
 import { findAgent, rankTools } from './routingService.js';
 import { getConfig as getRoutingConfig } from './routingConfigService.js';
+import * as pageContentStore from './pageContentStore.js';
 import { agents } from '../db/index.js';
 
 /**
@@ -352,6 +353,28 @@ async function filterCandidates(candidates, actingCard) {
   ));
 }
 
+/**
+ * Caller-scoped fallback candidate (routingConfig.fallbackAgentSlug):
+ * attached as weak evidence when NOTHING clears the evidence floor — the
+ * deliberate "no routing was possible" tier. Unroutable utterances are
+ * typically the context-dependent ones (deixis over the current page), so
+ * the configured agent gets offered with an explanatory note; score 0 and
+ * the fallback flag make clear this is a hint, not a match. Same visibility
+ * rule as filterCandidates: invisible/disabled/master ⇒ no fallback.
+ */
+async function resolveFallbackCandidate(slug) {
+  const doc = await agents.findOne({ slug, enabled: { $ne: false }, isMaster: { $ne: true } });
+  if (!doc) return null;
+  return {
+    kind: 'agent',
+    target: slug,
+    agent: slug,
+    score: 0,
+    fallback: true,
+    note: 'No routing match cleared the evidence floor. If the request depends on context you cannot see (e.g. "this page", "this record", "here"), consider consulting this agent via ask_agent; for plain small talk, just answer.',
+  };
+}
+
 async function toolFindAgent({ query } = {}, { card } = {}) {
   if (!query || !query.trim()) return 'find_agent requires a query.';
   const config = await getRoutingConfig();
@@ -638,6 +661,8 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
   // so the master decides WITH the evidence in front of it (and saves the
   // round-trip of calling the tool itself).
   const routingCfg = await getRoutingConfig();
+  let takeover = null;
+  let evidence = null;
   try {
     const { candidates } = await findAgent(userMessage);
     const filtered = await filterCandidates(candidates, masterCard);
@@ -650,23 +675,48 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
       // evidence-only.
       if (top.kind === 'agent'
         && routingCfg.autoRouteEnabled !== false && top.score >= routingCfg.autoRouteThreshold) {
-        yield* runSpecialistTurn(conversationId, top.target, { providerId, signal });
-        return;
-      }
-      if (routingCfg.evidenceEnabled !== false && top.score >= routingCfg.evidenceFloor) {
-        const toolCallId = `auto_${conversationId}_${readTranscript(conversationId).length}`;
-        await appendMessage(conversationId, {
-          role: 'tool_call', toolCallId, name: 'find_agent', input: { query: userMessage }, auto: true,
-        });
-        await appendMessage(conversationId, {
-          role: 'tool_result', toolCallId, name: 'find_agent',
-          content: JSON.stringify({ candidates: filtered.slice(0, Math.max(1, routingCfg.maxCandidates)) }, null, 2), auto: true,
-        });
+        takeover = top.target;
+      } else if (routingCfg.evidenceEnabled !== false && top.score >= routingCfg.evidenceFloor) {
+        evidence = filtered.slice(0, Math.max(1, routingCfg.maxCandidates));
       }
     }
   } catch (err) {
     // Routing must never block the conversation (e.g. embedding model missing).
     console.warn(`Routing consultation failed (continuing without evidence): ${err.message}`);
+  }
+
+  if (takeover) {
+    yield* runSpecialistTurn(conversationId, takeover, { providerId, signal });
+    return;
+  }
+
+  try {
+    // Deliberate fallback tier: nothing routed (no candidates, all below the
+    // floor, or the consultation itself failed) — attach the configured
+    // fallback agent as weak evidence so the master can consult it for
+    // context-dependent requests. Gated by evidenceEnabled like the tier above.
+    if (!evidence && routingCfg.evidenceEnabled !== false && routingCfg.fallbackAgentSlug) {
+      const fallback = await resolveFallbackCandidate(routingCfg.fallbackAgentSlug);
+      if (fallback) evidence = [fallback];
+    }
+    if (evidence) {
+      // Current-page pointer (route/title/capturedAt — NEVER the content,
+      // ~15 tokens): the dedup key for expensive page-context consults. The
+      // master compares it against the route stamped on an earlier
+      // @page-context answer — same page ⇒ reuse that answer; different
+      // route or fresher capturedAt the user asks about ⇒ consult again.
+      const currentPage = pageContentStore.peek(pageContentStore.identityKey());
+      const toolCallId = `auto_${conversationId}_${readTranscript(conversationId).length}`;
+      await appendMessage(conversationId, {
+        role: 'tool_call', toolCallId, name: 'find_agent', input: { query: userMessage }, auto: true,
+      });
+      await appendMessage(conversationId, {
+        role: 'tool_result', toolCallId, name: 'find_agent',
+        content: JSON.stringify({ candidates: evidence, ...(currentPage ? { currentPage } : {}) }, null, 2), auto: true,
+      });
+    }
+  } catch (err) {
+    console.warn(`Routing evidence attach failed (continuing without evidence): ${err.message}`);
   }
 
   // -- Master turn with tool loop --------------------------------------------

@@ -38,6 +38,13 @@ const useStyles = makeStyles({
     color: tokens.colorPaletteRedForeground1,
     whiteSpace: 'pre-wrap',
   },
+  duration: {
+    textAlign: 'right',
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase100,
+    marginTop: '4px',
+    userSelect: 'none',
+  },
   empty: {
     flex: 1,
     display: 'flex',
@@ -48,6 +55,14 @@ const useStyles = makeStyles({
     padding: '24px',
   },
 });
+
+// Elapsed time since the user sent the message (session-only, stamped by
+// CopilotPane's stream handler). Shown only when it exceeds a second.
+function formatDuration(ms) {
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+}
 
 // Assistant output is untrusted LLM text — render it through SafeMarkdown, which
 // sanitises raw HTML (MDEditor's renderer hardcodes rehype-raw). See SafeMarkdown.jsx.
@@ -111,6 +126,9 @@ export default function ChatView({
           ) : (
             <div className={`${styles.bubble} ${m.role === 'user' ? styles.userBubble : styles.assistantBubble}`}>
               {m.role === 'user' ? m.content : <AssistantContent text={m.content} />}
+              {m.role === 'assistant' && m.durationMs > 1000 && (
+                <div className={styles.duration}>{formatDuration(m.durationMs)}</div>
+              )}
             </div>
           )}
         </div>

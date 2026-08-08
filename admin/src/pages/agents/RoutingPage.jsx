@@ -181,6 +181,9 @@ export default function RoutingPage() {
             <Field label="Max candidates shown" hint="How many candidates the master sees (evidence and find_agent results).">
               <Input type="number" min={1} max={20} value={String(config.maxCandidates)} onChange={(e, d) => set('maxCandidates')(d.value)} />
             </Field>
+            <Field label="Fallback agent" hint="Attached as weak evidence when NO match clears the evidence floor — for context-dependent requests ('this page', 'here'). Agent slug; empty = off.">
+              <Input className={styles.mono} value={config.fallbackAgentSlug || ''} onChange={(e, d) => set('fallbackAgentSlug')(d.value)} placeholder="e.g. page-context" disabled={config.evidenceEnabled === false} />
+            </Field>
           </div>
         </div>
 

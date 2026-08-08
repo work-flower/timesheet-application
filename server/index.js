@@ -26,6 +26,7 @@ import aiProviderRoutes from './routes/aiProviders.js';
 import evalExampleRoutes from './routes/evalExamples.js';
 import routingRoutes from './routes/routing.js';
 import conversationRoutes from './routes/conversations.js';
+import pageContentRoutes from './routes/pageContent.js';
 import agentRoutes, { agentsReadOnlyRouter } from './routes/agents.js';
 import agentToolRoutes from './routes/agentTools.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -118,8 +119,11 @@ app.use((req, res, next) => {
   if (req.path.match(/\.\w{2,5}$/) || req.originalUrl === '/api/logs/pageview') return next();
   const start = Date.now();
 
-  // Log payload for mutating methods when enabled (debug level)
-  if (getLogPayloads() && req.body && ['POST', 'PUT', 'PATCH'].includes(req.method)) {
+  // Log payload for mutating methods when enabled (debug level). Page
+  // snapshots are excluded — a whole page of markup per navigation would
+  // drown the debug log for zero diagnostic value.
+  if (getLogPayloads() && req.body && ['POST', 'PUT', 'PATCH'].includes(req.method)
+    && !req.path.startsWith('/api/current-page-content')) {
     const sanitized = sanitizePayload(req.body);
     let payload = JSON.stringify(sanitized);
     if (payload.length > MAX_PAYLOAD_LENGTH) {
@@ -169,6 +173,7 @@ app.use('/api/daily-plans', dailyPlanRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/assets', assetsRoutes);
 app.use('/api/conversations', conversationRoutes);
+app.use('/api/current-page-content', pageContentRoutes); // Copilot page-context push/purge (in-memory, per-identity)
 app.use('/api/agents', agentsReadOnlyRouter); // @mention picker; engine-gated by agents.read
 app.use('/api/gemini-config', geminiFeatureRouter); // feature subset; config verbs on /admin/api
 

@@ -12,6 +12,9 @@ import routingConfig from '../db/routingConfig.js';
  *     straight to the specialist with no master round)
  *   evidenceEnabled / evidenceFloor — synthetic find_agent evidence attachment
  *   maxCandidates — candidates shown to the master (evidence + find_agent)
+ *   fallbackAgentSlug — agent attached as weak evidence when NOTHING clears
+ *     the floor (deliberate fallback for context-dependent requests, e.g.
+ *     deixis over the current page). null/empty = off
  *
  * Advanced (expert/beta knobs):
  *   topK — nearest corpus entries considered per query
@@ -34,6 +37,7 @@ export const DEFAULTS = {
   evidenceEnabled: true,
   evidenceFloor: 0.3,
   maxCandidates: 5,
+  fallbackAgentSlug: null,
   topK: 20,
   aggregation: 'max',
   embeddingModel: 'Xenova/all-MiniLM-L6-v2',
@@ -67,6 +71,10 @@ function normalise(data) {
   if ('embeddingModel' in data) {
     const model = String(data.embeddingModel || '').trim();
     out.embeddingModel = model || DEFAULTS.embeddingModel;
+  }
+  if ('fallbackAgentSlug' in data) {
+    const slug = String(data.fallbackAgentSlug || '').trim().toLowerCase();
+    out.fallbackAgentSlug = slug || null;
   }
   return out;
 }

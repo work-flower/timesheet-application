@@ -9,6 +9,7 @@ import * as ticketService from './ticketService.js';
 import * as invoiceService from './invoiceService.js';
 import * as clientService from './clientService.js';
 import * as transactionService from './transactionService.js';
+import * as pageContentStore from './pageContentStore.js';
 
 /**
  * Provider-neutral application tool registry — shared by BOTH consumers:
@@ -61,6 +62,9 @@ export const handlers = {
   // pipeline enforces every read at execution) — timesheets is the tightest
   // single-table proxy.
   list_unbilled_items: { kind: 'read', access: { table: 'timesheets', op: 'read' }, fn: listUnbilledItems },
+  // No table — reads the caller's own in-memory page snapshot; access: null
+  // means canUseTool always passes it.
+  get_page_content: { kind: 'read', access: null, fn: getPageContent },
 };
 
 // -- Seed definitions --------------------------------------------------------
@@ -240,6 +244,16 @@ Expenses are marked billable/non-billable — only billable expenses belong on a
       required: ['client'],
     },
     handlerName: 'list_unbilled_items',
+    enabled: true,
+  },
+  {
+    name: 'get_page_content',
+    description:
+      `Get the content of the application page the user is currently viewing, as compact markdown: route, title, capture time, grids as markdown tables, form fields as "Label [input: value]" markers — including values the user has typed but not saved.
+Call this when the user refers to what they are looking at ("this page", "this invoice", "here", "what am I looking at?") or when their request lacks context that the current screen would supply.
+The snapshot exists only while the user's chat pane is open; { ok: false, reason: 'page_view_unavailable' } means no page view is available right now — answer without it.`,
+    inputSchema: { type: 'object', properties: {} },
+    handlerName: 'get_page_content',
     enabled: true,
   },
 ];
@@ -613,4 +627,27 @@ async function listUnbilledItems({ client, startDate, endDate } = {}) {
   }
 
   return out.join('\n');
+}
+
+// Current-page snapshot pushed by the caller's own browser (Copilot pane).
+// Identity comes from ALS ONLY — the schema has no userId on purpose, so a
+// prompt injection can never read another user's page. The snapshot itself
+// is already role/fls-filtered: the browser only ever held what this caller
+// was allowed to see.
+async function getPageContent() {
+  const entry = await pageContentStore.get(pageContentStore.identityKey());
+  if (!entry) {
+    return JSON.stringify({
+      ok: false,
+      reason: 'page_view_unavailable',
+      hint: 'The user has no chat pane open on an app page right now — answer without the page view.',
+    });
+  }
+  return JSON.stringify({
+    ok: true,
+    route: entry.route,
+    title: entry.title,
+    capturedAt: entry.capturedAt,
+    content: entry.content,
+  });
 }

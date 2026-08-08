@@ -3,6 +3,7 @@ import { makeStyles, tokens, Text, Button, Tooltip, Input } from '@fluentui/reac
 import { DismissRegular, ArrowLeftRegular, ArrowMaximizeRegular, ArrowMinimizeRegular } from '@fluentui/react-icons';
 import { conversationsApi } from '../../api/index.js';
 import { streamChat, streamProposalConfirm } from '../../api/copilotStream.js';
+import { usePageContentPublisher } from '../../hooks/usePageContentPublisher.js';
 import ConversationList from './ConversationList.jsx';
 import ChatView from './ChatView.jsx';
 import ChatInput from './ChatInput.jsx';
@@ -69,6 +70,11 @@ export default function CopilotPane({ onClose }) {
   const [activity, setActivity] = useState(null);
   const [error, setError] = useState(null);
   const abortRef = useRef(null);
+
+  // Page-context service: runs exactly while this pane is mounted (open).
+  // Publishes on mount/route change; purges on unmount; publishNow() gives
+  // send-time freshness below.
+  const { publishNow } = usePageContentPublisher();
 
   // -- Resizable width (persisted per client) --------------------------------
   const [width, setWidth] = useState(loadStoredWidth);
@@ -189,6 +195,7 @@ export default function CopilotPane({ onClose }) {
     let assistantText = '';
     let currentAgent = null; // direct takeover (@mention / auto-route / resume)
     let consultedAgents = []; // specialists answered via master delegation
+    const startedAt = Date.now(); // per turn — bubbles show elapsed-since-ask
 
     const flushAssistant = () => {
       if (!assistantText) return;
@@ -196,7 +203,9 @@ export default function CopilotPane({ onClose }) {
       const attribution = currentAgent
         ? { agent: currentAgent }
         : consultedAgents.length ? { agents: [...consultedAgents] } : {};
-      setMessages((prev) => [...prev, { role: 'assistant', content, ...attribution }]);
+      // durationMs is session-only (not persisted): user-perceived elapsed
+      // time since the message was sent, cumulative across the turn's rounds.
+      setMessages((prev) => [...prev, { role: 'assistant', content, ...attribution, durationMs: Date.now() - startedAt }]);
       assistantText = '';
       setStreaming('');
     };
@@ -274,6 +283,11 @@ export default function CopilotPane({ onClose }) {
     setStreaming('');
     setActivity('Thinking…');
 
+    // Snapshot the page BEFORE the turn starts so get_page_content sees
+    // exactly what the user is looking at as they ask. publishNow swallows
+    // failures — a missed snapshot never blocks the message.
+    await publishNow();
+
     const controller = new AbortController();
     abortRef.current = controller;
     const handler = makeStreamHandler();
@@ -286,7 +300,7 @@ export default function CopilotPane({ onClose }) {
     // Refresh titles/timestamps in the list.
     loadList();
     abortRef.current = null;
-  }, [activeId, loadList, makeStreamHandler]);
+  }, [activeId, loadList, makeStreamHandler, publishNow]);
 
   // -- Action-card proposals -------------------------------------------------
   const [busyProposalId, setBusyProposalId] = useState(null);

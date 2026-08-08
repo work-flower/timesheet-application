@@ -52,6 +52,25 @@ export const conversationsApi = {
     request(`/conversations/${id}/proposals/${encodeURIComponent(proposalId)}/decline`, { method: 'POST', body: '{}' }),
 };
 
+// Current page content (Copilot page-context service). Raw fetch, not
+// request(): both routes answer 204 (no body to parse), and remove() must
+// survive pane unmount (keepalive). Failures are non-fatal by design —
+// callers fire-and-forget; page context must never break anything.
+export const pageContentApi = {
+  put: (snapshot) =>
+    fetch(`${BASE}/current-page-content`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Trace-Id': getTraceId() },
+      body: JSON.stringify(snapshot),
+    }),
+  remove: () =>
+    fetch(`${BASE}/current-page-content`, {
+      method: 'DELETE',
+      headers: { 'X-Trace-Id': getTraceId() },
+      keepalive: true,
+    }),
+};
+
 // Users (read-only — impersonation picker; requires users.read + roles.read grants)
 export const usersApi = {
   getAll: (params = {}) => {
