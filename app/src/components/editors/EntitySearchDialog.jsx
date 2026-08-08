@@ -33,7 +33,7 @@ const ENTITY_CONFIG = {
     title: 'Link Timesheet',
     placeholder: 'Search timesheets by notes...',
     fetch: (q) => {
-      const params = { $top: '20', $orderby: 'date desc', $expand: 'project' };
+      const params = { $top: '20', $orderby: 'date desc' };
       if (q) params.$filter = `contains(notes,'${q}')`;
       return timesheetsApi.getAll(params);
     },

@@ -1,5 +1,6 @@
-import { clients, projects, timesheets, expenses, invoices } from '../db/index.js';
+import { clients, projects, timesheets, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { applyExpand } from '../expand.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
 import { removeByClientId as removeInvoicesByClientId } from './invoiceService.js';
 import { assertNotLocked } from './lockCheck.js';
@@ -7,59 +8,17 @@ import { assertNotLocked } from './lockCheck.js';
 export async function getAll(query = {}) {
   const { results, totalCount } = await buildQuery(clients, query, { companyName: 1 });
 
-  // $expand
-  if (query.$expand) {
-    const expands = query.$expand.split(',').map(s => s.trim());
-    for (const item of results) {
-      if (expands.includes('projects')) {
-        item.projects = await projects.find({ clientId: item._id });
-      }
-      if (expands.includes('timesheets')) {
-        const clientProjects = item.projects || await projects.find({ clientId: item._id });
-        const projectIds = clientProjects.map(p => p._id);
-        item.timesheets = await timesheets.find({ projectId: { $in: projectIds } });
-      }
-      if (expands.includes('expenses')) {
-        const clientProjects = item.projects || await projects.find({ clientId: item._id });
-        const projectIds = clientProjects.map(p => p._id);
-        item.expenses = await expenses.find({ projectId: { $in: projectIds } });
-      }
-      if (expands.includes('invoices')) {
-        item.invoices = await invoices.find({ clientId: item._id });
-      }
-    }
-  }
+  await applyExpand('clients', results, query.$expand);
 
   const items = applySelect(results, query.$select);
   return formatResponse(items, totalCount, query.$count === 'true');
 }
 
+// Lean read model: stored fields only. Related records (projects, timesheets,
+// expenses, invoices) come from their own list endpoints with ?clientId= —
+// see the $expand relationship map in server/expand.js.
 export async function getById(id) {
-  const client = await clients.findOne({ _id: id });
-  if (!client) return null;
-
-  const clientProjects = await projects.find({ clientId: id }).sort({ isDefault: -1, name: 1 });
-  const projectIds = clientProjects.map((p) => p._id);
-  const clientTimesheets = await timesheets.find({ projectId: { $in: projectIds } }).sort({ date: -1 });
-
-  // Enrich timesheets with project info
-  const projectMap = Object.fromEntries(clientProjects.map((p) => [p._id, p]));
-  const enrichedTimesheets = clientTimesheets.map((ts) => ({
-    ...ts,
-    projectName: projectMap[ts.projectId]?.name || 'Unknown',
-  }));
-
-  // Expenses for all client projects
-  const clientExpenses = await expenses.find({ projectId: { $in: projectIds } }).sort({ date: -1 });
-  const enrichedExpenses = clientExpenses.map((exp) => ({
-    ...exp,
-    projectName: projectMap[exp.projectId]?.name || 'Unknown',
-  }));
-
-  // Invoices for this client
-  const clientInvoices = await invoices.find({ clientId: id }).sort({ createdAt: -1 });
-
-  return { ...client, projects: clientProjects, timesheets: enrichedTimesheets, expenses: enrichedExpenses, invoices: clientInvoices };
+  return clients.findOne({ _id: id });
 }
 
 export async function create(data) {
@@ -108,6 +67,13 @@ export async function update(id, data) {
   delete updateData.createdAt;
   delete updateData.isLocked;
   delete updateData.isLockedReason;
+  // Read-model echoes — persisting them stores unscoped snapshots of related
+  // records on the client doc, which then leak past row-level security
+  delete updateData.projects;
+  delete updateData.timesheets;
+  delete updateData.expenses;
+  delete updateData.invoices;
+  delete updateData.clientName;
   await clients.update({ _id: id }, { $set: updateData });
   return clients.findOne({ _id: id });
 }

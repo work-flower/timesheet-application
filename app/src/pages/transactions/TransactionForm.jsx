@@ -259,14 +259,35 @@ export default function TransactionForm() {
   const [ignoreDialogOpen, setIgnoreDialogOpen] = useState(false);
   const [ignoreReason, setIgnoreReason] = useState('');
 
+  // Linked records come from reverse lookups on their own list endpoints
+  // (transactionId = array containment on the stored transactions[] links) —
+  // the transaction read model no longer embeds them
+  const [linked, setLinked] = useState({ invoices: [], expenses: [] });
+  const loadLinked = useCallback(async () => {
+    const [linkedInvoices, linkedExpenses] = await Promise.all([
+      invoicesApi.getAll({ transactionId: id }).catch(() => []),
+      expensesApi.getAll({ transactionId: id }).catch(() => []),
+    ]);
+    setLinked({ invoices: linkedInvoices, expenses: linkedExpenses });
+  }, [id]);
+  const invoicesTotal = useMemo(
+    () => linked.invoices.reduce((sum, inv) => sum + (inv.total || 0), 0),
+    [linked.invoices]
+  );
+  const expensesTotal = useMemo(
+    () => linked.expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0),
+    [linked.expenses]
+  );
+
   const refreshTransaction = useCallback(async () => {
     try {
       const result = await transactionsApi.getById(id);
       setData(result);
+      await loadLinked();
     } catch (err) {
       setError(err.message);
     }
-  }, [id]);
+  }, [id, loadLinked]);
 
   const handleUnlinkConfirm = useCallback(async () => {
     if (!unlinkTarget) return;
@@ -323,11 +344,11 @@ export default function TransactionForm() {
       return;
     }
     setLoading(true);
-    transactionsApi.getById(id)
-      .then((result) => setData(result))
+    Promise.all([transactionsApi.getById(id), loadLinked()])
+      .then(([result]) => setData(result))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [id, navigate]);
+  }, [id, navigate, loadLinked]);
 
   const handleCreateExpense = () => {
     if (!data) return;
@@ -650,13 +671,13 @@ export default function TransactionForm() {
                       <span>{txHidden.has('amount') ? '\u2014' : fmtGBP.format(data.amount)}</span>
                     </div>
 
-                    {data.linkedInvoices?.length > 0 && (
+                    {linked.invoices.length > 0 && (
                       <>
                         <div className={styles.balanceGroupLabel}>
                           <span>Linked Invoices</span>
-                          <span>{fmtGBP.format(data.invoicesTotal)}</span>
+                          <span>{fmtGBP.format(invoicesTotal)}</span>
                         </div>
-                        {data.linkedInvoices.map((inv) => (
+                        {linked.invoices.map((inv) => (
                           <div key={inv._id} className={styles.balanceSubRow}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <Tooltip content="Unlink this invoice" relationship="label" withArrow>
@@ -678,13 +699,13 @@ export default function TransactionForm() {
                       </>
                     )}
 
-                    {data.linkedExpenses?.length > 0 && (
+                    {linked.expenses.length > 0 && (
                       <>
                         <div className={styles.balanceGroupLabel}>
                           <span>Linked Expenses</span>
-                          <span>{fmtGBP.format(data.expensesTotal)}</span>
+                          <span>{fmtGBP.format(expensesTotal)}</span>
                         </div>
-                        {data.linkedExpenses.map((exp) => (
+                        {linked.expenses.map((exp) => (
                           <div key={exp._id} className={styles.balanceSubRow}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <Tooltip content="Unlink this expense" relationship="label" withArrow>
@@ -708,7 +729,7 @@ export default function TransactionForm() {
 
                     <div className={styles.balanceDivider} />
                     {(() => {
-                      const remaining = data.remainingBalance ?? data.amount;
+                      const remaining = Math.abs(data.amount) - invoicesTotal - Math.abs(expensesTotal);
                       const balanceColor = remaining === 0
                         ? tokens.colorPaletteGreenForeground1
                         : tokens.colorStatusWarningForeground3;

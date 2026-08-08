@@ -26,7 +26,7 @@ import {
   TableCellLayout,
   createTableColumn,
 } from '@fluentui/react-components';
-import { clientsApi } from '../../api/index.js';
+import { clientsApi, projectsApi, timesheetsApi, expensesApi, invoicesApi } from '../../api/index.js';
 import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import MarkdownEditor from '../../components/MarkdownEditor.jsx';
@@ -209,6 +209,9 @@ export default function ClientForm() {
   const [initialized, setInitialized] = useState(false);
 
   const [clientData, setClientData] = useState(null);
+  // Related records come from their own list endpoints (caller-scoped, enriched),
+  // never embedded on the client read model
+  const [related, setRelated] = useState({ projects: [], timesheets: [], expenses: [], invoices: [] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -218,8 +221,17 @@ export default function ClientForm() {
     const init = async () => {
       try {
         if (!isNew) {
-          const data = await clientsApi.getById(id);
+          // Each related fetch degrades to [] so a role without read on one
+          // child table still opens the form
+          const [data, projects, timesheets, expenses, invoices] = await Promise.all([
+            clientsApi.getById(id),
+            projectsApi.getAll({ clientId: id }).catch(() => []),
+            timesheetsApi.getAll({ clientId: id }).catch(() => []),
+            expensesApi.getAll({ clientId: id }).catch(() => []),
+            invoicesApi.getAll({ clientId: id }).catch(() => []),
+          ]);
           setClientData(data);
+          setRelated({ projects, timesheets, expenses, invoices });
           resetBase(data);
         } else {
           const defaults = { defaultRate: 0, currency: 'GBP', workingHoursPerDay: 8, ir35Status: 'OUTSIDE_IR35' };
@@ -342,10 +354,10 @@ export default function ClientForm() {
         {!isNew && (
           <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
             <Tab value="general">General</Tab>
-            <Tab value="projects">Projects ({clientData?.projects?.length || 0})</Tab>
-            <Tab value="timesheets">Timesheets ({clientData?.timesheets?.length || 0})</Tab>
-            <Tab value="expenses">Expenses ({clientData?.expenses?.length || 0})</Tab>
-            <Tab value="invoices">Invoices ({clientData?.invoices?.length || 0})</Tab>
+            <Tab value="projects">Projects ({related.projects.length})</Tab>
+            <Tab value="timesheets">Timesheets ({related.timesheets.length})</Tab>
+            <Tab value="expenses">Expenses ({related.expenses.length})</Tab>
+            <Tab value="invoices">Invoices ({related.invoices.length})</Tab>
           </TabList>
         )}
 
@@ -431,10 +443,10 @@ export default function ClientForm() {
           )}
 
           {tab === 'projects' && clientData && (
-            (clientData.projects || []).length === 0 ? (
+            related.projects.length === 0 ? (
               <div className={styles.empty}><Text>No projects for this client.</Text></div>
             ) : (
-              <DataGrid items={clientData.projects || []} columns={projectColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+              <DataGrid items={related.projects} columns={projectColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
                 <DataGridHeader>
                   <DataGridRow>
                     {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
@@ -452,10 +464,10 @@ export default function ClientForm() {
           )}
 
           {tab === 'timesheets' && clientData && (
-            (clientData.timesheets || []).length === 0 ? (
+            related.timesheets.length === 0 ? (
               <div className={styles.empty}><Text>No timesheet entries for this client.</Text></div>
             ) : (
-              <DataGrid items={clientData.timesheets || []} columns={timesheetColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+              <DataGrid items={related.timesheets} columns={timesheetColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
                 <DataGridHeader>
                   <DataGridRow>
                     {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
@@ -473,10 +485,10 @@ export default function ClientForm() {
           )}
 
           {tab === 'expenses' && clientData && (
-            (clientData.expenses || []).length === 0 ? (
+            related.expenses.length === 0 ? (
               <div className={styles.empty}><Text>No expenses for this client.</Text></div>
             ) : (
-              <DataGrid items={clientData.expenses || []} columns={expenseColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+              <DataGrid items={related.expenses} columns={expenseColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
                 <DataGridHeader>
                   <DataGridRow>
                     {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
@@ -494,10 +506,10 @@ export default function ClientForm() {
           )}
 
           {tab === 'invoices' && clientData && (
-            (clientData.invoices || []).length === 0 ? (
+            related.invoices.length === 0 ? (
               <div className={styles.empty}><Text>No invoices for this client.</Text></div>
             ) : (
-              <DataGrid items={clientData.invoices || []} columns={invoiceColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
+              <DataGrid items={related.invoices} columns={invoiceColumns} sortable getRowId={(item) => item._id} style={{ width: '100%' }}>
                 <DataGridHeader>
                   <DataGridRow>
                     {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}

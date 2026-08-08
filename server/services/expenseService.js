@@ -1,5 +1,6 @@
-import { clients, projects, expenses, transactions } from '../db/index.js';
+import { clients, projects, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { applyExpand } from '../expand.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
 import { assertNotLocked } from './lockCheck.js';
 import { computeVat } from '../../shared/expenseVatCalc.js';
@@ -24,6 +25,11 @@ export async function getAll(query = {}) {
 
   if (query.expenseType) {
     baseFilter.expenseType = query.expenseType;
+  }
+
+  // Expenses linked to a transaction (NeDB array containment on stored transactions[])
+  if (query.transactionId) {
+    baseFilter.transactions = query.transactionId;
   }
 
   // Virtual isLinked filter — intercept from $filter before OData parsing
@@ -69,19 +75,8 @@ export async function getAll(query = {}) {
     };
   });
 
-  // $expand
-  if (query.$expand) {
-    const expands = query.$expand.split(',').map(s => s.trim());
-    for (const item of enriched) {
-      if (expands.includes('project')) {
-        item.project = projectMap[item.projectId] || null;
-      }
-      if (expands.includes('client')) {
-        const project = projectMap[item.projectId];
-        item.client = project ? (clientMap[project.clientId] || null) : null;
-      }
-    }
-  }
+  // $expand read from the original query — the isLinked rewrite only touches $filter
+  await applyExpand('expenses', enriched, query.$expand);
 
   const items = applySelect(enriched, queryForOData.$select);
   return formatResponse(items, totalCount, queryForOData.$count === 'true', summaryData);
@@ -94,31 +89,13 @@ export async function getById(id) {
   const project = await projects.findOne({ _id: entry.projectId });
   const client = project ? await clients.findOne({ _id: project.clientId }) : null;
 
-  // Enrich with linked transactions
-  const txIds = entry.transactions || [];
-  let linkedTransactions = [];
-  let transactionsTotal = 0;
-  if (txIds.length > 0) {
-    const txDocs = await transactions.find({ _id: { $in: txIds } });
-    linkedTransactions = txDocs.map(tx => ({
-      _id: tx._id,
-      date: tx.date,
-      description: tx.description,
-      amount: tx.amount,
-      status: tx.status,
-    }));
-    transactionsTotal = linkedTransactions.reduce((sum, tx) => sum + tx.amount, 0);
-  }
-  const remainingBalance = (entry.amount || 0) + transactionsTotal;
-
+  // Lean read model: linked transaction rows resolve via the transactions
+  // list endpoint (?ids=) — never embedded here
   return {
     ...entry,
     projectName: project?.name || 'Unknown',
     clientName: client?.companyName || 'Unknown',
     clientId: project?.clientId || null,
-    linkedTransactions,
-    transactionsTotal,
-    remainingBalance,
   };
 }
 
@@ -170,6 +147,16 @@ export async function update(id, data) {
   delete updateData.attachments;
   delete updateData.isLocked;
   delete updateData.isLockedReason;
+  // Read-model echoes; transactions links are managed exclusively by the
+  // link/unlink endpoints — a stale echo must not clobber them
+  delete updateData.projectName;
+  delete updateData.clientName;
+  delete updateData.project;
+  delete updateData.client;
+  delete updateData.linkedTransactions;
+  delete updateData.transactionsTotal;
+  delete updateData.remainingBalance;
+  delete updateData.transactions;
 
   // Type coercion
   if (updateData.amount !== undefined) updateData.amount = Number(updateData.amount);

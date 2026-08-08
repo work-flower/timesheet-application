@@ -14,7 +14,7 @@ InvoiceForm.jsx → invoicesApi (api/index.js) → routes/invoices.js → invoic
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Form | `app/src/pages/invoices/InvoiceForm.jsx` | 2 tabs (Invoice, PDF Preview), lifecycle buttons, line sources, payment section. Uses `useNotifyParent` for embedded mode (generic handlers only, not lifecycle) |
+| Form | `app/src/pages/invoices/InvoiceForm.jsx` | 2 tabs (Invoice, PDF Preview), lifecycle buttons, line sources, payment section. Uses `useNotifyParent` for embedded mode (generic handlers only, not lifecycle). Fetches clientProjects via `projectsApi.getAll({ clientId })` and linked transactions via `transactionsApi.getAll({ ids })`, computing remaining = total − Σ\|tx.amount\| client-side (detail response is lean) |
 | List | `app/src/pages/invoices/InvoiceList.jsx` | Status/client/payment filters, 3 view modes (grid/list/card), summary footer (total, unpaid, paid, invoices count) |
 | API client | `app/src/api/index.js` (invoicesApi) | 14 methods: CRUD, confirm/post/unconfirm, addLine, recalculate, consistencyCheck, payment, link/unlink tx + 2 URL helpers (getPdfUrl, getFileUrl) |
 | Item picker | `app/src/components/ItemPickerDialog.jsx` | Multi-select dialog for timesheets and expenses, shows lock indicators |
@@ -24,7 +24,7 @@ InvoiceForm.jsx → invoicesApi (api/index.js) → routes/invoices.js → invoic
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Route | `server/routes/invoices.js` | 16 endpoints: CRUD, lifecycle, addLine, recalculate, consistency-check, payment, PDF serve/generate, link/unlink tx |
-| Service | `server/services/invoiceService.js` | Lifecycle, line management, totals, consistency checks, cascade via removeByClientId, getNextInvoiceNumber, linkTransaction/unlinkTransaction. `getAll`: legacy params `clientId`, `status`, `paymentStatus`, `startDate`/`endDate` (invoiceDate range); `$expand` (client). `getById`: returns clientProjects with effectiveRate/vatPercent |
+| Service | `server/services/invoiceService.js` | Lifecycle, line management, totals, consistency checks, cascade via removeByClientId, getNextInvoiceNumber, linkTransaction/unlinkTransaction. `getAll`: legacy params `clientId`, `status`, `paymentStatus`, `startDate`/`endDate` (invoiceDate range) + `?transactionId=` (NeDB array containment on stored `transactions[]` — reverse lookup "which invoices link this transaction"); `$expand` (client, linkedTransactions) resolved centrally via `server/expand.js` (batched `$in`, unknown name → 400 `bad_expand`). `getById`: stored fields + clientName only (lean — no client doc, clientProjects, linkedTransactions or totals); every write path (create/update/confirm/post/unconfirm/updatePayment/recalculate/addLine/link/unlinkTransaction) returns this lean shape. `update()` strips read-model keys (clientName, client, clientProjects, linkedTransactions, transactionsTotal, remainingBalance) AND `transactions` — the link array is writable only via link/unlink |
 | Invoice PDF | `server/services/invoicePdfService.js` | Builds pdfmake doc definition with VAT grouping, bank details, draft watermark |
 | PDF combine | `server/services/pdfCombineService.js` | Merges invoice + timesheet report + expense report into single PDF |
 | DB collection | `server/db/index.js` | `invoices` — wrapped NeDB via execution pipeline |
@@ -36,17 +36,17 @@ InvoiceForm.jsx → invoicesApi (api/index.js) → routes/invoices.js → invoic
 | **Timesheets (lock)** | `invoiceService.js` confirm/unconfirm | Sets/clears `invoiceId`, `isLocked`, `isLockedReason` on timesheets | Locks/unlocks timesheet records |
 | **Expenses (lock)** | `invoiceService.js` confirm/unconfirm | Sets/clears `invoiceId`, `isLocked`, `isLockedReason` on expenses | Locks/unlocks expense records |
 | **Settings (read)** | `invoiceService.js` confirm, `invoicePdfService.js` | Reads invoiceNumberSeed (increments on confirm), defaultPaymentTermDays, bank details, business details | Seed is write-once per confirm |
-| **Clients (read)** | `clientService.js` getById/getAll | Fetches client's invoices for display (`$expand=invoices`) | Read-only |
+| **Clients (list `$expand`)** | `server/expand.js` | `$expand=invoices` on the clients list resolves batched raw invoice docs (client detail no longer embeds them; ClientForm's tab fetches `invoicesApi.getAll({ clientId })`) | Read-only |
 | **Clients (cascade)** | `clientService.js` remove → `invoiceService.removeByClientId()` | Unlocks all linked timesheets/expenses, deletes PDFs, deletes all client invoices | Destroys data |
 | **Projects (read)** | `invoiceService.js` addLine, recalculate, consistencyCheck | Reads effectiveRate, vatPercent for line computation | Rate/VAT source for timesheet/write-in lines |
 | **Timesheet report** | `reportService.js` buildTimesheetPdf | Called during confirm if includeTimesheetReport=true | Pages merged into combined PDF |
 | **Expense report** | `expenseReportService.js` buildExpensePdf | Called during confirm if includeExpenseReport=true | Pages merged into combined PDF |
 | **Dashboard** | `dashboardService.js` | Reads unpaid posted invoices for summary card | Read-only |
 | **Transactions** | `invoiceService.js` link/unlink | Stores transaction IDs in `invoice.transactions[]` array | Cross-reference for payment matching |
-| **Transaction service** | `server/services/transactionService.js` | `getById` finds linked invoices, computes balance | Read-only |
+| **Transaction reverse lookup** | `TransactionForm.jsx` / `TransactionDrawer.jsx` | Fetch linked invoices via `invoicesApi.getAll({ transactionId })` and compute balances client-side (transaction detail is a bare findOne — no server-side enrichment) | Read-only |
 | **VAT report** | `server/services/vatReportService.js` | Reads invoice lines for output VAT aggregation by rate | Read-only |
 | **Income & Expense report** | `server/services/incomeExpenseReportService.js` | Reads invoices for income aggregation by client/month | Read-only |
-| **Agent tools (read)** | `server/services/agentToolRegistry.js` | `list_invoices`/`get_invoice` read via `invoiceService.getAll`/`getById` (exposed over MCP + agent layer); `list_unbilled_items` reads `invoiceId eq null` timesheets/expenses | Read-only |
+| **Agent tools (read)** | `server/services/agentToolRegistry.js` | `list_invoices`/`get_invoice` read via `invoiceService.getAll`/`getById` (exposed over MCP + agent layer); `get_invoice` fetches linked payments via `transactionService.getAll({ ids })` under the caller's identity (no longer reads an embedded `linkedTransactions`); `list_unbilled_items` reads `invoiceId eq null` timesheets/expenses | Read-only |
 | **Dashboard (frontend)** | `app/src/pages/Dashboard.jsx` | Fetches posted invoices for unpaid summary card | Read-only |
 | **ClientForm (frontend)** | `app/src/pages/clients/ClientForm.jsx` | Invoices tab displays client's invoices in DataGrid | Read-only |
 | **ProjectForm (frontend)** | `app/src/pages/projects/ProjectForm.jsx` | Invoices tab displays client's invoices in DataGrid | Read-only |
@@ -126,7 +126,7 @@ draft → confirmed → posted
 - Check: Payment section only appears for posted invoices
 
 **If you change invoice data shape:**
-- Update: invoiceService CRUD (field protection list in update)
+- Update: invoiceService CRUD (protected-field + read-model strip lists in update)
 - Update: invoicePdfService (reads invoice fields for PDF layout)
 - Update: InvoiceForm useFormTracker keys
 - Update: InvoiceList columns
@@ -173,3 +173,4 @@ Entity-specific report layouts:
 ## Lessons Learned
 
 - **pdfmake font loading** — Uses `createRequire` pattern + Helvetica fonts (not file paths). Do not attempt to load fonts from disk.
+- **The heavyweight `getById` read model got persisted — and could clobber `transactions[]` (fixed).** Detail responses embedded the full client doc, clientProjects, linkedTransactions and computed totals; the form PUT the whole read model back and `update()` only stripped 4 protected fields, so all of it persisted onto invoice documents (stored copies bypass the related tables' row filters) — and a stale echoed `transactions` array could overwrite links made since the form loaded. `getById` (and every write path's return) is now lean (stored fields + clientName); `update()` strips the read-model keys and `transactions` itself (link/unlink are the only writers); the form fetches clientProjects and linked transactions itself. `npm run repair:derived-fields` cleans previously-persisted keys.

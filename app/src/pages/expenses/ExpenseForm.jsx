@@ -499,6 +499,27 @@ export default function ExpenseForm() {
     }
   }, [id]);
 
+  // Linked transaction rows resolve from the stored id array on demand —
+  // the expense read model no longer embeds them. Signed sum mirrors the old
+  // server aggregate: debits are negative, so remaining = amount + total.
+  const [linkedTx, setLinkedTx] = useState([]);
+  const linkedTxIds = loadedData?.transactions;
+  useEffect(() => {
+    if (!linkedTxIds?.length) {
+      setLinkedTx([]);
+      return;
+    }
+    let cancelled = false;
+    transactionsApi.getAll({ ids: linkedTxIds.join(',') })
+      .then((rows) => { if (!cancelled) setLinkedTx(rows); })
+      .catch(() => { if (!cancelled) setLinkedTx([]); });
+    return () => { cancelled = true; };
+  }, [linkedTxIds]);
+  const transactionsTotal = useMemo(
+    () => linkedTx.reduce((sum, tx) => sum + (tx.amount || 0), 0),
+    [linkedTx]
+  );
+
   // --- Transaction picker ---
   const openTxPicker = useCallback(async () => {
     setTxPickerOpen(true);
@@ -819,13 +840,13 @@ export default function ExpenseForm() {
                   <span>{fmtGBP.format(loadedData?.amount || 0)}</span>
                 </div>
 
-                {loadedData?.linkedTransactions?.length > 0 && (
+                {linkedTx.length > 0 && (
                   <>
                     <div className={styles.balanceGroupLabel}>
                       <span>Linked Transactions</span>
-                      <span>{fmtGBP.format(loadedData.transactionsTotal || 0)}</span>
+                      <span>{fmtGBP.format(transactionsTotal)}</span>
                     </div>
-                    {loadedData.linkedTransactions.map((tx) => (
+                    {linkedTx.map((tx) => (
                       <div key={tx._id} className={styles.balanceSubRow}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           {!isLocked && (
@@ -851,7 +872,7 @@ export default function ExpenseForm() {
 
                 <div className={styles.balanceDivider} />
                 {(() => {
-                  const remaining = loadedData?.remainingBalance ?? (loadedData?.amount || 0);
+                  const remaining = (loadedData?.amount || 0) + transactionsTotal;
                   const balanceColor = remaining === 0
                     ? tokens.colorPaletteGreenForeground1
                     : tokens.colorStatusWarningForeground3;

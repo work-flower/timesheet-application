@@ -58,7 +58,7 @@ import {
   LinkDismissRegular,
   WarningFilled,
 } from '@fluentui/react-icons';
-import { invoicesApi, clientsApi, timesheetsApi, expensesApi, reportsApi, transactionsApi } from '../../api/index.js';
+import { invoicesApi, clientsApi, projectsApi, timesheetsApi, expensesApi, reportsApi, transactionsApi } from '../../api/index.js';
 import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import ItemPickerDialog from '../../components/ItemPickerDialog.jsx';
@@ -490,6 +490,40 @@ export default function InvoiceForm() {
     } catch {}
   }, []);
 
+  // Client projects come from the projects list endpoint (caller-scoped,
+  // effectiveRate enriched) — the invoice read model no longer embeds them
+  const loadClientProjects = useCallback(async (clientId) => {
+    if (!clientId) {
+      setClientProjects([]);
+      return;
+    }
+    try {
+      setClientProjects(await projectsApi.getAll({ clientId }));
+    } catch {
+      setClientProjects([]);
+    }
+  }, []);
+
+  // Linked transaction rows resolve from the stored id array on demand;
+  // refetches whenever a link/unlink refresh swaps invoiceData
+  const [linkedTx, setLinkedTx] = useState([]);
+  const linkedTxIds = invoiceData?.transactions;
+  useEffect(() => {
+    if (!linkedTxIds?.length) {
+      setLinkedTx([]);
+      return;
+    }
+    let cancelled = false;
+    transactionsApi.getAll({ ids: linkedTxIds.join(',') })
+      .then((rows) => { if (!cancelled) setLinkedTx(rows); })
+      .catch(() => { if (!cancelled) setLinkedTx([]); });
+    return () => { cancelled = true; };
+  }, [linkedTxIds]);
+  const transactionsTotal = useMemo(
+    () => linkedTx.reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0),
+    [linkedTx]
+  );
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -499,7 +533,7 @@ export default function InvoiceForm() {
         if (!isNew) {
           const data = await invoicesApi.getById(id);
           setInvoiceData(data);
-          setClientProjects(data.clientProjects || []);
+          await loadClientProjects(data.clientId);
           resetBase(coerceFls(data));
 
           // Fetch source data for client-side consistency checking
@@ -514,7 +548,7 @@ export default function InvoiceForm() {
       }
     };
     init();
-  }, [id, isNew, resetBase, fetchSourceData, coerceFls]);
+  }, [id, isNew, resetBase, fetchSourceData, loadClientProjects, coerceFls]);
 
   const handleChange = (field) => (e, data) => {
     setForm((prev) => ({ ...prev, [field]: data?.value ?? e.target.value }));
@@ -546,7 +580,7 @@ export default function InvoiceForm() {
       } else {
         const updated = await invoicesApi.update(id, payload);
         setInvoiceData(updated);
-        setClientProjects(updated.clientProjects || []);
+        await loadClientProjects(updated.clientId);
         resetBase(coerceFls(updated));
         return { ok: true };
       }
@@ -556,7 +590,7 @@ export default function InvoiceForm() {
     } finally {
       setSaving(false);
     }
-  }, [form, isNew, id, resetBase, stripSet, coerceFls]);
+  }, [form, isNew, id, resetBase, stripSet, coerceFls, loadClientProjects]);
 
   const handleSave = async () => {
     const result = await saveForm();
@@ -607,7 +641,7 @@ export default function InvoiceForm() {
       }
       if (updated) {
         setInvoiceData(updated);
-        setClientProjects(updated.clientProjects || []);
+        await loadClientProjects(updated.clientId);
         resetBase(coerceFls(updated));
         await fetchSourceData(updated.clientId);
         setSuccess(true);
@@ -666,17 +700,17 @@ export default function InvoiceForm() {
     try {
       const data = await invoicesApi.getById(id);
       setInvoiceData(data);
-      setClientProjects(data.clientProjects || []);
+      await loadClientProjects(data.clientId);
     } catch (err) {
       setError(err.message);
     }
-  }, [id]);
+  }, [id, loadClientProjects]);
 
   const refreshFromInvoice = useCallback((updated) => {
     setInvoiceData(updated);
-    setClientProjects(updated.clientProjects || []);
+    loadClientProjects(updated.clientId);
     resetBase(coerceFls(updated));
-  }, [resetBase]);
+  }, [resetBase, coerceFls, loadClientProjects]);
 
   // --- Transaction picker ---
   const openTxPicker = useCallback(async () => {
@@ -1393,13 +1427,13 @@ export default function InvoiceForm() {
                         <span>{fmt.format(invoiceData?.total || 0)}</span>
                       </div>
 
-                      {invoiceData?.linkedTransactions?.length > 0 && (
+                      {linkedTx.length > 0 && (
                         <>
                           <div className={styles.balanceGroupLabel}>
                             <span>Linked Transactions</span>
-                            <span>{fmt.format(-(invoiceData.transactionsTotal || 0))}</span>
+                            <span>{fmt.format(-transactionsTotal)}</span>
                           </div>
-                          {invoiceData.linkedTransactions.map((tx) => (
+                          {linkedTx.map((tx) => (
                             <div key={tx._id} className={styles.balanceSubRow}>
                               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <Tooltip content="Unlink this transaction" relationship="label" withArrow>
@@ -1423,7 +1457,7 @@ export default function InvoiceForm() {
 
                       <div className={styles.balanceDivider} />
                       {(() => {
-                        const remaining = invoiceData?.remainingBalance ?? (invoiceData?.total || 0);
+                        const remaining = (invoiceData?.total || 0) - transactionsTotal;
                         const balanceColor = remaining === 0
                           ? tokens.colorPaletteGreenForeground1
                           : remaining < 0

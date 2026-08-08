@@ -10,7 +10,7 @@ ProjectForm.jsx → projectsApi (api/index.js) → routes/projects.js → projec
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Form | `app/src/pages/projects/ProjectForm.jsx` | Tabs: General, Resources, Timesheets, Expenses, Documents, Invoices. Rate/hours show "Inherited from client: £X" placeholder when null. Uses `useNotifyParent` for embedded mode. Resources tab: read-only DataGrid + Add/Edit dialog, deferred save (array rides the form's normal Save) |
+| Form | `app/src/pages/projects/ProjectForm.jsx` | Tabs: General, Resources, Timesheets, Expenses, Documents, Invoices. Rate/hours show "Inherited from client: £X" placeholder when null. Uses `useNotifyParent` for embedded mode. Resources tab: read-only DataGrid + Add/Edit dialog, deferred save (array rides the form's normal Save). Timesheets/Expenses tabs fetch their own lists via `timesheetsApi`/`expensesApi.getAll({ projectId })` (Documents/Invoices already did) — the detail response carries no embeds |
 | Resource dialog | `app/src/pages/projects/ResourceDialog.jsx` | Add/Edit dialog for one resource. Owns the `usersApi.getAll()` fetch, prefills dailyRate from `projectData.effectiveRate` on add, dedupes already-assigned users, injects a snapshot `<option>` when the user record is missing |
 | List | `app/src/pages/projects/ProjectList.jsx` | showArchived toggle, columns: name, client, IR35, effectiveRate, status |
 | API client | `app/src/api/index.js` (projectsApi) | 5 methods: getAll, getById, create, update, delete |
@@ -20,7 +20,7 @@ ProjectForm.jsx → projectsApi (api/index.js) → routes/projects.js → projec
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Route | `server/routes/projects.js` | 5 endpoints: standard CRUD |
-| Service | `server/services/projectService.js` | CRUD, effectiveRate/Hours computation, null coercion, isDefault protection, cascade delete |
+| Service | `server/services/projectService.js` | CRUD, effectiveRate/Hours computation, null coercion, isDefault protection, cascade delete. `getAll`: `?clientId=` entity param; `$expand` (client, timesheets, expenses, documents) resolved centrally via `server/expand.js` (batched `$in`, unknown name → 400 `bad_expand`). `getById`: stored fields + clientName/effectiveRate/effectiveWorkingHours scalars only (no embedded timesheets/expenses). `update()` strips read-model keys (clientName, effectiveRate, effectiveWorkingHours, timesheets, expenses, client, documents) in addition to the protected fields |
 | DB collection | `server/db/index.js` | `projects` — wrapped NeDB via execution pipeline |
 
 ## Inheritance Chain
@@ -74,7 +74,7 @@ Frontend mirrors this: `ProjectForm.jsx` saveForm converts `form.rate !== '' ? N
 | **Expense form dropdown** | `ExpenseForm.jsx` | Groups projects by clientName, inherits currency via project→client | UI grouping + currency |
 | **Expense currency** | `expenseService.js` create | Looks up project → client → currency | Indirect inheritance |
 | **Invoice line building** | `invoiceService.js` addLine/recalculate | Reads project.vatPercent + effectiveRate for timesheet/write-in lines | VAT and rate source |
-| **Invoice enrichment** | `invoiceService.js` getById | Returns clientProjects with effectiveRate, vatPercent for form | UI data |
+| **Invoice form project data** | `InvoiceForm.jsx` | Fetches the client's projects via `projectsApi.getAll({ clientId })` for effectiveRate/vatPercent (invoice detail no longer embeds clientProjects) | UI data |
 | **Client cascade** | `clientService.js` remove | Deletes all client's projects (after deleting their timesheets/expenses) | Destroys data |
 | **Reports** | `reportService.js`, `expenseReportService.js` | Groups by project for PDF generation, shows project name/rate | PDF layout |
 | **MCP list_projects** | `server/routes/mcp.js` | Lists active projects with effectiveWorkingHours (rate excluded for confidentiality) | Read-only |
@@ -119,7 +119,7 @@ Frontend mirrors this: `ProjectForm.jsx` saveForm converts `form.rate !== '' ? N
 - Update: ProjectList columns
 - Update: timesheetService enrichment (projectName, effective values)
 - Update: expenseService enrichment (projectName)
-- Update: invoiceService clientProjects enrichment
+- Update: InvoiceForm clientProjects fetch (`projectsApi.getAll({ clientId })`)
 - Update: MCP tool response fields
 
 **If you change user email/deletion semantics:**
@@ -127,4 +127,4 @@ Frontend mirrors this: `ProjectForm.jsx` saveForm converts `form.rate !== '' ? N
 
 ## Lessons Learned
 
-(Empty — will be populated as issues are encountered)
+- **Project documents were found carrying frozen copies of their entire timesheet and expense sets.** `getById` used to embed both arrays; `ProjectForm` `resetBase()` the full response and PUT it back, and `update()` only stripped 4 protected fields — so the embeds (plus clientName/effectiveRate/effectiveWorkingHours) were persisted onto the document. Stored copies bypass row-level security: the timesheets table's row filter never applies to fields of a project document. Fix: lean `getById` (scalars only), per-tab list fetches, `update()` read-model strips, and `npm run repair:derived-fields` (server stopped, after a backup) to `$unset` the polluted keys.

@@ -281,7 +281,8 @@ export async function getAll(query = {}) {
         queryForDb = { ...query, $filter: undefined };
       }
     } catch {
-      // If AST parsing fails, fall through to standard buildQuery
+      // If AST parsing fails, fall through to standard buildQuery — whose own
+      // parseFilter rejects the malformed $filter with 400 bad_filter
     }
   }
 

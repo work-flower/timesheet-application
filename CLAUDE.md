@@ -643,9 +643,13 @@ Entity-specific API behaviors (endpoints, enrichment, filters, lifecycle methods
 
 ### OData Query Support
 
-All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startswith, endswith, and, or, parentheses), `$orderby`, `$top`, `$skip`, `$count`, `$select`, `$expand`. Null comparisons work: `field eq null` matches explicit-null AND absent fields; `field ne null` matches only present non-null values. Without `$count`: plain array response. With `$count=true`: `{ "@odata.count": N, "value": [...] }`.
+All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startswith, endswith, and, or, parentheses), `$orderby`, `$top`, `$skip`, `$count`, `$select`. A malformed `$filter` is rejected with **400 `bad_filter`** (never silently ignored). Null comparisons work: `field eq null` matches explicit-null AND absent fields; `field ne null` matches only present non-null values. Without `$count`: plain array response. With `$count=true`: `{ "@odata.count": N, "value": [...] }`.
 
 **Virtual fields in `$filter`:** Services can define virtual field names that are resolved before the DB query. The notebook service supports `tagsAll`, `relatedProjectNamesAll`, `relatedClientNamesAll`, `relatedTimesheetLabelsAll` — these resolve array fields or cross-entity lookups into real NeDB conditions.
+
+**$expand (centralised — `server/expand.js`):** related records are attached ONLY via `$expand` on the six wired list endpoints below, resolved by `applyExpand` against the relationship map (batched `$in` lookups, no N+1). Unknown expand names → **400 `bad_expand`**. Expanded docs are RAW wrapped-collection reads: caller-scoped, fls-masked per their own table, and 403 fail-loud when the caller lacks read on the expanded table. `$select` can pick expanded keys. Other list endpoints ignore `$expand`.
+
+**Detail endpoints are lean:** no `/:id` endpoint embeds related records — they return stored fields plus scalar enrichment only (`clientName`, `projectName`, `effectiveRate`, `effectiveWorkingHours`, derived `clientId`). Forms fetch related data from list endpoints (`?clientId=`, `?projectId=`, `?transactionId=` reverse lookup on link arrays, `?ids=` on transactions). Never reintroduce embeds: read-model embeds echoed back by form PUTs once persisted onto documents and leaked past row-level security (see `authorisation.md` → Lessons).
 
 **$expand relationships:**
 
@@ -654,8 +658,8 @@ All list endpoints support: `$filter` (eq, ne, gt, ge, lt, le, contains, startsw
 | clients | projects, timesheets, expenses, invoices |
 | projects | client, timesheets, expenses, documents |
 | timesheets | project, client |
-| expenses | project, client |
-| invoices | client |
+| expenses | project, client, linkedTransactions |
+| invoices | client, linkedTransactions |
 | documents | client, project |
 
 ---
@@ -836,7 +840,6 @@ Container stores no data — all `.db` files and PDFs live on the host volume.
 - **Timesheet approval workflow:** May add `status` field to timesheets (draft/submitted/approved)
 - **CSV export:** CSV export of timesheets (PDF export already exists via Reports)
 - **Server-side pagination:** All list views currently use client-side pagination (`usePagination` hook slices the full array). A future `useServerPagination` hook can swap in server-side pagination via `$top`/`$skip`/`$count` OData params without changing the `PaginationControls` UI component.
-- **Centralised `$expand`:** `$expand` is not handled by `server/odata.js` — six services (clients, projects, timesheets, expenses, invoices, documents) each hand-roll it in `getAll` with per-item awaited lookups (N+1). No detail endpoint supports `$expand`; `projectService.getById` instead embeds raw `timesheets`/`expenses` arrays unconditionally (sequential queries, unenriched rows). Candidate refactor: a shared expand helper (or `odata.js` support with a per-entity relationship map), opt-in `$expand` on detail routes, and batched lookups. Note: the OData support blurb in the API section over-claims — only the six entities in the $expand relationships table implement it; other list endpoints silently ignore the param.
 - **Shared entity shapes:** Consider introducing a `shared/shapes/` folder with plain objects defining each entity's storable fields and defaults. Would serve as single source of truth for form initialization (`useFormTracker`) and service-layer `create()`/`update()` field acceptance — preventing form and API drift. Currently low-risk since it's a single-developer app, but worth revisiting if the codebase grows or multiple consumers are introduced.
 - **Start-of-Day Agent:** An AI agent that summarises yesterday's activity (timesheets, calendar events, expenses, tickets, notebooks) and briefs the contractor on today's schedule. Uses existing data sources and Claude API — no new infrastructure. Could surface as a dashboard section, modal on first visit, or dedicated route. Practical first step toward a broader daily log vision.
 - **Daily Log Workspace (bigger vision, parked):** NotebookLM-inspired daily capture workspace via code-server (VS Code in browser) iframed into the app. Contractors log everything throughout the day with full Claude Code agent support; timesheets emerge as AI-generated summaries. Depends on start-of-day agent proving value first. Spike required: verify Claude Code extension works in code-server.

@@ -17,7 +17,7 @@ ExpenseList.jsx     → ReceiptUploadDialog.jsx ─┴→ CameraCapturePane.jsx 
 
 | What | File | Notes |
 |------|------|-------|
-| Form | `app/src/pages/expenses/ExpenseForm.jsx` | useFormTracker for dirty state, VAT live calc via shared module. Uses `useNotifyParent` for embedded mode. Scan button → `ReceiptScanDialog`; holds `pendingCapture` for new expenses (attached in `saveForm` after create) |
+| Form | `app/src/pages/expenses/ExpenseForm.jsx` | useFormTracker for dirty state, VAT live calc via shared module. Uses `useNotifyParent` for embedded mode. Scan button → `ReceiptScanDialog`; holds `pendingCapture` for new expenses (attached in `saveForm` after create). Fetches linked transactions itself via `transactionsApi.getAll({ ids })` and computes remaining = amount + Σtx.amount client-side (detail response is lean) |
 | List | `app/src/pages/expenses/ExpenseList.jsx` | Period toggles, client/project/type/billable/linked filters, search box, 3 view modes (grid/list/card), summary footer (billable total/non-billable total/count). "Scan Receipt" opens `ReceiptUploadDialog` |
 | Receipt dialog | `app/src/pages/expenses/ReceiptUploadDialog.jsx` | Multi-file upload and/or camera capture → AI parse → editable preview → create + attach. File input **appends** (never replaces) so captures and picked files coexist |
 | Scan dialog | `app/src/pages/expenses/ReceiptScanDialog.jsx` | Form-flow capture: camera → parse → per-field opt-out review table → apply via `handleChange`. Owns `FIELD_DEFS`, whose array order IS the apply order |
@@ -30,7 +30,7 @@ ExpenseList.jsx     → ReceiptUploadDialog.jsx ─┴→ CameraCapturePane.jsx 
 | What | File | Notes |
 |------|------|-------|
 | Route | `server/routes/expenses.js` | 13 endpoints: CRUD, types, parse-receipts, link/unlink, attachments (upload, delete, serve file, serve thumbnail). Multipart via `createUpload` from `server/pipeline/uploads.js` (never multer directly); attachment upload + delete gated by `requireAction('expenses','upload')` before the body is parsed |
-| Service | `server/services/expenseService.js` | VAT golden rule, currency inheritance, lock checks, enrichment, getDistinctTypes, linkTransaction/unlinkTransaction. `getAll`: `$expand` (project, client) |
+| Service | `server/services/expenseService.js` | VAT golden rule, currency inheritance, lock checks, enrichment, getDistinctTypes, linkTransaction/unlinkTransaction. `getAll`: `$expand` (project, client, linkedTransactions — resolved centrally via `server/expand.js`, batched `$in`, unknown name → 400 `bad_expand`; linkedTransactions resolves from the stored `transactions[]` id array); `?transactionId=` entity param (NeDB array containment on `transactions[]` — reverse lookup "which expenses link this transaction"). `getById`: stored fields + projectName/clientName/clientId scalars only (no linkedTransactions/transactionsTotal/remainingBalance). `update()` strips read-model keys (projectName, clientName, project, client, linkedTransactions, transactionsTotal, remainingBalance) AND `transactions` — the link array is writable only via link/unlink |
 | Attachments | `server/services/expenseAttachmentService.js` | File storage + sharp thumbnails at `DATA_DIR/expenses/{id}/`. `saveAttachments`/`removeAttachment` call `assertNotLocked` — attachment mutation on locked (invoiced) expenses 400s server-side |
 | Receipt parser | `server/services/expenseParserService.js` | Sends file to Claude API, extracts date/amount/vat/type/description/externalRef |
 | DB collection | `server/db/index.js` | `expenses` — wrapped NeDB via execution pipeline |
@@ -41,7 +41,7 @@ ExpenseList.jsx     → ReceiptUploadDialog.jsx ─┴→ CameraCapturePane.jsx 
 |------|------|-------|
 | VAT calc | `shared/expenseVatCalc.js` | `computeVat` (backend), `deriveVatFromPercent`/`deriveVatFromAmount` (frontend live) |
 | Lock check | `server/services/lockCheck.js` | `assertNotLocked()` — used by update and remove |
-| OData | `server/odata.js` | `buildQuery()` — used by getAll for filtering/sorting/pagination |
+| OData | `server/odata.js` | `buildQuery()` — used by getAll for filtering/sorting/pagination. Malformed `$filter` → 400 `bad_filter` (`parseFilter` no longer silently returns `{}`) |
 
 ## Cross-Entity Consumers
 
@@ -54,14 +54,14 @@ These are the places OUTSIDE expense-specific files that read, write, or depend 
 | **Invoice recalculate** | `server/services/invoiceService.js` | Re-reads expense `netAmount`, `vatPercent`, `vatAmount`, `amount` | Rebuilds invoice line snapshot |
 | **Invoice consistency** | `server/services/invoiceService.js` | Checks if expense values drifted from invoice line snapshot | Blocks confirm if mismatch |
 | **Invoice form** | `app/src/pages/invoices/InvoiceForm.jsx` | Expense picker dialog — selects expenses as invoice line sources | Reads expense list |
-| **Client read** | `server/services/clientService.js` getById/getAll | Fetches client's expenses for display (`$expand=expenses`) | Read-only |
+| **Client list `$expand`** | `server/expand.js` | `$expand=expenses` on the clients list resolves batched raw expense docs (client detail no longer embeds them; ClientForm's tab fetches `expensesApi.getAll({ clientId })`) | Read-only |
 | **Client cascade** | `server/services/clientService.js` remove | Deletes all client's expenses + attachment dirs on client delete | Destroys data |
-| **Project read** | `server/services/projectService.js` getById/getAll | Fetches project's expenses for display (`$expand=expenses`) | Read-only |
+| **Project list `$expand`** | `server/expand.js` | `$expand=expenses` on the projects list resolves batched raw expense docs (project detail no longer embeds them; ProjectForm's tab fetches `expensesApi.getAll({ projectId })`) | Read-only |
 | **Project cascade** | `server/services/projectService.js` remove | Deletes all project's expenses + attachment dirs on project delete | Destroys data |
 | **Expense report** | `server/services/expenseReportService.js` | Reads expenses by project/date range or by IDs for PDF generation | Read-only |
 | **Dashboard** | `server/services/dashboardService.js` | Queries expenses for monthly/YTD totals and by-client breakdown | Read-only |
 | **Agent tools** | `server/services/agentToolRegistry.js` | `create_expense` calls `expenseService.create()`; `list_recent_expenses` and `list_unbilled_items` (`clientId` + `$filter=invoiceId eq null`) read via `getAll` (exposed over MCP + agent layer) | Creates + reads expenses |
-| **Transaction service** | `server/services/transactionService.js` | `getById` finds linked expenses, computes balance | Read-only |
+| **Transaction reverse lookup** | `TransactionForm.jsx` / `TransactionDrawer.jsx` | Fetch linked expenses via `expensesApi.getAll({ transactionId })` and compute balances client-side (transaction detail is a bare findOne — no server-side enrichment) | Read-only |
 | **VAT report** | `server/services/vatReportService.js` | Reads expense vatAmount/amount by date range for VAT analysis | Read-only |
 | **Income & Expense report** | `server/services/incomeExpenseReportService.js` | Reads expense amounts by type/date range for financial analysis | Read-only |
 | **Dashboard (frontend)** | `app/src/pages/Dashboard.jsx` | Fetches monthly expenses for summary card | Read-only |
@@ -194,3 +194,5 @@ Also included in the Combined PDF — see `invoices.md` → Invoice PDF Generati
 **Crop coordinates must be normalized, and enhance is sharpen — not deblur.** The crop box stores `{x,y,w,h}` as fractions of the image [0,1], mapped to source pixels only at confirm; the display canvas is CSS-scaled, so storing device pixels would drift the moment the container resizes. To keep the mapping a single uniform multiply, the still is drawn on an aspect-preserving canvas (no letterbox). "Enhance" (`applyDocumentScan`: grayscale + contrast + 3×3 unsharp) is a **legibility filter and cannot deblur** — it's applied to a copy of the pristine source each time, so it's fully revertable and Retake remains the real fix for a bad shot. Accepted, documented quirk: the sharpen looks slightly stronger in the final (full-res) output than in the display-res preview (a 3×3 kernel bites harder on a downscaled image); grayscale/contrast match exactly.
 
 **Don't put a cancel button next to the commit button in a capture step.** The first cut of the `adjust` step showed, side by side, a "Done" button (the pane's `onCancel`, labelled "Done" whenever a `hint` is passed — which the list flow does) and the primary commit ("Capture"). Users read "Done" as "I'm done — use this photo" and clicked it, so the cropped shot was silently discarded and the dialog returned to the file picker "as if nothing happened." Fix: in `adjust` the **only** finish action is the primary commit (`captureLabel`, e.g. "Use photo" / "Use & parse"); the cancel/"Done" affordance was removed from `adjust` (Retake returns to `live`, where "Done" correctly means *finish the capture session*). Both dialogs still expose a footer Cancel, so no exit is lost. Rule of thumb: "Done" should mean *finish the whole flow*, never *commit one item* — reserve a distinct verb ("Use", "Add") for the per-item commit.
+
+**Read-model enrichment persisted onto expense documents — and the `transactions[]` link array was clobberable (fixed).** `getById` used to return linkedTransactions/transactionsTotal/remainingBalance; the form PUT the full read model back and `update()` only stripped 4 protected fields, so those keys (plus projectName/clientName) were persisted onto production expense docs — stored copies that bypass the transactions table's row filter. `update()` now strips all read-model keys AND `transactions` itself, so a stale form echo can no longer clobber links made since the form loaded (link/unlink endpoints are the only writers). Detail is lean (scalars only); the form fetches linked transactions via `transactionsApi.getAll({ ids })` and computes the balance client-side. `npm run repair:derived-fields` cleans previously-polluted docs.

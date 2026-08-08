@@ -78,19 +78,9 @@ export async function getAll(query = {}) {
     };
   });
 
-  // $expand support
-  if (query.$expand) {
-    const expands = query.$expand.split(',').map(s => s.trim());
-    for (const item of enriched) {
-      if (expands.includes('project')) {
-        item.project = projectMap[item.projectId] || null;
-      }
-      if (expands.includes('client')) {
-        const project = projectMap[item.projectId];
-        item.client = project ? (clientMap[project.clientId] || null) : null;
-      }
-    }
-  }
+  // $expand — centralised in server/expand.js. Register the entity's relations
+  // in the RELATIONS map there; never hand-roll embeds in the service.
+  await applyExpand('entities', enriched, query.$expand);
 
   const items = applySelect(enriched, query.$select);
   return formatResponse(items, totalCount, query.$count === 'true');
@@ -101,12 +91,20 @@ export async function getAll(query = {}) {
 
 Returns a single enriched record or `null`.
 
+**GOLDEN RULE — detail read models are LEAN:** stored fields plus scalar
+enrichment ONLY (names, effective rates, derived clientId). NEVER embed related
+records or aggregates computed from them on a detail response. Embeds echoed
+back by form `{...form}` PUTs once got persisted onto documents and leaked past
+row-level security. Related records belong to their own list endpoints
+(`?clientId=`, `?projectId=`, `?transactionId=`, `?ids=`) or to `$expand` on
+the list route.
+
 ```js
 export async function getById(id) {
   const entry = await collection.findOne({ _id: id });
   if (!entry) return null;
 
-  // Enrich with related data
+  // Scalar enrichment only — never embedded collections
   const project = await projects.findOne({ _id: entry.projectId });
   const client = project ? await clients.findOne({ _id: project.clientId }) : null;
 
@@ -190,7 +188,7 @@ All list endpoints automatically support via `buildQuery()`:
 - `$top` / `$skip` — pagination
 - `$count=true` — wraps response in `{ "@odata.count": N, "value": [...] }`
 - `$select` — field projection (via `applySelect`)
-- `$expand` — inline related entities (implemented per-service)
+- `$expand` — inline related entities, centralised in `server/expand.js` (`applyExpand` + per-entity RELATIONS map; batched `$in` resolution; unknown names → 400 `bad_expand`; expanded docs are raw, caller-scoped and fls-masked; only wired entities support it — clients, projects, timesheets, expenses, invoices, documents)
 
 Without `$count`, responses are plain arrays. With `$count=true`, responses are OData envelopes.
 
@@ -293,6 +291,8 @@ export const entityApi = {
 - Numeric fields: coerce via `Number(data.field)` before storing
 - Empty string to null: for optional override fields (e.g., `rate`, `workingHoursPerDay`)
 
-## Known Bugs
+## Error Semantics
 
-- **OData `$filter` silently ignores invalid syntax:** When `$filter` contains invalid expressions (e.g. double quotes `"` instead of single quotes `'` for string values), `buildQuery` fails to parse and applies no filter — returning all records instead of a 400 error or empty result. Affects all entities. Location: `server/odata.js`.
+- **Malformed `$filter` → 400 `bad_filter`** (`server/odata.js parseFilter`) — never silently ignored; a swallowed parse failure used to match everything.
+- **Unknown `$expand` name → 400 `bad_expand`** (`server/expand.js applyExpand`).
+- **`update()` must strip every read-model key** (enrichment scalars, embeds, aggregates, and fields owned by dedicated endpoints such as `transactions` link arrays) alongside the protected-field deletes — forms echo the full read model back on save.

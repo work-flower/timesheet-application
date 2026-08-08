@@ -1,5 +1,6 @@
-import { clients, projects, documents } from '../db/index.js';
+import { documents } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { applyExpand } from '../expand.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { writeFileSync, unlinkSync } from 'fs';
@@ -19,23 +20,7 @@ export async function getAll(query = {}) {
     documents, query, { createdAt: -1 }, baseFilter
   );
 
-  // $expand
-  if (query.$expand) {
-    const allClients = await clients.find({});
-    const allProjects = await projects.find({});
-    const clientMap = Object.fromEntries(allClients.map(c => [c._id, c]));
-    const projectMap = Object.fromEntries(allProjects.map(p => [p._id, p]));
-
-    const expands = query.$expand.split(',').map(s => s.trim());
-    for (const item of results) {
-      if (expands.includes('client')) {
-        item.client = clientMap[item.clientId] || null;
-      }
-      if (expands.includes('project')) {
-        item.project = projectMap[item.projectId] || null;
-      }
-    }
-  }
+  await applyExpand('documents', results, query.$expand);
 
   const items = applySelect(results, query.$select);
   return formatResponse(items, totalCount, query.$count === 'true');

@@ -1,8 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { clients, projects, timesheets, expenses, invoices, settings, transactions } from '../db/index.js';
+import { clients, projects, timesheets, expenses, invoices, settings } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { applyExpand } from '../expand.js';
 import { assertNotLocked } from './lockCheck.js';
 import { buildInvoicePdf } from './invoicePdfService.js';
 import { buildTimesheetPdf } from './reportService.js';
@@ -16,6 +17,8 @@ export async function getAll(query = {}) {
   if (query.clientId) baseFilter.clientId = query.clientId;
   if (query.status) baseFilter.status = query.status;
   if (query.paymentStatus) baseFilter.paymentStatus = query.paymentStatus;
+  // Invoices linked to a transaction (NeDB array containment on stored transactions[])
+  if (query.transactionId) baseFilter.transactions = query.transactionId;
   if (query.startDate || query.endDate) {
     baseFilter.invoiceDate = {};
     if (query.startDate) baseFilter.invoiceDate.$gte = query.startDate;
@@ -32,58 +35,24 @@ export async function getAll(query = {}) {
     clientName: clientMap[inv.clientId]?.companyName || 'Unknown',
   }));
 
-  if (query.$expand) {
-    const expands = query.$expand.split(',').map(s => s.trim());
-    for (const item of enriched) {
-      if (expands.includes('client')) {
-        item.client = clientMap[item.clientId] || null;
-      }
-    }
-  }
+  await applyExpand('invoices', enriched, query.$expand);
 
   const items = applySelect(enriched, query.$select);
   return formatResponse(items, totalCount, query.$count === 'true', summaryData);
 }
 
+// Lean read model: stored fields + scalar enrichment only. Related records
+// (client projects, linked transactions) come from their own list endpoints —
+// see the $expand relationship map in server/expand.js.
 export async function getById(id) {
   const invoice = await invoices.findOne({ _id: id });
   if (!invoice) return null;
 
   const client = await clients.findOne({ _id: invoice.clientId });
-  const allProjects = await projects.find({ clientId: invoice.clientId });
-
-  const clientProjects = allProjects.map(p => ({
-    _id: p._id,
-    name: p.name,
-    effectiveRate: p.rate != null ? p.rate : (client?.defaultRate || 0),
-    vatPercent: p.vatPercent ?? null,
-  }));
-
-  // Enrich with linked transactions
-  const txIds = invoice.transactions || [];
-  let linkedTransactions = [];
-  let transactionsTotal = 0;
-  if (txIds.length > 0) {
-    const txDocs = await transactions.find({ _id: { $in: txIds } });
-    linkedTransactions = txDocs.map(tx => ({
-      _id: tx._id,
-      date: tx.date,
-      description: tx.description,
-      amount: tx.amount,
-      status: tx.status,
-    }));
-    transactionsTotal = linkedTransactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-  }
-  const remainingBalance = (invoice.total || 0) - transactionsTotal;
 
   return {
     ...invoice,
     clientName: client?.companyName || 'Unknown',
-    client,
-    clientProjects,
-    linkedTransactions,
-    transactionsTotal,
-    remainingBalance,
   };
 }
 
@@ -149,6 +118,15 @@ export async function update(id, data) {
   delete updateData.isLocked;
   delete updateData.isLockedReason;
   delete updateData.pdfPath;
+  // Read-model echoes; transactions links are managed exclusively by the
+  // link/unlink endpoints — a stale echo must not clobber them
+  delete updateData.clientName;
+  delete updateData.client;
+  delete updateData.clientProjects;
+  delete updateData.linkedTransactions;
+  delete updateData.transactionsTotal;
+  delete updateData.remainingBalance;
+  delete updateData.transactions;
 
   if (updateData.clientId && existing.status === 'confirmed' && updateData.clientId !== existing.clientId) {
     throw new Error('Client cannot be changed on confirmed invoices');

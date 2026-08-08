@@ -97,7 +97,9 @@ export function parseFilter(filterStr) {
     const ast = parseFilterAst(filterStr);
     return astToNedb(ast);
   } catch {
-    return {};
+    // A malformed $filter must fail loud — silently returning {} would make
+    // the query match everything, handing back rows the caller didn't ask for.
+    throw new BadRequestError(`Invalid $filter: ${filterStr}`, 'bad_filter');
   }
 }
 

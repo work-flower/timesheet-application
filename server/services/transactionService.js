@@ -1,4 +1,4 @@
-import { transactions, invoices, expenses } from '../db/index.js';
+import { transactions } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
 import { assertNotLocked } from './lockCheck.js';
 import transactionSchema, { buildRecord, validateRequired } from '../schemas/transaction.js';
@@ -16,6 +16,10 @@ export async function getAll(query = {}) {
   }
   if (query.importJobId) {
     baseFilter.importJobId = query.importJobId;
+  }
+  // Fetch a known id set (e.g. an invoice/expense's stored transactions array)
+  if (query.ids) {
+    baseFilter._id = { $in: query.ids.split(',').map((s) => s.trim()).filter(Boolean) };
   }
   if (query.startDate || query.endDate) {
     baseFilter.date = {};
@@ -50,45 +54,10 @@ export async function getDistinctAccounts() {
   return names;
 }
 
+// Lean read model: stored fields only. Linked invoices/expenses resolve via
+// their list endpoints with ?transactionId= (array containment reverse lookup).
 export async function getById(id) {
-  const entry = await transactions.findOne({ _id: id });
-  if (!entry) return null;
-
-  // Find linked invoices and expenses (those with this transaction in their transactions[])
-  const allInvoices = await invoices.find({});
-  const linkedInvoices = allInvoices
-    .filter((inv) => (inv.transactions || []).includes(id))
-    .map((inv) => ({
-      _id: inv._id,
-      invoiceNumber: inv.invoiceNumber,
-      invoiceDate: inv.invoiceDate,
-      total: inv.total || 0,
-      status: inv.status,
-    }));
-
-  const allExpenses = await expenses.find({});
-  const linkedExpenses = allExpenses
-    .filter((exp) => (exp.transactions || []).includes(id))
-    .map((exp) => ({
-      _id: exp._id,
-      date: exp.date,
-      description: exp.description,
-      expenseType: exp.expenseType,
-      amount: exp.amount || 0,
-    }));
-
-  const invoicesTotal = linkedInvoices.reduce((sum, inv) => sum + inv.total, 0);
-  const expensesTotal = linkedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-  const remainingBalance = Math.abs(entry.amount) - invoicesTotal - Math.abs(expensesTotal);
-
-  return {
-    ...entry,
-    linkedInvoices,
-    linkedExpenses,
-    invoicesTotal,
-    expensesTotal,
-    remainingBalance,
-  };
+  return transactions.findOne({ _id: id });
 }
 
 export async function create(data) {
@@ -119,6 +88,12 @@ export async function update(id, data) {
   delete updateData.isLockedReason;
   delete updateData.source;
   delete updateData.importJobId;
+  // Read-model echoes from getById — never stored
+  delete updateData.linkedInvoices;
+  delete updateData.linkedExpenses;
+  delete updateData.invoicesTotal;
+  delete updateData.expensesTotal;
+  delete updateData.remainingBalance;
 
   // Fail closed on unknown status values (bad payload never reaches storage)
   if (updateData.status != null && !VALID_STATUSES.includes(updateData.status)) {

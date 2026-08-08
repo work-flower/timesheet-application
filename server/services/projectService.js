@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { clients, projects, timesheets, documents, expenses } from '../db/index.js';
+import { clients, projects, timesheets, expenses } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { applyExpand } from '../expand.js';
 import { removeAllAttachments } from './expenseAttachmentService.js';
 import { assertNotLocked } from './lockCheck.js';
 
@@ -30,7 +31,10 @@ function normalizeResources(input) {
 }
 
 export async function getAll(query = {}) {
-  const { results, totalCount } = await buildQuery(projects, query, { name: 1 });
+  const baseFilter = {};
+  if (query.clientId) baseFilter.clientId = query.clientId;
+
+  const { results, totalCount } = await buildQuery(projects, query, { name: 1 }, baseFilter);
 
   // Existing enrichment (always applied)
   const allClients = await clients.find({});
@@ -43,63 +47,28 @@ export async function getAll(query = {}) {
       ? p.workingHoursPerDay : (clientMap[p.clientId]?.workingHoursPerDay || 8),
   }));
 
-  // $expand
-  if (query.$expand) {
-    const expands = query.$expand.split(',').map(s => s.trim());
-    for (const item of enriched) {
-      if (expands.includes('client')) {
-        item.client = clientMap[item.clientId] || null;
-      }
-      if (expands.includes('timesheets')) {
-        item.timesheets = await timesheets.find({ projectId: item._id });
-      }
-      if (expands.includes('documents')) {
-        item.documents = await documents.find({ projectId: item._id });
-      }
-      if (expands.includes('expenses')) {
-        item.expenses = await expenses.find({ projectId: item._id });
-      }
-    }
-  }
+  await applyExpand('projects', enriched, query.$expand);
 
   const items = applySelect(enriched, query.$select);
   return formatResponse(items, totalCount, query.$count === 'true');
 }
 
+// Lean read model: stored fields + scalar enrichment only. Related records
+// (timesheets, expenses, documents) come from their own list endpoints with
+// ?projectId= — see the $expand relationship map in server/expand.js.
 export async function getById(id) {
   const project = await projects.findOne({ _id: id });
   if (!project) return null;
 
   const client = await clients.findOne({ _id: project.clientId });
-  const effectiveRate = project.rate != null ? project.rate : (client?.defaultRate || 0);
-
-  const projectTimesheets = await timesheets.find({ projectId: id }).sort({ date: -1 });
-  const projectExpenses = await expenses.find({ projectId: id }).sort({ date: -1 });
-
-  const effectiveWorkingHours = project.workingHoursPerDay != null
-    ? project.workingHoursPerDay : (client?.workingHoursPerDay || 8);
 
   return {
     ...project,
     clientName: client?.companyName || 'Unknown',
-    effectiveRate,
-    effectiveWorkingHours,
-    timesheets: projectTimesheets,
-    expenses: projectExpenses,
+    effectiveRate: project.rate != null ? project.rate : (client?.defaultRate || 0),
+    effectiveWorkingHours: project.workingHoursPerDay != null
+      ? project.workingHoursPerDay : (client?.workingHoursPerDay || 8),
   };
-}
-
-export async function getByClientId(clientId) {
-  const clientProjects = await projects.find({ clientId }).sort({ isDefault: -1, name: 1 });
-  const client = await clients.findOne({ _id: clientId });
-
-  return clientProjects.map((p) => ({
-    ...p,
-    clientName: client?.companyName || 'Unknown',
-    effectiveRate: p.rate != null ? p.rate : (client?.defaultRate || 0),
-    effectiveWorkingHours: p.workingHoursPerDay != null
-      ? p.workingHoursPerDay : (client?.workingHoursPerDay || 8),
-  }));
 }
 
 export async function create(data) {
@@ -132,6 +101,15 @@ export async function update(id, data) {
   delete updateData.createdAt;
   delete updateData.isLocked;
   delete updateData.isLockedReason;
+  // Read-model echoes — persisting them stores unscoped snapshots of related
+  // records on the project doc, which then leak past row-level security
+  delete updateData.clientName;
+  delete updateData.effectiveRate;
+  delete updateData.effectiveWorkingHours;
+  delete updateData.timesheets;
+  delete updateData.expenses;
+  delete updateData.client;
+  delete updateData.documents;
 
   // Handle rate — allow setting back to null for inheritance
   if (updateData.rate === '' || updateData.rate === undefined) {

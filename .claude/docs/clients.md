@@ -11,7 +11,7 @@ ClientForm.jsx → clientsApi (api/index.js) → routes/clients.js → clientSer
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Form | `app/src/pages/clients/ClientForm.jsx` | Tabs: General, Projects, Timesheets, Expenses, Invoices. IR35 + VAT required on create (for default project). Uses `useNotifyParent` for embedded mode |
+| Form | `app/src/pages/clients/ClientForm.jsx` | Tabs: General, Projects, Timesheets, Expenses, Invoices. IR35 + VAT required on create (for default project). Uses `useNotifyParent` for embedded mode. Related tabs fetch their own lists (`projectsApi`/`timesheetsApi`/`expensesApi`/`invoicesApi.getAll({ clientId })`) — the detail response carries no embeds |
 | List | `app/src/pages/clients/ClientList.jsx` | Search by name/contact, columns: company, contact, email, rate, currency |
 | API client | `app/src/api/index.js` (clientsApi) | 5 methods: getAll, getById, create, update, delete |
 
@@ -20,7 +20,7 @@ ClientForm.jsx → clientsApi (api/index.js) → routes/clients.js → clientSer
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Route | `server/routes/clients.js` | 5 endpoints: standard CRUD with OData support |
-| Service | `server/services/clientService.js` | CRUD, auto-creates default project on create, cascade delete on remove |
+| Service | `server/services/clientService.js` | CRUD, auto-creates default project on create, cascade delete on remove. `getById`: bare findOne (lean — no embedded projects/timesheets/expenses/invoices). `getAll`: `$expand` (projects, timesheets, expenses, invoices) resolved centrally via `server/expand.js` (batched `$in`, unknown name → 400 `bad_expand`). `update()` strips read-model keys (projects, timesheets, expenses, invoices, clientName) in addition to the protected fields |
 | DB collection | `server/db/index.js` | `clients` — wrapped NeDB via execution pipeline |
 
 ## Inheritance Chains (clients as the root)
@@ -106,4 +106,4 @@ clientService.remove(id)
 
 ## Lessons Learned
 
-(Empty — will be populated as issues are encountered)
+- **Read-model embeds got persisted back onto documents (fixed).** `clientService.getById` had the biggest embed surface in the system — full projects/timesheets/expenses/invoices arrays on every client detail. Forms `resetBase()` the whole response and PUT `{...form}` back, and `update()` only stripped 4 protected fields, so those arrays were written onto stored documents — and stored copies bypass row-level security, because the related table's row filter never applies to fields of the parent document. Fix: lean bare-findOne `getById`, per-tab list fetches in `ClientForm`, central opt-in `$expand` (`server/expand.js`), read-model strips in `update()`, and `npm run repair:derived-fields` to `$unset` the persisted keys.

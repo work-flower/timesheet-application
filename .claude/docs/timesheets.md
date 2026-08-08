@@ -20,7 +20,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | What | File | Notes |
 | ---- | ---- | ----- |
 | Route | `server/routes/timesheets.js` | 5 endpoints: standard CRUD |
-| Service | `server/services/timesheetService.js` | Rate/hours golden rule, days/amount computation, enrichment, lock checks. `getAll`: legacy params `projectId`, `clientId` (resolved live via the client's projects, mirroring expenseService; `projectId` takes precedence), `startDate`/`endDate`; `$expand` (project, client), `groupBy` (week/month/year/day), `$summary` (server-side field sums across all matching records). `create`/`update`: persists `clientId` from project for direct `$filter` support. `getById`: returns computed effectiveRate/effectiveWorkingHours for display |
+| Service | `server/services/timesheetService.js` | Rate/hours golden rule, days/amount computation, enrichment, lock checks. `getAll`: legacy params `projectId`, `clientId` (resolved live via the client's projects, mirroring expenseService; `projectId` takes precedence), `startDate`/`endDate`; `$expand` (project, client — resolved centrally via `server/expand.js`, batched `$in`, unknown name → 400 `bad_expand`), `groupBy` (week/month/year/day), `$summary` (server-side field sums across all matching records). `create`/`update`: persists `clientId` from project for direct `$filter` support; `update` also strips read-model keys (projectName, clientName, project, client, warnings) in addition to the protected fields. `getById`: returns computed effectiveRate/effectiveWorkingHours for display (already scalar-only — no embeds) |
 | DB collection | `server/db/index.js` | `timesheets` — wrapped NeDB via execution pipeline |
 
 ## Shared Utilities
@@ -41,7 +41,7 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | **Invoice addLine** | `invoiceService.js` | Reads timesheet amount, hours, days for line snapshot | Source of truth for invoice lines |
 | **Invoice recalculate** | `invoiceService.js` | Re-reads amount, hours, days from current timesheet | Rebuilds line values |
 | **Invoice consistency** | `invoiceService.js` | Checks if amount/rate drifted from invoice line snapshot | Blocks confirm if mismatch |
-| **Client read** | `clientService.js` getById/getAll | Fetches client's timesheets for display (`$expand=timesheets`) | Read-only |
+| **Client list `$expand`** | `server/expand.js` | `$expand=timesheets` on the clients list resolves batched raw timesheet docs (client detail no longer embeds them) | Read-only |
 | **Client cascade** | `clientService.js` remove | Deletes all timesheets for client's projects | Destroys data |
 | **Project cascade** | `projectService.js` remove | Deletes all timesheets for project | Destroys data |
 | **Timesheet report** | `reportService.js` buildTimesheetPdf | Reads timesheets by project/date range or by IDs (for invoice) | PDF generation, read-only |
@@ -50,8 +50,8 @@ TimesheetForm.jsx → timesheetsApi (api/index.js) → routes/timesheets.js → 
 | **Agent tool list_recent_timesheets** | `server/services/agentToolRegistry.js` | Calls `timesheetService.getAll()` with date range | Read-only |
 | **Agent tool list_unbilled_items** | `server/services/agentToolRegistry.js` | Reads a client's unbilled timesheets (`clientId` legacy param + `$filter=invoiceId eq null`) | Read-only |
 | **Dashboard (frontend)** | `app/src/pages/Dashboard.jsx` | Fetches weekly/monthly hours, recent entries grid | Read-only |
-| **ClientForm (frontend)** | `app/src/pages/clients/ClientForm.jsx` | Timesheets tab displays client's timesheets in DataGrid | Read-only |
-| **ProjectForm (frontend)** | `app/src/pages/projects/ProjectForm.jsx` | Timesheets tab displays project's timesheets in DataGrid | Read-only |
+| **ClientForm (frontend)** | `app/src/pages/clients/ClientForm.jsx` | Timesheets tab fetches `timesheetsApi.getAll({ clientId })` for its DataGrid | Read-only |
+| **ProjectForm (frontend)** | `app/src/pages/projects/ProjectForm.jsx` | Timesheets tab fetches `timesheetsApi.getAll({ projectId })` for its DataGrid | Read-only |
 | **InvoiceForm (frontend)** | `app/src/pages/invoices/InvoiceForm.jsx` | ItemPickerDialog selects timesheets as invoice line sources | Read-only |
 | **ReportForm (frontend)** | `app/src/pages/reports/ReportForm.jsx` | Timesheet report page for PDF generation | Read-only |
 
@@ -124,3 +124,4 @@ Also included in the Combined PDF — see `invoices.md` → Invoice PDF Generati
 - **OData URL filtering** — `$summary` provides server-side aggregation across all matching records (ignoring pagination). The summary footer must use `$summary` values, not client-side computation from the current page. `odata-filter-to-ast` is used for parsing `$filter` from URL back to UI state — its AST uses typed nodes (`EqExpr`, `GeExpr`, etc.) not a generic `op` field.
 - **`clientId` legacy param was silently ignored (fixed)** — `getAll` only handled `projectId`/`startDate`/`endDate`, so callers passing `clientId` (the InvoiceForm timesheet picker) received EVERY client's timesheets and relied on downstream filtering. Now resolved LIVE via the client's projects (mirroring expenseService), deliberately NOT via the stored `clientId` snapshot: the snapshot is absent on pre-backfill records (seed data now stamps it) and goes stale when a project is reassigned to another client (no cascade exists — `projectService.update` doesn't touch timesheets, and `timesheetService.update` only re-stamps when `hours`/`projectId` change). The direct OData `$filter=clientId eq '...'` path (list views, Dashboard links) still queries the stored snapshot and inherits both caveats.
 - **`$filter=invoiceId eq null` matched nothing (fixed in `server/odata.js`)** — the AST value extraction used `??`, which swallowed null literals and leaked the AST node into the NeDB query. The Dashboard's uninvoiced-entries card links to `/timesheets?$filter=invoiceId eq null` and showed an empty list. `eq null` now compiles to a null-or-absent `$or`; `ne null` to `$exists + $ne`.
+- **Enrichment scalars got persisted onto timesheet documents (fixed).** `getById` was already scalar-only (no embeds), but even scalars leak: the form PUTs the full read model back and `update()` only stripped 4 protected fields, so `projectName`/`clientName`/`warnings` ended up stored on production timesheet docs. `update()` now strips the read-model keys (projectName, clientName, project, client, warnings); previously-polluted documents are cleaned by `npm run repair:derived-fields`.

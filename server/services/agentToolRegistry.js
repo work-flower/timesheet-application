@@ -8,6 +8,7 @@ import * as calendarService from './calendarService.js';
 import * as ticketService from './ticketService.js';
 import * as invoiceService from './invoiceService.js';
 import * as clientService from './clientService.js';
+import * as transactionService from './transactionService.js';
 
 /**
  * Provider-neutral application tool registry — shared by BOTH consumers:
@@ -546,13 +547,20 @@ async function getInvoice({ invoiceId, invoiceNumber } = {}) {
     `Subtotal ${fmtGBP(inv.subtotal || 0)} | VAT ${fmtGBP(inv.totalVat || 0)} | Total ${fmtGBP(inv.total || 0)}`,
   ];
 
-  const txs = inv.linkedTransactions || [];
+  // Linked payments resolve via the transactions list (?ids=) — the invoice
+  // read model no longer embeds them. Runs under the caller's identity; a
+  // caller without transactions read fails loud like every other handler.
+  const txs = inv.transactions?.length
+    ? rows(await transactionService.getAll({ ids: inv.transactions.join(',') }))
+    : [];
+  const transactionsTotal = txs.reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
+  const remaining = (inv.total || 0) - transactionsTotal;
   if (txs.length) {
     out.push('', `Linked payments (${txs.length}):`);
     out.push(...txs.map(tx => `  ${tx.date} | ${tx.description} | ${fmtGBP(Math.abs(tx.amount || 0))}`));
-    out.push(`Payments received: ${fmtGBP(inv.transactionsTotal || 0)} | Remaining balance: ${fmtGBP(inv.remainingBalance ?? inv.total ?? 0)}`);
+    out.push(`Payments received: ${fmtGBP(transactionsTotal)} | Remaining balance: ${fmtGBP(remaining)}`);
   } else {
-    out.push('', `No linked payments. Remaining balance: ${fmtGBP(inv.remainingBalance ?? inv.total ?? 0)}`);
+    out.push('', `No linked payments. Remaining balance: ${fmtGBP(remaining)}`);
   }
 
   return out.join('\n');

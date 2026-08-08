@@ -24,8 +24,8 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 | Import job form | `app/src/pages/importJobs/ImportJobForm.jsx` | File upload on create, processing spinner with 3s polling, staged tx grid, lifecycle buttons (abandon/delete) |
 | Staged tx review | `app/src/pages/stagedTransactions/StagedTransactionReview.jsx` | Field mapping config, action markers (transform/delete/unmarked), duplicate detection, submit |
 | Transaction list | `app/src/pages/transactions/TransactionList.jsx` | Date/status/account filters, grid + card views |
-| Transaction form | `app/src/pages/transactions/TransactionForm.jsx` | Read-only overview, status/ignoreReason editor, linked expenses/invoices with link/unlink |
-| Transaction drawer | `app/src/pages/transactions/TransactionDrawer.jsx` | Quick-view overlay from list |
+| Transaction form | `app/src/pages/transactions/TransactionForm.jsx` | Read-only overview, status/ignoreReason editor, linked expenses/invoices with link/unlink. Fetches linked records via `invoicesApi`/`expensesApi.getAll({ transactionId })` and computes remaining = \|amount\| − invoicesTotal − \|expensesTotal\| client-side (detail response is a bare findOne) |
+| Transaction drawer | `app/src/pages/transactions/TransactionDrawer.jsx` | Quick-view overlay from list. Same `{ transactionId }` list fetches + client-side balance as the form |
 | API client | `app/src/api/index.js` | importJobsApi (6), stagedTransactionsApi (7), transactionsApi (7) |
 
 ## Backend
@@ -37,7 +37,7 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 | Staged tx route | `server/routes/stagedTransactions.js` | CRUD + submit + check-duplicates |
 | Staged tx service | `server/services/stagedTransactionService.js` | CRUD, createBulk, submit (transforms to transactions), checkDuplicates |
 | Transaction route | `server/routes/transactions.js` | CRUD + /mapping endpoint + $metadata schema |
-| Transaction service | `server/services/transactionService.js` | CRUD, updateMapping (status + ignoreReason), enrichment with linked expenses/invoices |
+| Transaction service | `server/services/transactionService.js` | CRUD, updateMapping (status + ignoreReason). `getById`: bare findOne (no linked-invoice/expense enrichment or balances — the reverse lookup moved to the invoices/expenses lists' `?transactionId=` param). `getAll`: `?ids=` entity param (comma-separated id set → `$in` — used by ExpenseForm/InvoiceForm and the `get_invoice` agent tool). `update()` strips read-model keys (linkedInvoices, linkedExpenses, invoicesTotal, expensesTotal, remainingBalance) in addition to the protected fields |
 | AI parser | `server/services/aiParserService.js` | Sends file to Claude API, returns parsed JSON array of transactions |
 | Transaction schema | `server/schemas/transaction.js` | Field definitions with x-mappable markers for field mapping UI |
 | DB collections | `server/db/index.js` | `importJobs`, `stagedTransactions`, `transactions` — all wrapped NeDB |
@@ -60,10 +60,11 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 | Connection | File | What it does | Impact |
 | ---------- | ---- | ------------ | ------ |
 | **Expense linking** | `expenseService.js` linkTransaction/unlinkTransaction | Stores transactionId in expense.transactions[] array | Bidirectional link |
-| **Expense enrichment** | `expenseService.js` getById | Fetches linked transactions, computes transactionsTotal + remainingBalance | Balance calculation |
+| **Expense balance (frontend)** | `ExpenseForm.jsx` | Fetches linked transactions via `transactionsApi.getAll({ ids })`, computes remaining = amount + Σtx.amount client-side (expense detail no longer embeds them) | Balance calculation |
 | **Invoice linking** | `invoiceService.js` linkTransaction/unlinkTransaction | Stores transactionId in invoice.transactions[] array | Bidirectional link |
-| **Invoice enrichment** | `invoiceService.js` getById | Fetches linked transactions, computes transactionsTotal + remainingBalance | Balance calculation |
-| **Transaction enrichment** | `transactionService.js` getById | Finds expenses/invoices that reference this tx ID, computes totals | Reverse lookup |
+| **Invoice balance (frontend)** | `InvoiceForm.jsx` | Fetches linked transactions via `transactionsApi.getAll({ ids })`, computes remaining = total − Σ\|tx.amount\| client-side (invoice detail no longer embeds them) | Balance calculation |
+| **Reverse lookup** | `invoiceService.js`/`expenseService.js` getAll | `?transactionId=` entity param (NeDB array containment on stored `transactions[]`) answers "which invoices/expenses link this transaction" — used by TransactionForm/TransactionDrawer (transaction `getById` is a bare findOne) | Reverse lookup |
+| **Agent tool get_invoice** | `server/services/agentToolRegistry.js` | Fetches an invoice's linked payments via `transactionService.getAll({ ids })` under the caller's identity | Read-only |
 | **AI config** | `server/db/aiConfig.js` | Provides apiKey, model, systemPrompt, maxTokens, timeout for AI parsing | Config dependency |
 | **Expense form** | `ExpenseForm.jsx` | Link/unlink transaction buttons, balance display | UI integration |
 | **Invoice form** | `InvoiceForm.jsx` | Link/unlink transaction buttons, balance display | UI integration |
@@ -97,8 +98,8 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 ## Blast Radius
 
 **If you change the transaction service:**
-- Check: Expense linking/enrichment still reads correct fields
-- Check: Invoice linking/enrichment still reads correct fields
+- Check: Expense/invoice link-unlink endpoints still update the stored `transactions[]` arrays correctly
+- Check: The `?ids=` param and the invoices/expenses `?transactionId=` reverse lookup still work (forms + `get_invoice` agent tool depend on them)
 - Check: updateMapping lock logic still works
 - Check: Transaction schema matches what staged tx submit produces
 
@@ -115,10 +116,11 @@ TransactionForm.jsx → transactionsApi → routes/transactions.js → transacti
 - Check: The caller-scoped visibility check (`importJobService.getById` → 404) still runs BEFORE `runAsSystem` — see Lessons Learned
 
 **If you change linking (expense/invoice ↔ transaction):**
-- Check: Both sides of the link are updated (expense.transactions[] and transaction enrichment)
-- Check: Balance calculations match (remainingBalance formula)
+- Check: The stored side (expense/invoice `transactions[]`) updates and the `?transactionId=` reverse lookup still finds it
+- Check: Client-side balance calculations in ExpenseForm/InvoiceForm/TransactionForm/TransactionDrawer match the documented formulas
 - Check: Unlink removes from correct array
 
 ## Lessons Learned
 
 - **`stagedTransactions.submit` must scope-check the caller BEFORE `runAsSystem`.** Named-action lifecycle routes (`requireAction` gate → `runAsSystem` execution) must first prove the caller can see the target under their own grants — a caller-scoped `importJobService.getById(importJobId)` returning 404 if invisible — because `runAsSystem` bypasses the read-filter merge. Without it, a user holding the `stagedTransactions.submit` action but with scoped `importJobs`/`stagedTransactions` reads could commit a job's staged rows into locked transactions by supplying its id, despite not being able to see the job. This mirrors the invoice (`confirm`/`post`/`unconfirm`/`updatePayment`) and importJob (`abandon`) routes — keep all named-action routes consistent on this pattern.
+- **Transaction detail enrichment ran two full-table scans and its read models got persisted elsewhere (fixed).** `getById` used to scan invoices + expenses to build linkedInvoices/linkedExpenses/totals/remainingBalance — and those read-model keys, echoed back by forms whose `update()` only stripped protected fields, ended up stored on documents where the related table's row filter never applies. `getById` is now a bare findOne; the reverse lookup is the invoices/expenses lists' `?transactionId=` param (array containment), the forward direction is transactions `?ids=`, and forms compute balances client-side. `update()` strips the old enrichment keys; `npm run repair:derived-fields` cleans historical pollution.

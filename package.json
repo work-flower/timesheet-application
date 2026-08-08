@@ -10,7 +10,8 @@
     "build:admin": "vite build --config vite.admin.config.js",
     "start": "node server/index.js",
     "seed": "node server/db/seed.js",
-    "migrate:timesheet-clientid": "node scripts/backfill-timesheet-clientId.js"
+    "migrate:timesheet-clientid": "node scripts/backfill-timesheet-clientId.js",
+    "repair:derived-fields": "node scripts/repair-derived-fields.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",

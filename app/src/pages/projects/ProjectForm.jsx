@@ -27,7 +27,7 @@ import {
   createTableColumn,
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
-import { projectsApi, clientsApi, documentsApi, invoicesApi } from '../../api/index.js';
+import { projectsApi, clientsApi, documentsApi, invoicesApi, timesheetsApi, expensesApi } from '../../api/index.js';
 import { FormSection, FormField, FormDataProvider } from '../../components/FormSection.jsx';
 import FormCommandBar from '../../components/FormCommandBar.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
@@ -266,6 +266,8 @@ export default function ProjectForm() {
   const [tab, setTab] = useState('general');
   const [documents, setDocuments] = useState([]);
   const [projectInvoices, setProjectInvoices] = useState([]);
+  const [projectTimesheets, setProjectTimesheets] = useState([]);
+  const [projectExpenses, setProjectExpenses] = useState([]);
   const [resourceDialogOpen, setResourceDialogOpen] = useState(false);
   const [editingResource, setEditingResource] = useState(null);
   const [resourceToDelete, setResourceToDelete] = useState(null);
@@ -277,11 +279,18 @@ export default function ProjectForm() {
         setAllClients(clients);
 
         if (!isNew) {
-          const [data, docs] = await Promise.all([
+          // Related records come from their own list endpoints (caller-scoped,
+          // enriched); each degrades to [] so a role without read on one child
+          // table still opens the form
+          const [data, docs, tsRows, expRows] = await Promise.all([
             projectsApi.getById(id),
-            documentsApi.getAll({ projectId: id }),
+            documentsApi.getAll({ projectId: id }).catch(() => []),
+            timesheetsApi.getAll({ projectId: id }).catch(() => []),
+            expensesApi.getAll({ projectId: id }).catch(() => []),
           ]);
           setDocuments(docs);
+          setProjectTimesheets(tsRows);
+          setProjectExpenses(expRows);
           setProjectData(data);
           // Fetch invoices for this project's client
           if (data.clientId) {
@@ -464,8 +473,8 @@ export default function ProjectForm() {
           <TabList selectedValue={tab} onTabSelect={(e, data) => setTab(data.value)} className={styles.tabs}>
             <Tab value="general">General</Tab>
             <Tab value="resources">Resources ({(form.resources || []).length})</Tab>
-            <Tab value="timesheets">Timesheets ({projectData?.timesheets?.length || 0})</Tab>
-            <Tab value="expenses">Expenses ({projectData?.expenses?.length || 0})</Tab>
+            <Tab value="timesheets">Timesheets ({projectTimesheets.length})</Tab>
+            <Tab value="expenses">Expenses ({projectExpenses.length})</Tab>
             <Tab value="documents">Documents ({documents.length})</Tab>
             <Tab value="invoices">Invoices ({projectInvoices.length})</Tab>
           </TabList>
@@ -618,13 +627,13 @@ export default function ProjectForm() {
           )}
 
           {tab === 'timesheets' && projectData && (
-            (projectData.timesheets || []).length === 0 ? (
+            projectTimesheets.length === 0 ? (
               <div className={styles.empty}>
                 <Text>No timesheet entries for this project.</Text>
               </div>
             ) : (
               <DataGrid
-                items={projectData.timesheets || []}
+                items={projectTimesheets}
                 columns={timesheetColumns}
                 sortable
                 getRowId={(item) => item._id}
@@ -653,13 +662,13 @@ export default function ProjectForm() {
           )}
 
           {tab === 'expenses' && projectData && (
-            (projectData.expenses || []).length === 0 ? (
+            projectExpenses.length === 0 ? (
               <div className={styles.empty}>
                 <Text>No expenses for this project.</Text>
               </div>
             ) : (
               <DataGrid
-                items={projectData.expenses || []}
+                items={projectExpenses}
                 columns={expenseColumns}
                 sortable
                 getRowId={(item) => item._id}

@@ -1,5 +1,6 @@
 import { clients, projects, timesheets } from '../db/index.js';
 import { buildQuery, applySelect, formatResponse } from '../odata.js';
+import { applyExpand } from '../expand.js';
 import { assertNotLocked } from './lockCheck.js';
 
 export async function getAll(query = {}) {
@@ -47,19 +48,7 @@ export async function getAll(query = {}) {
     };
   });
 
-  // $expand
-  if (query.$expand) {
-    const expands = query.$expand.split(',').map(s => s.trim());
-    for (const item of enriched) {
-      if (expands.includes('project')) {
-        item.project = projectMap[item.projectId] || null;
-      }
-      if (expands.includes('client')) {
-        const project = projectMap[item.projectId];
-        item.client = project ? (clientMap[project.clientId] || null) : null;
-      }
-    }
-  }
+  await applyExpand('timesheets', enriched, query.$expand);
 
   // Group if requested (applied after OData pipeline)
   if (query.groupBy) {
@@ -187,6 +176,13 @@ export async function update(id, data) {
   delete updateData.createdAt;
   delete updateData.isLocked;
   delete updateData.isLockedReason;
+  // Read-model echoes (effectiveRate/effectiveWorkingHours are stripped later —
+  // the mismatch-warning checks below read them first)
+  delete updateData.projectName;
+  delete updateData.clientName;
+  delete updateData.project;
+  delete updateData.client;
+  delete updateData.warnings;
 
   // Type coercion
   if (updateData.hours !== undefined) updateData.hours = Number(updateData.hours);
