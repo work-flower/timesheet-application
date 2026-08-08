@@ -7,8 +7,13 @@
  *              "$$startOfYear", "$$today+Nd" / "$$today-Nd"
  *
  * Temporal macros resolve to YYYY-MM-DD strings (the app's date format), except
- * "$$now" which resolves to a full ISO timestamp. "$$idsOf(...)" is reserved for
- * future lookup macros and is rejected.
+ * "$$now" which resolves to a full ISO timestamp.
+ *
+ * Lookup macro (object form, resolved server-side by resolveLookups):
+ *   { "field": { "$$idsOf": { "table": "projects", "select": "clientId",
+ *                             "filter": { "resources.userId": "$$user.id" } } } }
+ * collapses to { "field": { "$in": [ ...distinct select values... ] } } at grant
+ * resolution. The legacy string form "$$idsOf(...)" is rejected.
  *
  * JSON cannot store a RegExp and NeDB throws on string $regex patterns, so regex
  * conditions use the convention { "$regex": "pattern", "$flags": "i" } — resolved
@@ -64,7 +69,7 @@ function resolveString(value, user, now) {
         return toDateString(d);
       }
       if (value.startsWith('$$idsOf(')) {
-        throw new Error(`Lookup macros are reserved and not yet supported: ${value}`);
+        throw new Error(`Lookup macros use the object form { "$$idsOf": { table, select, filter } }, not a string: ${value}`);
       }
       throw new Error(`Unknown macro: ${value}`);
     }
@@ -80,6 +85,40 @@ function resolveString(value, user, now) {
  * @param {Date}   [now]  - Injectable clock for testing
  * @returns {object} filter ready to pass to NeDB
  */
+export const LOOKUP_KEY = '$$idsOf';
+
+/**
+ * Resolve $$idsOf lookup nodes into concrete { $in: [...] } conditions.
+ * Runs AFTER resolveMacros, so the node's inner filter already holds concrete
+ * identity/temporal values. Returns a new object — input is never mutated.
+ *
+ * The lookup executor is injected (this module is shared with the frontend and
+ * has no DB access): async ({ table, select, filter }) => [ids].
+ *
+ * @param {object} filter - Macro-resolved filter, possibly containing $$idsOf nodes
+ * @param {function} lookup - async ({ table, select, filter }) => array of values
+ * @returns {Promise<object>} filter with lookups collapsed, ready for NeDB
+ */
+export async function resolveLookups(filter, lookup) {
+  async function walk(node) {
+    if (Array.isArray(node)) return Promise.all(node.map(walk));
+    if (node && typeof node === 'object' && !(node instanceof RegExp)) {
+      const out = {};
+      for (const [k, v] of Object.entries(node)) {
+        if (k === LOOKUP_KEY) {
+          const ids = await lookup(v);
+          out.$in = ids;
+        } else {
+          out[k] = await walk(v);
+        }
+      }
+      return out;
+    }
+    return node;
+  }
+  return walk(filter);
+}
+
 export function resolveMacros(filter, user, now = new Date()) {
   function walk(node) {
     if (Array.isArray(node)) return node.map(walk);

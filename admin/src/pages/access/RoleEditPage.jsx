@@ -538,7 +538,8 @@ export default function RoleEditPage() {
                 </div>
 
                 <Text className={styles.hint}>
-                  Filters are NeDB queries; macros: $$user.id, $$user.email, $$today, $$startOfWeek/Month/Year, $$today±Nd.
+                  Filters are NeDB queries; macros: $$user.id, $$user.email, $$today, $$startOfWeek/Month/Year,
+                  $$today±Nd, $$idsOf (related-table lookup).
                 </Text>
                 <Text className={styles.hint}>
                   Hidden fields are masked/stripped for members on that operation; read-hidden fields are
@@ -573,7 +574,11 @@ export default function RoleEditPage() {
                     />
                   </Field>
                   <Text className={styles.hint}>
-                    Filters are NeDB queries; macros: $$user.id, $$user.email, $$today, $$startOfWeek/Month/Year, $$today±Nd.
+                    Filters are NeDB queries; macros: $$user.id, $$user.email, $$today, $$startOfWeek/Month/Year,
+                    $$today±Nd, $$idsOf (related-table lookup).
+                  </Text>
+                  <Text className={styles.hint}>
+                    {'Lookup example — clients where the member is a project resource: {"_id": {"$$idsOf": {"table": "projects", "select": "clientId", "filter": {"resources.userId": "$$user.id"}}}}'}
                   </Text>
                 </DialogContent>
                 <DialogActions>

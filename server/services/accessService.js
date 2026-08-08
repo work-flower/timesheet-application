@@ -1,6 +1,6 @@
-import { roles } from '../db/index.js';
+import { roles, collectionsByName } from '../db/index.js';
 import { runAsSystem } from '../pipeline/systemContext.js';
-import { resolveMacros } from '../../shared/authz/macros.js';
+import { resolveMacros, resolveLookups } from '../../shared/authz/macros.js';
 import { decodePrivileges } from '../../shared/authz/filterCodec.js';
 import { opValue } from '../../shared/authz/filterValidate.js';
 
@@ -20,13 +20,26 @@ import { opValue } from '../../shared/authz/filterValidate.js';
  * intersection ⇒ no exclusions. Stored op values may be plain (true|filter)
  * or the wrapper { access, fls } — normalised via opValue().
  *
- * Filters are macro-resolved here (identity + temporal), so the pipeline's
- * synchronous checkAccess receives ready-to-merge NeDB queries.
+ * Filters are macro-resolved here (identity + temporal), and $$idsOf lookup
+ * nodes are collapsed into concrete { $in: [...] } conditions (one system-scoped
+ * query per node, per request), so the pipeline's synchronous checkAccess
+ * receives ready-to-merge NeDB queries.
  */
 function intersectFls(prev, fls) {
   if (prev === null) return new Set(fls);
   const next = new Set(fls);
   return new Set([...prev].filter((f) => next.has(f)));
+}
+
+// $$idsOf executor — grants are not stamped yet while resolveGrants runs, so
+// lookups execute under system identity (same as the roles fetch above). The
+// inner filter is already macro-resolved. Distinct non-null values only; an
+// empty result yields { $in: [] } — matches nothing, preserving default deny.
+async function lookupIds({ table, select, filter }) {
+  const collection = collectionsByName[table];
+  if (!collection) throw new Error(`$$idsOf: unknown table "${table}"`);
+  const rows = await runAsSystem(() => collection.find(filter || {}));
+  return [...new Set(rows.map((row) => row[select]).filter((v) => v != null))];
 }
 
 export async function resolveGrants(user) {
@@ -53,7 +66,11 @@ export async function resolveGrants(user) {
       for (const op of ['read', 'update', 'delete']) {
         const { access, fls } = opValue(priv[op]);
         if (access === undefined || access === false) continue;
-        entry[op].push(access === true ? true : resolveMacros(access, macroUser, now));
+        entry[op].push(
+          access === true
+            ? true
+            : await resolveLookups(resolveMacros(access, macroUser, now), lookupIds)
+        );
         // fls intersects only across roles that GRANT the op (delete never carries fls)
         if (op !== 'delete') entry.fls[op] = intersectFls(entry.fls[op], fls);
       }

@@ -544,7 +544,7 @@ Granular permission roles. Each role holds per-table privileges with optional pr
 |-------|-------------|
 | name | Required |
 | description | Optional |
-| privileges | `{ [table]: { read: filter\|bool\|{access, fls}, create: bool\|{access, fls}, update: <as read>, delete: filter\|bool, actions: [names] } }`. Filters are Mongo-style NeDB queries supporting macros (`$$user.*`, `$$today`, …). `fls` is a per-operation excluded-field list (field-level security — see `authorisation.md`); the `{access, fls}` wrapper is stored only when fls is non-empty, `delete` never carries fls. Stored key-escaped on disk (NeDB constraint), decoded on read |
+| privileges | `{ [table]: { read: filter\|bool\|{access, fls}, create: bool\|{access, fls}, update: <as read>, delete: filter\|bool, actions: [names] } }`. Filters are Mongo-style NeDB queries supporting macros (`$$user.*`, `$$today`, …) and the `$$idsOf` related-table lookup node (collapses to `$in` at grant resolution — see `authorisation.md` → Filter Language). `fls` is a per-operation excluded-field list (field-level security — see `authorisation.md`); the `{access, fls}` wrapper is stored only when fls is non-empty, `delete` never carries fls. Stored key-escaped on disk (NeDB constraint), decoded on read |
 | userIds | Array of member user ids (managed via `syncMembership` only) |
 
 **Computed field (returned by API, not stored):** `userCount`.

@@ -2,7 +2,7 @@
  * Validation for stored role pre-filter queries and role privilege maps.
  * Shared between server (role save) and admin frontend (Roles editor on-blur checks).
  */
-import { SIMPLE_MACROS } from './macros.js';
+import { SIMPLE_MACROS, LOOKUP_KEY } from './macros.js';
 import { isKnownTable, knownActionsFor, PROTECTED_FIELDS } from './registry.js';
 
 const TODAY_OFFSET = /^\$\$today([+-]\d+)d$/;
@@ -59,6 +59,42 @@ function validateWrapperShape(value, label, errors) {
   }
 }
 
+function containsLookup(node) {
+  if (Array.isArray(node)) return node.some(containsLookup);
+  if (node && typeof node === 'object') {
+    return Object.entries(node).some(([k, v]) => k === LOOKUP_KEY || containsLookup(v));
+  }
+  return false;
+}
+
+// { "$$idsOf": { table, select, filter } } — collapses to { $in: [...] } at
+// grant resolution, so it must sit in operator position under a field key.
+function validateLookupNode(value, path, errors) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`${path}: $$idsOf must be an object { table, select, filter }`);
+    return;
+  }
+  for (const key of Object.keys(value)) {
+    if (!['table', 'select', 'filter'].includes(key)) {
+      errors.push(`${path}: unknown key "${key}" (expected table, select, filter)`);
+    }
+  }
+  if (!isKnownTable(value.table)) {
+    errors.push(`${path}.table: unknown table "${value.table}"`);
+  }
+  if (typeof value.select !== 'string' || value.select.trim() === '') {
+    errors.push(`${path}.select: must be a field name`);
+  } else if (value.select.startsWith('$') || value.select.includes('.')) {
+    errors.push(`${path}.select: must be a top-level field name`);
+  }
+  if (containsLookup(value.filter)) {
+    errors.push(`${path}.filter: nested $$idsOf lookups are not supported`);
+  } else {
+    const inner = validateFilter(value.filter);
+    if (!inner.ok) errors.push(...inner.errors.map((e) => `${path}.filter: ${e}`));
+  }
+}
+
 /**
  * Validate a single stored filter object.
  * @returns {{ ok: boolean, errors: string[] }}
@@ -86,6 +122,14 @@ export function validateFilter(filter) {
           errors.push(`${p}: $where is not allowed in stored filters`);
           continue;
         }
+        if (key === LOOKUP_KEY) {
+          if (path === '') {
+            errors.push(`${p}: $$idsOf must be nested under a field (e.g. {"_id": {"$$idsOf": {...}}})`);
+          } else {
+            validateLookupNode(value, p, errors);
+          }
+          continue;
+        }
         if (key === '$regex') {
           if (typeof value !== 'string') {
             errors.push(`${p}: $regex must be a string pattern`);
@@ -110,7 +154,7 @@ export function validateFilter(filter) {
     }
     if (typeof node === 'string' && node.startsWith('$$')) {
       if (node.startsWith('$$idsOf(')) {
-        errors.push(`${path}: lookup macros ($$idsOf) are reserved and not yet supported`);
+        errors.push(`${path}: $$idsOf uses the object form {"$$idsOf": {"table": ..., "select": ..., "filter": ...}}, not a string`);
       } else if (!SIMPLE_MACROS.includes(node) && !TODAY_OFFSET.test(node)) {
         errors.push(`${path}: unknown macro "${node}"`);
       }

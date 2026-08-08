@@ -12,7 +12,7 @@ Everything is gated by the **`AUTH_ENABLED`** env var. Unset/false = legacy sing
 shared/authz/
   registry.js       — TABLES (19 wrapped collections), ACTIONS per table, BASELINE_READ_TABLES, PROTECTED_FIELDS (never fls-excludable)
   macros.js         — resolveMacros(): $$user.*, $$today, $$startOfMonth, $$today±Nd, $regex rehydration
-  filterValidate.js — validateFilter() / validatePrivileges() (bans $where, unknown macros/tables/actions; fls wrapper validation), opValue() normaliser
+  filterValidate.js — validateFilter() / validatePrivileges() (bans $where, unknown macros/tables/actions; $$idsOf lookup-node validation; fls wrapper validation), opValue() normaliser
   filterCodec.js    — encodePrivileges()/decodePrivileges() — NeDB storage escaping (see Lessons)
   redaction.js      — REDACTED sentinel ('***redacted***') shared by the server mask hook and the app UI
 
@@ -150,7 +150,28 @@ Macros (resolved per-request in `accessService` before the pipeline sees them):
 | `$$today` | `YYYY-MM-DD` |
 | `$$startOfWeek` (Mon) / `$$startOfMonth` / `$$startOfYear` | `YYYY-MM-DD` |
 | `$$today+Nd` / `$$today-Nd` | Day-offset `YYYY-MM-DD` |
-| `$$idsOf(...)` | RESERVED — rejected until lookup macros ship |
+| `{"$$idsOf": {table, select, filter}}` | Lookup node (object form, operator position) — see below |
+
+### Lookup macro `$$idsOf`
+
+The one sanctioned cross-table construct. An operator-position node
+
+```json
+{ "_id": { "$$idsOf": { "table": "projects", "select": "clientId",
+                        "filter": { "resources.userId": "$$user.id" } } } }
+```
+
+collapses at grant resolution (`accessService.resolveLookups` executor) into `{ "_id": { "$in": [ ...distinct non-null clientId values... ] } }` — one system-scoped query per node per request (grants aren't stamped while `resolveGrants` runs, so lookups execute under `runAsSystem`, same as the roles fetch). An empty lookup result yields `$in: []` = matches nothing (default deny preserved). Macro resolution runs FIRST, so the inner `filter` may use identity/temporal macros.
+
+Rules (enforced by `validateFilter` at role save, shared with the admin editor):
+- Object form only — the legacy string form `"$$idsOf(...)"` is rejected.
+- Must sit under a field key, never at the filter root; sibling operators beside it are allowed (it becomes `$in` in place).
+- `table` must be a registry table; `select` is a single top-level field name; `filter` validates recursively; **no nested lookups**.
+
+Canonical recipes (resource-scoped role):
+- clients read: `{"_id": {"$$idsOf": {"table": "projects", "select": "clientId", "filter": {"resources.userId": "$$user.id"}}}}`
+- projects read needs no lookup — resources are on the record: `{"resources.userId": "$$user.id"}`
+- timesheets/expenses: the project lookup alone is **project-level** — on a shared project it exposes every resource's rows. Timesheet/expense records carry no resource identity, so "own rows only" combines the lookup with a role-authored attribution filter (same documented-exception pattern as `conversations`): `{"createdBy": "$$user.email", "projectId": {"$$idsOf": {"table": "projects", "select": "_id", "filter": {"resources.userId": "$$user.id"}}}}`. Apply to update/delete too, not just read. Caveats: rows created before AUTH_ENABLED (or by `system`, e.g. seeds) have no matching `createdBy` and disappear from the scoped view; `create` is boolean-only (not filterable), so nothing stops a POST onto an unassigned project at the API level — the scoped projects picker is the practical guard, and the row would be invisible to its creator afterwards.
 
 ## Impersonation ("View As")
 
@@ -190,7 +211,7 @@ Two Phase-3 tables ride the standard engine (full wiring in `agents.md`):
 ## Golden Rules
 
 1. **Baseline reads**: list enrichment reads `clients`, `projects`, `settings` — every functional role MUST grant read on these (see `BASELINE_READ_TABLES`) or list endpoints 403 mid-request. This is deliberate (no graceful degradation): misconfigured roles fail loudly.
-2. Filters can only reference fields ON the record itself (no joins, no lookup macros yet) — e.g. scoping timesheets by client requires enumerating `projectId $in [...]` statically.
+2. Filters reference fields ON the record itself; the ONE cross-table construct is the `$$idsOf` lookup node (see Filter Language) — it collapses to a concrete `$in` before the pipeline sees the filter, so `checkAccess` stays synchronous and join-free.
 3. Membership writes go through `userService.syncMembership` only — never touch `roleIds`/`userIds` directly.
 4. Role privilege writes go through `roleService` only — it validates AND encodes; raw `roles.update` with plain filters will corrupt the store (see Lessons).
 
