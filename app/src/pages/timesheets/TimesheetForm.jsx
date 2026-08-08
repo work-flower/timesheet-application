@@ -325,7 +325,7 @@ export default function TimesheetForm() {
             </FormField>
             <FormField name="hours">
               <Field label="Hours" required hint={`Between 0.25 and 24, in 0.25 increments${selectedProject ? `. Project daily hours: ${selectedProject.effectiveWorkingHours || 8}h` : ''}`}>
-                <Input type="number" name="hours" value={String(form.hours ?? '')} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
+                <Input type="number" name="hours" value={String(selectedProject.effectiveWorkingHours ?? form.hours ?? '')} onChange={handleChange('hours')} min="0.25" max="24" step="0.25" />
               </Field>
             </FormField>
             <div className={styles.daysAmountCell}>
