@@ -5,7 +5,7 @@ import {
   Breadcrumb, BreadcrumbItem, BreadcrumbDivider, BreadcrumbButton,
   Badge, Button, Tooltip, Tab, TabList,
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent,
-  Menu, MenuTrigger, MenuPopover, MenuList, MenuItem,
+  Menu, MenuTrigger, MenuPopover, MenuList, MenuItem, MenuDivider,
 } from '@fluentui/react-components';
 import {
   AddRegular, DeleteRegular, CalendarClockRegular, DismissRegular, DismissCircleRegular,
@@ -230,6 +230,7 @@ export default function DailyPlanForm() {
   const [briefingDays, setBriefingDays] = useState([]);
   const [briefingDaysLoading, setBriefingDaysLoading] = useState(false);
   const [briefingDaysCount, setBriefingDaysCount] = useState(5);
+  const [briefingLastPlanMode, setBriefingLastPlanMode] = useState(false);
   const [aiBannerText, setAiBannerText] = useState(null);
   const recapPollRef = useRef(null);
   const briefingPollRef = useRef(null);
@@ -405,8 +406,17 @@ export default function DailyPlanForm() {
 
   // --- Briefing handlers ---
 
+  // Switch to the briefing tab, submit the briefing for the given dates and start polling.
+  const submitBriefing = async (dates) => {
+    setActiveInsightTab('briefing');
+    try { localStorage.setItem('dailyPlan.insightTab', 'briefing'); } catch {}
+    await dailyPlansApi.generateBriefing(id, dates);
+    startBriefingPoll(loadPlan);
+  };
+
   const openBriefingDialog = async (days) => {
     setBriefingDaysCount(days);
+    setBriefingLastPlanMode(false);
     setBriefingDaysLoading(true);
     setBriefingDialogOpen(true);
     try {
@@ -426,12 +436,32 @@ export default function DailyPlanForm() {
       const days = await dailyPlansApi.checkBriefingDays(id, 1);
       const prev = days[0];
       if (prev && prev.hasPlan && prev.recapStatus === 'completed' && !prev.recapIsStale) {
-        setActiveInsightTab('briefing');
-        try { localStorage.setItem('dailyPlan.insightTab', 'briefing'); } catch {}
-        await dailyPlansApi.generateBriefing(id, [prev.date]);
-        startBriefingPoll(loadPlan);
+        await submitBriefing([prev.date]);
       } else {
         openBriefingDialog(1);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleBriefingLastPlan = async () => {
+    // Find the most recent non-empty plan before this one — if its recap is fresh, submit
+    // directly; otherwise show the day picker with just that day so the recap gets generated first
+    try {
+      const day = await dailyPlansApi.getLastBriefingPlan(id);
+      if (!day) {
+        setError('No earlier daily plan with any content was found.');
+        return;
+      }
+      if (day.recapStatus === 'completed' && !day.recapIsStale) {
+        await submitBriefing([day.date]);
+        setAiBannerText(`Briefing is being generated from the last plan (${day.date})...`);
+      } else {
+        setBriefingLastPlanMode(true);
+        setBriefingDays([{ ...day, selected: true }]);
+        setBriefingDaysLoading(false);
+        setBriefingDialogOpen(true);
       }
     } catch (err) {
       setError(err.message);
@@ -468,8 +498,7 @@ export default function DailyPlanForm() {
         setError('No days with daily plans selected.');
         return;
       }
-      await dailyPlansApi.generateBriefing(id, selectedDates);
-      startBriefingPoll(loadPlan);
+      await submitBriefing(selectedDates);
     } catch (err) {
       setError(err.message);
       setAiBannerText(null);
@@ -978,6 +1007,8 @@ export default function DailyPlanForm() {
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
+                <MenuItem onClick={handleBriefingLastPlan}>The last plan</MenuItem>
+                <MenuDivider />
                 <MenuItem onClick={() => openBriefingDialog(3)}>Last 3 days</MenuItem>
                 <MenuItem onClick={() => openBriefingDialog(5)}>Last 5 days</MenuItem>
                 <MenuItem onClick={() => openBriefingDialog(7)}>Last 7 days</MenuItem>
@@ -1397,14 +1428,16 @@ export default function DailyPlanForm() {
       <Dialog open={briefingDialogOpen} onOpenChange={(_, data) => { if (!data.open) setBriefingDialogOpen(false); }}>
         <DialogSurface style={{ maxWidth: '480px' }}>
           <DialogBody>
-            <DialogTitle>Briefing — Select Days</DialogTitle>
+            <DialogTitle>{briefingLastPlanMode ? 'Briefing — The Last Plan' : 'Briefing — Select Days'}</DialogTitle>
             <DialogContent>
               {briefingDaysLoading ? (
                 <div style={{ padding: '24px', textAlign: 'center' }}><Spinner size="small" label="Checking previous days..." /></div>
               ) : (
                 <>
                   <Text size={200} style={{ display: 'block', marginBottom: '8px', color: tokens.colorNeutralForeground3 }}>
-                    Select which days to include. Days with stale or missing recaps will be generated automatically before briefing.
+                    {briefingLastPlanMode
+                      ? 'This is the most recent daily plan with content. Its recap is stale or missing and will be generated before the briefing.'
+                      : 'Select which days to include. Days with stale or missing recaps will be generated automatically before briefing.'}
                   </Text>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '12px' }}>
                     {briefingDays.map((day, idx) => (

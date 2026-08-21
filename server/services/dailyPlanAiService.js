@@ -493,35 +493,49 @@ export async function checkBriefingDays(planId, days) {
     const d = new Date(planDate);
     d.setDate(d.getDate() - i);
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const dayOfWeek = d.getDay();
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const dayName = d.toLocaleDateString('en-GB', { weekday: 'short' });
-
     const plan = await dailyPlanService.getById(dateStr);
-    const hasPlan = !!plan;
-
-    let recapStatus = 'idle';
-    let recapIsStale = false;
-    if (hasPlan) {
-      const recap = dailyPlanService.getRecapStatus(dateStr);
-      recapStatus = recap.status;
-      if (recap.status === 'completed' && plan.updatedAt) {
-        recapIsStale = recap.recapMtime < new Date(plan.updatedAt).getTime();
-      }
-    }
-
-    result.push({
-      date: dateStr,
-      dayName,
-      isWeekend,
-      hasPlan,
-      recapStatus,
-      recapIsStale,
-      defaultSelected: hasPlan,
-    });
+    result.push(describeBriefingDay(dateStr, plan));
   }
 
   return result;
+}
+
+/**
+ * Find the most recent non-empty plan before this one (for the "The last plan"
+ * briefing option). Returns the same day descriptor shape as checkBriefingDays,
+ * or null when no earlier plan has any content.
+ */
+export async function checkLastPlanDay(planId) {
+  const plan = await dailyPlanService.findLastNonEmptyPlan(planId);
+  if (!plan) return null;
+  return describeBriefingDay(plan._id, plan);
+}
+
+// Day descriptor shared by the briefing day-picker flows: plan existence + recap status.
+function describeBriefingDay(dateStr, plan) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const dayOfWeek = d.getDay();
+  const hasPlan = !!plan;
+
+  let recapStatus = 'idle';
+  let recapIsStale = false;
+  if (hasPlan) {
+    const recap = dailyPlanService.getRecapStatus(dateStr);
+    recapStatus = recap.status;
+    if (recap.status === 'completed' && plan.updatedAt) {
+      recapIsStale = recap.recapMtime < new Date(plan.updatedAt).getTime();
+    }
+  }
+
+  return {
+    date: dateStr,
+    dayName: d.toLocaleDateString('en-GB', { weekday: 'short' }),
+    isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
+    hasPlan,
+    recapStatus,
+    recapIsStale,
+    defaultSelected: hasPlan,
+  };
 }
 
 /**

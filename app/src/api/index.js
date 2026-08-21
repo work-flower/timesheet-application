@@ -643,6 +643,7 @@ export const dailyPlansApi = {
   },
   getRecapStatus: (id) => request(`/daily-plans/${id}/recap/status`),
   checkBriefingDays: (id, days = 5) => request(`/daily-plans/${id}/briefing/check-days?days=${days}`),
+  getLastBriefingPlan: (id) => request(`/daily-plans/${id}/briefing/last-plan`),
   generateBriefing: (id, selectedDates) => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return request(`/daily-plans/${id}/briefing`, { method: 'POST', body: JSON.stringify({ selectedDates, userTimezone: tz }) });

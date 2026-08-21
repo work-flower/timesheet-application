@@ -75,6 +75,38 @@ export async function exists(id) {
   return !!(await dailyPlans.findOne({ _id: id }));
 }
 
+// True when the Miscellaneous content has been edited away from the create-on-open template.
+function hasUserContent(date) {
+  const contentPath = getContentPath(date);
+  if (!existsSync(contentPath)) return false;
+  const text = readFileSync(contentPath, 'utf8').trim();
+  return text !== '' && text !== DEFAULT_CONTENT.trim();
+}
+
+// A plan is "empty" when it was created-on-open and never used: nothing linked
+// (todos, timesheets, meeting notes, notebooks, tickets), no timesheet logged on
+// its date, no completed recap, and the Miscellaneous content is still the template.
+export async function isPlanEmpty(plan) {
+  if ((plan.todos || []).length > 0) return false;
+  if ((plan.timesheetIds || []).length > 0) return false;
+  if ((plan.meetingNotes || []).length > 0) return false;
+  if ((plan.notebookIds || []).length > 0) return false;
+  if ((plan.ticketIds || []).length > 0) return false;
+  if (getRecapStatus(plan._id).status === 'completed') return false;
+  if (hasUserContent(plan._id)) return false;
+  const dateTimesheets = await timesheets.find({ date: plan._id });
+  return dateTimesheets.length === 0;
+}
+
+// Most recent non-empty plan strictly before `beforeDate` (raw document, no enrichment), or null.
+export async function findLastNonEmptyPlan(beforeDate) {
+  const candidates = await dailyPlans.find({ _id: { $lt: beforeDate } }).sort({ _id: -1 });
+  for (const plan of candidates) {
+    if (!(await isPlanEmpty(plan))) return plan;
+  }
+  return null;
+}
+
 export async function getById(id) {
   const plan = await dailyPlans.findOne({ _id: id });
   if (!plan) return null;

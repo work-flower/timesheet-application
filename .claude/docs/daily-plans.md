@@ -12,7 +12,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | ---- | ---- | ----- |
 | Form | `app/src/pages/dailyPlans/DailyPlanForm.jsx` | 3-column grid: todos, tickets+comments, timeline. Milkdown editor for miscellaneous. Recap/briefing tab panel. Embedded timesheet popup. Comment-to-todo and ticket-to-todo flows. |
 | List | `app/src/pages/dailyPlans/DailyPlanList.jsx` | Card view with WeekIndicator, badges for todos/timesheets/meetings/recap status. Create-on-open pattern (navigates to date-keyed form). |
-| API client | `app/src/api/index.js` (dailyPlansApi) | ~22 methods: CRUD, content read/write, todo/timesheet/meeting-note/notebook management, recap/briefing generate/status/content, briefing day check, timesheet description |
+| API client | `app/src/api/index.js` (dailyPlansApi) | ~23 methods: CRUD, content read/write, todo/timesheet/meeting-note/notebook management, recap/briefing generate/status/content, briefing day check, last-plan lookup (`getLastBriefingPlan`), timesheet description |
 | WeekIndicator | `app/src/components/WeekIndicator.jsx` | Reusable week day indicator showing which days have plans |
 | TicketsListCard | `app/src/components/cards/TicketsListCard.jsx` | Compact ticket list with comments panel, used in DailyPlanForm. Supports onCommentClick, onTicketShortcutClick. |
 
@@ -20,9 +20,9 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 
 | What | File | Notes |
 | ---- | ---- | ----- |
-| Routes | `server/routes/dailyPlans.js` | ~22 endpoints: CRUD, content, todos, timesheets, meeting notes, notebooks, change-date, recap (generate/status/content), briefing (generate/status/content/check-days). TTS audio uploads use `createUpload` from `server/pipeline/uploads.js` (never raw multer), are gated by `requireAction('dailyPlans','upload')`, and 404 via the caller-scoped `exists()` probe before writing to disk |
-| Service | `server/services/dailyPlanService.js` | CRUD, todo/timesheet/meeting-note/notebook linking, file-based content/recap/briefing management, recap status detection from filesystem. `exists(id)` — lean caller-scoped existence probe (no cross-entity enrichment, unlike `getById`) |
-| AI service | `server/services/dailyPlanAiService.js` | generateRecap, generateBriefing, checkBriefingDays, generateMeetingSummary. File-based state machine (backup → generate → restore on failure). |
+| Routes | `server/routes/dailyPlans.js` | ~23 endpoints: CRUD, content, todos, timesheets, meeting notes, notebooks, change-date, recap (generate/status/content), briefing (generate/status/content/check-days/last-plan). TTS audio uploads use `createUpload` from `server/pipeline/uploads.js` (never raw multer), are gated by `requireAction('dailyPlans','upload')`, and 404 via the caller-scoped `exists()` probe before writing to disk |
+| Service | `server/services/dailyPlanService.js` | CRUD, todo/timesheet/meeting-note/notebook linking, file-based content/recap/briefing management, recap status detection from filesystem. `exists(id)` — lean caller-scoped existence probe (no cross-entity enrichment, unlike `getById`). `isPlanEmpty(plan)` + `findLastNonEmptyPlan(beforeDate)` — emptiness test and reverse scan for the "The last plan" briefing option |
+| AI service | `server/services/dailyPlanAiService.js` | generateRecap, generateBriefing, checkBriefingDays, checkLastPlanDay, generateMeetingSummary. File-based state machine (backup → generate → restore on failure). `describeBriefingDay` builds the shared day descriptor (`date`, `dayName`, `isWeekend`, `hasPlan`, `recapStatus`, `recapIsStale`, `defaultSelected`) for both day-check flows. |
 | DB collection | `server/db/index.js` | `dailyPlans` — wrapped NeDB via execution pipeline |
 
 ## Data Model
@@ -74,6 +74,8 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 1. **Date as primary key** — `_id` is the date string `YYYY-MM-DD`. One plan per day. Create-on-open pattern: navigating to a date auto-creates the plan if it doesn't exist.
 2. **File-based state machine for recap/briefing** — Backup existing file → generate → on success remove backup → on failure restore backup and write error file. Never lose a previously good recap/briefing.
 3. **Recap before briefing** — Briefing requires fresh recaps for selected days. Day picker dialog shows recap status. Stale/missing recaps are generated sequentially before briefing.
+   - **Briefing scopes:** the default button uses yesterday; the split-button menu offers **The last plan** (most recent non-empty plan before this date, found server-side via `GET /:id/briefing/last-plan`) and **Last 3/5/7 days** (calendar window). The last-plan option mirrors the default button: if the found plan's recap is fresh, the briefing is submitted directly; otherwise the day picker opens with just that day so its recap is generated first. No earlier non-empty plan → error banner, nothing submitted.
+   - **Plan emptiness** (`dailyPlanService.isPlanEmpty`): a plan is empty when it has no linked todos/timesheets/meeting notes/notebooks/tickets, no timesheet logged on its date, no completed recap, and its `content.md` still equals the create-on-open template (`## Miscellaneous`). Create-on-open plans left untouched are therefore skipped by the last-plan lookup.
 4. **Timesheet-first AI context** — Both recap and briefing contexts lead with timesheet entries. Missing timesheets are flagged as RED FLAG in the context for the AI to surface.
 5. **Content auto-save** — Milkdown editor content is debounce-saved to disk, not to the DB. Content is read/written via dedicated API endpoints.
 6. **Recap staleness** — Determined by comparing `recap.md` mtime against `plan.updatedAt`. If plan was updated after recap was generated, recap is stale.
@@ -91,6 +93,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | Briefing generation | `dailyPlanAiService.generateBriefing` — refresh calendar + ticket sources, then todo carry-forward + recap collection + callClaude |
 | Recap status detection | `dailyPlanService.getRecapStatus` — checks recap.md existence, mtime, error file |
 | Briefing day check | `dailyPlanAiService.checkBriefingDays` — returns days with plan existence + recap status |
+| Last non-empty plan lookup | `dailyPlanService.findLastNonEmptyPlan` (reverse `_id` scan, `isPlanEmpty` per candidate) → `dailyPlanAiService.checkLastPlanDay` → `DailyPlanForm.handleBriefingLastPlan` |
 | Meeting note lifecycle | `DailyPlanForm.jsx` — calendar event click creates/opens notebook, stores link in meetingNotes. On creation: AI generates summary + hashtags, attendees grouped by role (Organiser/Attendees/Optional/Room). |
 | Timesheet popup | `DailyPlanForm.jsx` — embedded iframe with query string pre-fill (date + notes from meetings/todos) |
 | Comment-to-todo | `DailyPlanForm.jsx` — TicketsListCard onCommentClick → dialog → create todo |
@@ -105,6 +108,7 @@ DailyPlanForm.jsx / DailyPlanList.jsx → dailyPlansApi (api/index.js) → route
 | Changing recap/briefing file paths | `dailyPlanService` (getRecapFilePaths/getBriefingFilePaths), `dailyPlanAiService` (generate functions), `backupService` (backup/restore) |
 | Changing AI prompts | `aiConfigService` (defaults), admin `AiConfigPage` (editor), `dailyPlanAiService` (reads config) |
 | Changing todo linking | `dailyPlanService` (add/remove/delete), `dailyPlanAiService` (carry-forward), `DailyPlanForm` (all todo handlers) |
+| Changing what counts as plan content (new link arrays, default content template) | `dailyPlanService.isPlanEmpty` — add the new field/condition or the last-plan lookup will skip plans that only carry that data |
 | Changing meeting note structure | `DailyPlanForm` (event click handler), `dailyPlanAiService.buildContext` (reads notebook content) |
 | Changing notebook linking | `dailyPlanService` (add/remove), `DailyPlanForm` (banner, search dialog, import handler) |
 | Changing timesheet description logic | `DailyPlanForm.handleTimesheetWithAi` only (deterministic, frontend-only) |

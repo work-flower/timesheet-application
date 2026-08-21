@@ -260,6 +260,17 @@ router.get('/:id/briefing/check-days', async (req, res) => {
   }
 });
 
+// Find the last non-empty plan before this one ("The last plan" briefing option).
+// Responds with a day descriptor (same shape as check-days) or null when none exists.
+router.get('/:id/briefing/last-plan', async (req, res) => {
+  try {
+    const result = await dailyPlanAiService.checkLastPlanDay(req.params.id);
+    res.json(result);
+  } catch (err) {
+    respondError(res, err, 500);
+  }
+});
+
 // Submit briefing generation (batch — returns immediately)
 router.post('/:id/briefing', async (req, res) => {
   try {
