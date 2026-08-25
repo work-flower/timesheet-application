@@ -7,8 +7,8 @@ import { getTraceId } from './traceId.js';
  * shared request() helper (always .json()s) nor EventSource (GET-only, no
  * custom headers) fits — we read the ReadableStream directly and parse frames.
  *
- * onEvent receives neutral events: { type: 'text'|'thinking'|'tool_use'|
- * 'agent'|'consulted'|'proposal'|'proposal_resolved'|'stop'|'error'|'done', ... }.
+ * onEvent receives neutral events: { type: 'text'|'thinking'|'status'|'tool_use'|
+ * 'consulted'|'proposal'|'proposal_resolved'|'stop'|'error'|'done', ... }.
  * Pass an AbortSignal to cancel (the server aborts upstream on disconnect).
  */
 async function streamSse(url, body, { onEvent, signal } = {}) {
@@ -71,12 +71,13 @@ export function streamChat(conversationId, message, { providerId, onEvent, signa
 }
 
 /** Confirm an action-card proposal: the server executes the write under the
- *  caller's identity, then resumes the proposing agent's loop — so the
- *  response is a stream (proposal_resolved first, then narration). */
-export function streamProposalConfirm(conversationId, proposalId, { onEvent, signal } = {}) {
+ *  caller's identity (merging `input` — the keys the user edited on the card —
+ *  over the proposed values), then resumes the master's loop — so the response
+ *  is a stream (proposal_resolved first, then narration). */
+export function streamProposalConfirm(conversationId, proposalId, { input, onEvent, signal } = {}) {
   return streamSse(
     `/api/conversations/${conversationId}/proposals/${encodeURIComponent(proposalId)}/confirm`,
-    {},
+    input ? { input } : {},
     { onEvent, signal },
   );
 }

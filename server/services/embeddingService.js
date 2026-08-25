@@ -87,6 +87,55 @@ export function cosineSim(a, b) {
   return dot;
 }
 
+// -- Long-text similarity (verify/claim fixed-point detection) ----------------
+
+const CHUNK_SIZE = 1000; // chars — comfortably inside MiniLM's ~256-token window
+
+/** Split on paragraph/sentence boundaries and greedily pack into ≤ CHUNK_SIZE
+ *  pieces; a single oversized sentence is hard-split. */
+function chunkText(text, size = CHUNK_SIZE) {
+  const parts = String(text).split(/\n\s*\n|(?<=[.!?])\s+/).map((p) => p.trim()).filter(Boolean);
+  const chunks = [];
+  let current = '';
+  for (const part of parts) {
+    if (part.length > size) {
+      if (current) { chunks.push(current); current = ''; }
+      for (let i = 0; i < part.length; i += size) chunks.push(part.slice(i, i + size));
+      continue;
+    }
+    if (current && current.length + 1 + part.length > size) {
+      chunks.push(current);
+      current = part;
+    } else {
+      current = current ? `${current} ${part}` : part;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.length ? chunks : [String(text)];
+}
+
+/** Embed arbitrarily long text: chunk → embed → mean → re-normalise. The
+ *  extractor silently truncates long inputs, so a single embed of a long
+ *  answer would only ever compare its opening paragraph. */
+async function embedLong(text, modelId) {
+  const vecs = await embed(chunkText(text), modelId);
+  if (vecs.length === 1) return vecs[0];
+  const dim = vecs[0].length;
+  const mean = new Array(dim).fill(0);
+  for (const v of vecs) for (let i = 0; i < dim; i++) mean[i] += v[i];
+  let norm = 0;
+  for (let i = 0; i < dim; i++) { mean[i] /= vecs.length; norm += mean[i] * mean[i]; }
+  norm = Math.sqrt(norm) || 1;
+  return mean.map((x) => x / norm);
+}
+
+/** Cosine similarity between two texts of any length (0 when either is blank). */
+export async function similarity(a, b, modelId) {
+  if (!a || !b || !String(a).trim() || !String(b).trim()) return 0;
+  const [va, vb] = await Promise.all([embedLong(a, modelId), embedLong(b, modelId)]);
+  return cosineSim(va, vb);
+}
+
 /** Warm the model in the background (e.g. at boot) without blocking. */
 export function warmUp() {
   return getExtractor().then(() => true).catch(() => false);

@@ -147,6 +147,11 @@ export default function AgentCardsPage() {
                       <Badge appearance="tint" size="small">template override</Badge>
                     </Tooltip>
                   )}
+                  {card.verifyEnabled && (
+                    <Tooltip content="Answers are checked by a verifier against the agent's own context before they are relayed" relationship="description">
+                      <Badge appearance="tint" color="success" size="small">verified</Badge>
+                    </Tooltip>
+                  )}
                   <div className={styles.cardHeaderActions}>
                     <Tooltip content="Edit" relationship="label">
                       <Button

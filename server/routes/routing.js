@@ -60,16 +60,12 @@ router.post('/probe', async (req, res) => {
 
     const config = await routingConfigService.getConfig();
     const { candidates, top } = await findAgent(utterance);
+    // Two tiers only — the master always fronts the turn (no takeover).
     let tier = 'below-floor';
-    if (top) {
-      // Only AGENT-kind candidates can auto-route (tool matches are evidence-only).
-      if (top.kind === 'agent' && config.autoRouteEnabled !== false && top.score >= config.autoRouteThreshold) tier = 'auto-route';
-      else if (config.evidenceEnabled !== false && top.score >= config.evidenceFloor) tier = 'evidence';
-    }
+    if (top && config.evidenceEnabled !== false && top.score >= config.evidenceFloor) tier = 'evidence';
     res.json({
       tier,
       thresholds: {
-        autoRoute: config.autoRouteEnabled !== false ? config.autoRouteThreshold : null,
         evidence: config.evidenceEnabled !== false ? config.evidenceFloor : null,
       },
       top,

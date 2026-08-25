@@ -193,16 +193,13 @@ export default function CopilotPane({ onClose }) {
   // flushAssistant turns the buffer into a message bubble at each boundary.
   const makeStreamHandler = useCallback(() => {
     let assistantText = '';
-    let currentAgent = null; // direct takeover (@mention / auto-route / resume)
-    let consultedAgents = []; // specialists answered via master delegation
+    let consultedAgents = []; // specialists the master consulted (ask_agent / @mention)
     const startedAt = Date.now(); // per turn — bubbles show elapsed-since-ask
 
     const flushAssistant = () => {
       if (!assistantText) return;
       const content = assistantText;
-      const attribution = currentAgent
-        ? { agent: currentAgent }
-        : consultedAgents.length ? { agents: [...consultedAgents] } : {};
+      const attribution = consultedAgents.length ? { agents: [...consultedAgents] } : {};
       // durationMs is session-only (not persisted): user-perceived elapsed
       // time since the message was sent, cumulative across the turn's rounds.
       setMessages((prev) => [...prev, { role: 'assistant', content, ...attribution, durationMs: Date.now() - startedAt }]);
@@ -220,9 +217,10 @@ export default function CopilotPane({ onClose }) {
         case 'thinking':
           setActivity('Thinking…');
           break;
-        case 'agent':
-          currentAgent = event.agent;
-          setActivity(`@${event.agent} is answering…`);
+        case 'status':
+          // Server-authored progress line (e.g. verify/claim rounds inside a
+          // specialist consultation) — shown verbatim on the activity row.
+          setActivity(event.text || 'Working…');
           break;
         case 'consulted':
           consultedAgents = event.agents || [];
@@ -234,9 +232,11 @@ export default function CopilotPane({ onClose }) {
           setActivity(null);
           break;
         case 'proposal_resolved':
+          // `input` is present only when the user edited the card before
+          // confirming — the card then shows what was actually executed.
           setMessages((prev) => prev.map((m) => (
             m.role === 'proposal' && m.proposalId === event.proposalId
-              ? { ...m, status: event.status, result: event.content }
+              ? { ...m, status: event.status, result: event.content, ...(event.input ? { input: event.input } : {}) }
               : m
           )));
           break;
@@ -305,9 +305,10 @@ export default function CopilotPane({ onClose }) {
   // -- Action-card proposals -------------------------------------------------
   const [busyProposalId, setBusyProposalId] = useState(null);
 
-  // Confirm executes the write server-side and RESUMES the proposing agent's
-  // loop — a stream, handled exactly like a chat turn.
-  const confirmProposal = useCallback(async (proposalId) => {
+  // Confirm executes the write server-side (with the user's edits to the card,
+  // if any) and RESUMES the master's loop — a stream, handled exactly like a
+  // chat turn.
+  const confirmProposal = useCallback(async (proposalId, input) => {
     if (!activeId || streaming != null) return;
     setError(null);
     setBusyProposalId(proposalId);
@@ -318,7 +319,7 @@ export default function CopilotPane({ onClose }) {
     abortRef.current = controller;
     const handler = makeStreamHandler();
 
-    await streamProposalConfirm(activeId, proposalId, { signal: controller.signal, onEvent: handler.onEvent });
+    await streamProposalConfirm(activeId, proposalId, { input, signal: controller.signal, onEvent: handler.onEvent });
 
     setActivity(null);
     handler.flushAssistant();

@@ -7,10 +7,9 @@ import routingConfig from '../db/routingConfig.js';
  * read; changes take effect on the next turn, no restart).
  *
  * Basic (behaviour policy):
- *   autoRouteEnabled / autoRouteThreshold — ground-truth takeover tier (an
- *     utterance scoring ≥ threshold, i.e. present in the eval-set, routes
- *     straight to the specialist with no master round)
  *   evidenceEnabled / evidenceFloor — synthetic find_agent evidence attachment
+ *     (the only routing tier: the master always fronts the turn; there is no
+ *     takeover — @mentions force a consultation instead)
  *   maxCandidates — candidates shown to the master (evidence + find_agent)
  *   fallbackAgentSlug — agent attached as weak evidence when NOTHING clears
  *     the floor (deliberate fallback for context-dependent requests, e.g.
@@ -32,8 +31,6 @@ import routingConfig from '../db/routingConfig.js';
  */
 
 export const DEFAULTS = {
-  autoRouteEnabled: true,
-  autoRouteThreshold: 0.92,
   evidenceEnabled: true,
   evidenceFloor: 0.3,
   maxCandidates: 5,
@@ -48,8 +45,8 @@ export const DEFAULTS = {
   toolDelivery: 'static',
 };
 
-const NUMERIC_FIELDS = ['autoRouteThreshold', 'evidenceFloor', 'maxCandidates', 'topK', 'maxToolIterations'];
-const BOOLEAN_FIELDS = ['autoRouteEnabled', 'evidenceEnabled', 'includeCardDescriptions', 'includeEvalExamples', 'includeToolDescriptions'];
+const NUMERIC_FIELDS = ['evidenceFloor', 'maxCandidates', 'topK', 'maxToolIterations'];
+const BOOLEAN_FIELDS = ['evidenceEnabled', 'includeCardDescriptions', 'includeEvalExamples', 'includeToolDescriptions'];
 
 function normalise(data) {
   const out = {};

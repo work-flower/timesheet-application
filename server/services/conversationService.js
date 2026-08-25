@@ -119,7 +119,8 @@ export async function appendMessage(id, message) {
 
 /**
  * Fold the append-only transcript for the DETAIL endpoint: proposal rows are
- * enriched with their resolution ({ status, result }); resolution rows are
+ * enriched with their resolution ({ status, result }, plus the executed `input`
+ * when the user edited the card before confirming); resolution rows are
  * dropped (they exist for provider context + audit, not for display). The raw
  * transcript (readTranscript) stays untouched — the provider path folds nothing.
  */
@@ -133,7 +134,12 @@ export function foldTranscript(rows) {
     if (m.role === 'proposal_resolution') continue;
     if (m.role === 'proposal') {
       const r = resolutions.get(m.proposalId);
-      out.push({ ...m, status: r ? r.status : 'pending', result: r ? r.content : null });
+      out.push({
+        ...m,
+        status: r ? r.status : 'pending',
+        result: r ? r.content : null,
+        ...(r?.input ? { input: r.input } : {}),
+      });
     } else {
       out.push(m);
     }

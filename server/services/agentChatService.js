@@ -2,36 +2,43 @@ import { getRawById, getDefaultRaw } from './aiProviderService.js';
 import { renderTemplate, renderHeaders } from './templateEngineService.js';
 import { decodeResponse, shapeTools } from './streamDecoders.js';
 import { readTranscript, appendMessage } from './conversationService.js';
-import { readCard, MASTER_SLUG } from './agentCardService.js';
+import { readCard, MASTER_SLUG, DEFAULT_VERIFIER_MD } from './agentCardService.js';
 import { toolsByName, handlers as appHandlers, canUseTool } from './agentToolRegistry.js';
 import { findAgent, rankTools } from './routingService.js';
+import { similarity } from './embeddingService.js';
 import { getConfig as getRoutingConfig } from './routingConfigService.js';
 import * as pageContentStore from './pageContentStore.js';
 import { agents } from '../db/index.js';
 
 /**
- * Agent turn loop — master fronting, specialist takeovers, delegation, and
- * app-tool execution with action-card write confirmations.
+ * Agent turn loop — master-only surface, specialist delegation, verify/claim,
+ * and app-tool execution with action-card write confirmations.
  *
- * Every turn is fronted by the reserved `master` card unless the user @mentions
- * a specialist (single-turn takeover — the NEXT turn goes back to the master).
- * The master holds two built-in tools:
+ * The user converses ONLY with the reserved `master` card. Specialists never
+ * take over a turn: they are consulted through the `ask_agent` sub-loop, either
+ * at the master's discretion or deterministically when the user @mentions
+ * them (a server-performed pre-consultation whose result is injected into the
+ * master's context before its first round). The master holds two built-in
+ * tools:
  *   find_agent — semantic routing via routingService; candidates are filtered
  *                through the CALLER-scoped agents collection, so the master can
  *                only ever see/route-to agents the caller can see.
  *   ask_agent  — runs a specialist as a conversation-stateless sub-loop (brief
- *                in + its own ephemeral tool exchanges, answer out).
+ *                in + its own ephemeral tool exchanges, answer out). Cards with
+ *                verify/claim enabled have their answer checked against their
+ *                own context by a per-card verifier before it leaves the loop
+ *                (see runVerifyClaim).
  *
  * App tools (agentToolRegistry) are granted per card (manifest.tools) and obey
- * UNIFORM semantics at any depth — master loop, takeover, or ask_agent
- * sub-loop:
+ * UNIFORM semantics at any depth — master loop or ask_agent sub-loop:
  *   read tools  — execute immediately under the caller's ALS identity (the
  *                 pipeline enforces roles/fls for free).
  *   write tools — NEVER execute inline. They append a `proposal` transcript row
  *                 (an action card the pane renders with Confirm/Decline) plus a
  *                 pending tool_result telling the model the write did NOT run.
- *                 Confirm executes + resumes the proposing card's loop; see
- *                 confirmProposal/resumeAfterProposal.
+ *                 Confirm executes (optionally with user-edited input) and
+ *                 resumes the MASTER's loop; see executeProposal/
+ *                 resumeAfterProposal.
  *
  * Identity/no-leak boundary (authorisation judgment call): the ONLY
  * system-scoped read is the master card's own definition (boot-guaranteed
@@ -40,15 +47,18 @@ import { agents } from '../db/index.js';
  * scope through wrapped collections. Never wrap the loop in runAsSystem.
  *
  * Persistence: the ROUTE appends the user message before calling streamTurn;
- * this service persists assistant text, tool exchanges (agent-tagged for
- * non-master loops) and proposals as they happen, so the transcript is always
- * the complete neutral history.
+ * this service persists the master's assistant text, tool exchanges and
+ * proposals as they happen, so the transcript is always the complete neutral
+ * history. Specialist sub-loops, verifier calls and revision drafts are
+ * ephemeral — only their outcome reaches the transcript.
  */
 
 const FALLBACK_SYSTEM = 'You are the assistant for a UK contractor timesheet and invoicing application. Answer helpfully and concisely.';
 
 const MAX_TOOL_ITERATIONS = 4;
-const MENTION_RE = /^@([a-z0-9][a-z0-9-]{1,48})\b\s*/;
+// Every @slug anywhere in the message (whitespace-bounded; slug = group 2).
+// Same charset as agentCardService VALID_SLUG.
+const MENTION_RE = /(^|\s)@([a-z0-9][a-z0-9-]{1,48})\b/g;
 
 const MASTER_TOOL_DEFS = [
   {
@@ -94,6 +104,46 @@ const FIND_TOOL_DEF = {
   },
 };
 
+// Verify/claim: the verifier reports its ledger through ONE tool — a structured
+// tool_use arrives identically on every wireFormat, so no per-dialect "force
+// JSON" is needed. Code constant, never in the registry/admin store (it is not
+// an app tool and must not be grantable).
+const REPORT_CLAIMS_DEF = {
+  name: 'report_claims',
+  description:
+    'Report the verification ledger for the claim under review. Decompose the claim into atomic statements and grade each one against the provided context ONLY. This is the only way to report — do not answer in prose.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      claims: {
+        type: 'array',
+        description: 'One entry per atomic statement found in the claim.',
+        items: {
+          type: 'object',
+          properties: {
+            claim: { type: 'string', description: 'The atomic statement, quoted or closely paraphrased' },
+            kind: {
+              type: 'string',
+              enum: ['fact', 'computation', 'action', 'instruction'],
+              description: 'fact = data assertion; computation = derived number; action = something the agent says it did/proposed; instruction = compliance with the responding agent\'s own instructions',
+            },
+            status: {
+              type: 'string',
+              enum: ['supported', 'unsupported', 'contradicted'],
+              description: 'supported = traceable to the context; unsupported = nothing in the context backs it; contradicted = the context says otherwise',
+            },
+            evidence: { type: 'string', description: 'The context passage (or recomputation) that decides the status' },
+          },
+          required: ['claim', 'kind', 'status'],
+        },
+      },
+      summary: { type: 'string', description: 'One-line overall assessment' },
+    },
+    required: ['claims'],
+  },
+};
+const VERIFY_STATUSES = ['supported', 'unsupported', 'contradicted'];
+
 /**
  * Chat access gate: the caller must be able to read the agents collection at
  * all ("whatever agent the user can see, they can talk to" — no agents grant
@@ -116,27 +166,33 @@ function proposalPendingText(name) {
 // wireFormat without template changes and survives tool-less rounds (which
 // drop tool rows entirely), so a resume/next turn always sees the outcome.
 function resolutionContextText(m) {
+  // A resolution row carries `input` only when the user edited the card's
+  // values before confirming — the model must narrate what actually ran.
+  const edited = m.input ? ` with edited values: ${JSON.stringify(m.input)}` : '';
   if (m.status === 'confirmed') {
-    return `[action-card ${m.name}] The user CONFIRMED the proposed ${m.name}. It has been executed. Result:\n${m.content || ''}`;
+    return `[action-card ${m.name}] The user CONFIRMED the proposed ${m.name}${edited}. It has been executed. Result:\n${m.content || ''}`;
   }
   if (m.status === 'failed') {
-    return `[action-card ${m.name}] The user confirmed the proposed ${m.name} but execution FAILED: ${m.content || ''}`;
+    return `[action-card ${m.name}] The user confirmed the proposed ${m.name}${edited} but execution FAILED: ${m.content || ''}`;
   }
   return `[action-card ${m.name}] The user DECLINED the proposed ${m.name}. It was NOT executed. Do not retry unless asked.`;
 }
 
 /**
  * toolScope selects WHOSE tool exchanges enter the provider context:
- *   null   — none (tool-less rounds; dialects reject tool blocks without tools)
- *   '*'    — all rows (ephemeral ask_agent sub-transcripts)
- *   'master' | '<slug>' — only rows persisted by that loop (untagged = master).
- * A resumed specialist must see its own exchanges but never the master's
- * find_agent/ask_agent blocks (their tool names are undeclared in its request).
+ *   null     — none (tool-less rounds; dialects reject tool blocks without tools)
+ *   '*'      — all rows (ephemeral ask_agent sub-transcripts; a history-seeded
+ *              sub-transcript holds prose rows only, so '*' still admits just
+ *              the specialist's OWN exchanges)
+ *   'master' — only untagged rows. Persisted tool rows are always the master's
+ *              now; `agent`-tagged rows are legacy (v1 specialist takeovers)
+ *              and stay excluded — their tool names may be undeclared in a
+ *              master request.
  */
 function includeToolRow(m, toolScope) {
   if (toolScope == null) return false;
   if (toolScope === '*') return true;
-  return (m.agent ?? 'master') === toolScope;
+  return !m.agent || m.agent === MASTER_SLUG;
 }
 
 function mapMessages(transcript, { toolScope = null } = {}) {
@@ -162,6 +218,34 @@ function mapMessages(transcript, { toolScope = null } = {}) {
     // marker inside the master's ask_agent tool_result.
   }
   return out;
+}
+
+/**
+ * Render transcript rows as plain text — the verify/claim loop's common
+ * currency. The verifier receives the specialist's context this way (one user
+ * message, any wireFormat), and tool-less revise rounds receive the evidence
+ * this way too: mapMessages drops tool rows when no tools are declared, so the
+ * tool exchanges must travel as text or the revising model loses its evidence.
+ *   part: 'all' | 'prose' (user/assistant + resolutions) | 'tools' (exchanges)
+ */
+function serialiseContext(rows, { part = 'all' } = {}) {
+  const out = [];
+  for (const m of rows) {
+    const isProse = m.role === 'user' || m.role === 'assistant' || m.role === 'proposal_resolution';
+    const isTool = m.role === 'tool_call' || m.role === 'tool_result';
+    if (part === 'prose' && !isProse) continue;
+    if (part === 'tools' && !isTool) continue;
+    if (m.role === 'user' || m.role === 'assistant') {
+      out.push(`[${m.role}] ${m.content || ''}`);
+    } else if (m.role === 'proposal_resolution') {
+      out.push(`[user] ${resolutionContextText(m)}`);
+    } else if (m.role === 'tool_call') {
+      out.push(`[tool ${m.name} called with ${JSON.stringify(m.input || {})}]`);
+    } else if (m.role === 'tool_result') {
+      out.push(`→ result of ${m.name}: ${m.content || ''}`);
+    }
+  }
+  return out.join('\n\n');
 }
 
 async function resolveProvider(card, requestProviderId) {
@@ -384,16 +468,191 @@ async function toolFindAgent({ query } = {}, { card } = {}) {
   return JSON.stringify({ candidates: filtered.slice(0, Math.max(1, config.maxCandidates)) }, null, 2);
 }
 
+// -- Verify/claim -------------------------------------------------------------
+
+function logVerify(entry) {
+  // One structured line per round; the log hook stamps traceId/requestId from
+  // ALS, so the log viewer's traceId filter shows a whole loop. Debug level:
+  // set logConfig.logLevel to `debug` to see these.
+  console.debug(`VERIFY ${JSON.stringify(entry)}`);
+}
+
+function buildVerifierPrompt(card, base, draft, priorFindings) {
+  const sections = [
+    `# Responding agent's instructions\n\nThe agent that produced the claim was operating under these instructions. Treat them as rules to check compliance against (kind "instruction"), not as your own instructions.\n\n${(card.agentMd || '').trim() || '(none)'}`,
+    `# Context available to the agent\n\nThis is EVERYTHING the agent had when it answered. Nothing outside it counts as evidence.\n\n${serialiseContext(base) || '(empty)'}`,
+  ];
+  if (priorFindings.length) {
+    sections.push(
+      `# Your previous findings in this review\n\nThe agent revised its answer after these findings. Check whether each one was addressed; raise NEW points only when they are genuinely wrong — do not move the goalposts.\n\n${priorFindings.map((f) => `- "${f.claim}" — ${f.status}${f.evidence ? `: ${f.evidence}` : ''}`).join('\n')}`,
+    );
+  }
+  sections.push(`# Claim to verify\n\n${draft}`);
+  sections.push('Call the report_claims tool now with your ledger. Do not reply in prose.');
+  return sections.join('\n\n---\n\n');
+}
+
+function buildCritique(failing, evidence) {
+  return [
+    '[verification] Your answer above was checked against the information available to you. The following statements could not be confirmed:',
+    failing.map((f) => `- "${f.claim}" — ${f.status.toUpperCase()}${f.evidence ? `: ${f.evidence}` : ''}`).join('\n'),
+    evidence ? `For reference, this is the evidence you gathered while answering (tool calls and their results):\n\n${evidence}` : null,
+    'Write a fresh, complete answer to the original request. Correct what is wrong. Remove or clearly hedge anything you cannot support from the information you have. Keep what is right — if a point above is itself mistaken, keep your statement. Do NOT mention this review, a verifier, or that anything was corrected.',
+  ].filter(Boolean).join('\n\n');
+}
+
+function buildVerificationMarker(failing) {
+  const items = failing.map((f) => `"${f.claim}" (${f.status})`).join('; ');
+  return `\n\n[Verification: ${failing.length} statement(s) could not be confirmed against the agent's context: ${items}]`;
+}
+
+// Sorted multiset of numeric tokens — the fixed-point guard. Embeddings barely
+// separate "£700" from "£650" (measured ~0.97 on a one-line answer, ~0.997 when
+// the change sits in one paragraph of twelve), and in this domain the figures
+// ARE the answer: a revision that changes any number is never a fixed point,
+// whatever the cosine says.
+function numericFingerprint(text) {
+  return (String(text || '').match(/\d+(?:[.,]\d+)*/g) || []).sort().join('|');
+}
+
+/**
+ * Verify/claim loop for one specialist answer (per-card opt-in,
+ * manifest.verifyClaim). Wraps the FINISHED tool loop: `base` is the ephemeral
+ * sub-transcript as it stood when the draft was produced (brief/seed + the
+ * specialist's own tool exchanges) and is the ONLY evidence the verifier may
+ * use — the draft itself is never part of the context.
+ *
+ * Per round: (similarity early-stop from round 1) → verifier call (tool-less
+ * pseudo-card built from verifier.md + the verify provider, reporting through
+ * report_claims) → deterministic verdict (clean iff every claim is supported)
+ * → clean: deliver; cap: deliver + marker (shadow mode, maxIterations 0:
+ * deliver, no marker); else a TOOL-LESS revise round over an overlay of the
+ * base prose + the latest draft + one critique message (evidence travels as
+ * text — tool-less rounds drop tool rows). Only the latest draft/critique pair
+ * is ever in the overlay. Nothing here touches the transcript.
+ *
+ * Failure is transparent: a verifier/revision error, a verifier that did not
+ * call report_claims, or an empty revision return { aborted, message } and the
+ * caller ends the turn with an SSE error — never a silent fall-back to the
+ * unverified draft.
+ */
+async function* runVerifyClaim(card, base, draft, { requestProviderId, signal, conversationId, embeddingModel } = {}) {
+  const vc = card.verifyClaim || {};
+  const slug = card.slug;
+  const maxIterations = Number.isInteger(vc.maxIterations) ? Math.max(0, Math.min(5, vc.maxIterations)) : 2;
+  const threshold = Number.isFinite(vc.similarityThreshold) ? vc.similarityThreshold : 0.98;
+  const verifier = {
+    slug,
+    name: `${card.name || slug} (verifier)`,
+    agentMd: (card.verifierMd || '').trim() || DEFAULT_VERIFIER_MD,
+    aiProviderId: vc.aiProviderId ?? card.aiProviderId ?? null,
+    // A card template override is authored for the card's provider wire
+    // format — when the verifier is bound elsewhere, inherit THAT provider's.
+    payloadTemplate: vc.aiProviderId && vc.aiProviderId !== card.aiProviderId ? null : card.payloadTemplate,
+  };
+  const priorFindings = [];
+  let lastFailing = [];
+  let prevDraft = null;
+
+  for (let round = 0; round <= maxIterations; round++) {
+    let sim = null;
+    if (round > 0 && vc.similarityCheck !== false) {
+      try {
+        sim = await similarity(prevDraft, draft, embeddingModel);
+      } catch (err) {
+        return { aborted: true, message: `Similarity check for @${slug} failed: ${err.message}` };
+      }
+      const sameNumbers = numericFingerprint(prevDraft) === numericFingerprint(draft);
+      if (sim >= threshold && sameNumbers) {
+        logVerify({ conversationId, agent: slug, round, verdict: 'fixed-point', similarity: sim, unresolved: lastFailing.length });
+        return { draft, marker: lastFailing.length ? buildVerificationMarker(lastFailing) : null, outcome: 'fixed-point' };
+      }
+    }
+
+    yield { type: 'status', text: `Verifying @${slug} (round ${round + 1}/${maxIterations + 1})…` };
+    const startedAt = Date.now();
+    const prompt = buildVerifierPrompt(card, base, draft, priorFindings);
+    let ledger = null;
+    let error = null;
+    for await (const event of runCardStream(verifier, [{ role: 'user', content: prompt }], {
+      tools: [REPORT_CLAIMS_DEF], toolScope: null, requestProviderId, signal,
+    })) {
+      if (event.type === 'tool_use' && event.name === REPORT_CLAIMS_DEF.name) {
+        if (Array.isArray(event.input?.claims)) ledger = event.input.claims;
+      } else if (event.type === 'error') {
+        error = event.message;
+      }
+    }
+    if (signal?.aborted) return { aborted: true, message: 'Request aborted.' };
+    if (error) return { aborted: true, message: `Verifier for @${slug} failed: ${error}` };
+    if (!ledger) return { aborted: true, message: `Verifier for @${slug} did not report a claim ledger.` };
+
+    const claims = ledger.map((c) => ({
+      claim: String(c?.claim ?? '').trim(),
+      kind: c?.kind,
+      status: VERIFY_STATUSES.includes(c?.status) ? c.status : 'unsupported',
+      evidence: c?.evidence ? String(c.evidence) : '',
+    })).filter((c) => c.claim);
+    const failing = claims.filter((c) => c.status !== 'supported');
+    const counts = {
+      supported: claims.length - failing.length,
+      unsupported: failing.filter((c) => c.status === 'unsupported').length,
+      contradicted: failing.filter((c) => c.status === 'contradicted').length,
+    };
+    logVerify({
+      conversationId, agent: slug, round, verdict: failing.length ? 'fail' : 'clean',
+      counts, similarity: sim, durationMs: Date.now() - startedAt, ledger: claims,
+    });
+
+    if (!failing.length) return { draft, marker: null, outcome: 'clean' };
+    if (round === maxIterations) {
+      // Shadow mode (0): observe and log only — the answer is delivered as-is.
+      if (maxIterations === 0) return { draft, marker: null, outcome: 'shadow' };
+      return { draft, marker: buildVerificationMarker(failing), outcome: 'cap' };
+    }
+
+    // -- Revise (tool-less) --------------------------------------------------
+    yield { type: 'status', text: `@${slug} revising (${counts.contradicted} contradicted, ${counts.unsupported} unsupported)…` };
+    priorFindings.push(...failing);
+    lastFailing = failing;
+    const prose = base
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role, content: m.content }));
+    const overlay = [
+      ...prose,
+      { role: 'assistant', content: draft },
+      { role: 'user', content: buildCritique(failing, serialiseContext(base, { part: 'tools' })) },
+    ];
+    let newText = '';
+    let revError = null;
+    for await (const event of runCardStream(card, overlay, { tools: [], requestProviderId, signal })) {
+      if (event.type === 'text') newText += event.text;
+      else if (event.type === 'error') revError = event.message;
+    }
+    if (signal?.aborted) return { aborted: true, message: 'Request aborted.' };
+    if (revError) return { aborted: true, message: `Revision by @${slug} failed: ${revError}` };
+    if (!newText.trim()) return { aborted: true, message: `Revision by @${slug} returned no text.` };
+    prevDraft = draft;
+    draft = newText;
+  }
+  // Unreachable: every path inside the loop returns on the final round.
+  return { draft, marker: null, outcome: 'cap' };
+}
+
 /**
  * Delegate to a specialist as a bounded, conversation-stateless tool loop:
- * the sub-transcript starts from the brief and accumulates the specialist's
- * OWN tool exchanges only (ephemeral — never persisted to the conversation).
- * Reads execute; writes create proposals on the MAIN transcript (agent-tagged,
- * toolCallId null) and the sub-loop closes over a pending marker. tool_use and
- * proposal events bubble to the pane via yield*; the return value keeps the
- * { content, consulted } attribution contract.
+ * the sub-transcript starts from the brief (optionally preceded by a prose
+ * `seed` — the @mention pre-consultation seeds the conversation's user/
+ * assistant rows so the user's own, non-self-contained message has its
+ * context; master-composed briefs pass no seed) and accumulates the
+ * specialist's OWN tool exchanges only (ephemeral — never persisted). Reads
+ * execute; writes create proposals on the MAIN transcript (agent-tagged,
+ * toolCallId null) and the sub-loop closes over a pending marker. tool_use,
+ * proposal and status events bubble to the pane via yield*; the return value
+ * keeps the { content, consulted } attribution contract and adds `aborted`
+ * (verify/claim failed transparently — the caller must end the turn).
  */
-async function* toolAskAgent({ agent, brief } = {}, { requestProviderId, signal, conversationId } = {}) {
+async function* toolAskAgent({ agent, brief } = {}, { requestProviderId, signal, conversationId, seed } = {}) {
   if (!agent || !brief) return { content: 'ask_agent requires both "agent" and "brief".', consulted: null };
   // Caller-scoped resolution: invisible ⇒ not-found (visibility = talkability).
   const doc = await agents.findOne({ slug: agent, enabled: { $ne: false }, isMaster: { $ne: true } });
@@ -406,7 +665,10 @@ async function* toolAskAgent({ agent, brief } = {}, { requestProviderId, signal,
   const granted = resolveGrantedTools(card);
   const discoverMode = routingCfg.toolDelivery === 'discover';
   const discovered = []; // sub-loop-scoped (the sub-transcript is ephemeral)
-  const subTranscript = [{ role: 'user', content: brief }];
+  const subTranscript = [
+    ...(Array.isArray(seed) ? seed : []),
+    { role: 'user', content: brief },
+  ];
   let finalText = '';
   let proposalsMade = 0;
 
@@ -428,11 +690,13 @@ async function* toolAskAgent({ agent, brief } = {}, { requestProviderId, signal,
       } else if (event.type === 'error') error = event.message;
     }
     if (error) return { content: `Specialist "${agent}" failed: ${error}`, consulted: null };
-    if (text) {
-      subTranscript.push({ role: 'assistant', content: text });
-      finalText = text;
+    if (text) finalText = text; // last non-empty text wins (as before)
+    if (!toolCalls.length) {
+      // Final answer: NOT pushed into the sub-transcript — the verify loop
+      // needs the context WITHOUT the draft it is checking.
+      break;
     }
-    if (!toolCalls.length) break;
+    if (text) subTranscript.push({ role: 'assistant', content: text });
 
     for (const call of toolCalls) {
       const toolCallId = call.id || `sub_${agent}_${iteration}_${toolCalls.indexOf(call)}`;
@@ -458,7 +722,20 @@ async function* toolAskAgent({ agent, brief } = {}, { requestProviderId, signal,
     }
   }
 
-  let content = finalText || `Specialist "${agent}" returned no answer.`;
+  let marker = '';
+  if (finalText && card.verifyClaim?.enabled) {
+    const v = yield* runVerifyClaim(card, subTranscript, finalText, {
+      requestProviderId, signal, conversationId, embeddingModel: routingCfg.embeddingModel,
+    });
+    if (v.aborted) {
+      yield { type: 'error', message: v.message };
+      return { content: `Verification of @${agent} failed: ${v.message}`, consulted: null, aborted: true };
+    }
+    finalText = v.draft;
+    marker = v.marker || '';
+  }
+
+  let content = (finalText || `Specialist "${agent}" returned no answer.`) + marker;
   if (proposalsMade) {
     // The master's only durable record of sub-loop proposals — robust against
     // a specialist that forgets to mention them.
@@ -467,15 +744,18 @@ async function* toolAskAgent({ agent, brief } = {}, { requestProviderId, signal,
   return { content, consulted: finalText ? agent : null };
 }
 
-/** Execute a master tool → { content, consultedAgent } (consultedAgent set only
- *  when ask_agent got a real specialist answer — drives response attribution).
- *  Generator: sub-loop tool_use/proposal events bubble to the pane. */
+/** Execute a master tool → { content, consultedAgent, aborted } (consultedAgent
+ *  set only when ask_agent got a real specialist answer — drives response
+ *  attribution; aborted = verify/claim failed transparently, the loop must
+ *  stop after recording the result). Generator: sub-loop tool_use/proposal/
+ *  status events bubble to the pane. The catch turns handler throws into tool
+ *  text — which is why an abort is a RETURNED flag, never a throw. */
 async function* executeMasterTool(call, opts) {
   try {
     if (call.name === 'find_agent') return { content: await toolFindAgent(call.input, opts), consultedAgent: null };
     if (call.name === 'ask_agent') {
-      const { content, consulted } = yield* toolAskAgent(call.input, opts);
-      return { content, consultedAgent: consulted };
+      const { content, consulted, aborted } = yield* toolAskAgent(call.input, opts);
+      return { content, consultedAgent: consulted, aborted: !!aborted };
     }
     return { content: `Unknown tool: ${call.name}`, consultedAgent: null };
   } catch (err) {
@@ -486,41 +766,40 @@ async function* executeMasterTool(call, opts) {
 // -- The agent loop -----------------------------------------------------------
 
 /**
- * Run one card's bounded tool loop over the conversation transcript — the
- * single engine behind master turns, specialist takeovers and confirm-resumes.
+ * Run the MASTER's bounded tool loop over the conversation transcript — the
+ * single engine behind master turns and confirm-resumes (specialists never run
+ * over the transcript; they are consulted via toolAskAgent).
  *
- *   masterTools   — include find_agent/ask_agent (master only)
- *   announceAgent — emit { type:'agent' } + persist agent-tagged rows
- *                   (takeovers and specialist resumes)
- *   extraToolDefs — defs injected beyond the card's grants (confirm-resume
- *                   injects the proposal's def so replayed tool history is
- *                   never undeclared)
+ *   extraToolDefs    — defs injected beyond the card's grants (confirm-resume
+ *                      injects the proposal's def so replayed tool history is
+ *                      never undeclared)
+ *   initialConsulted — specialists already consulted this turn by the @mention
+ *                      pre-consultation, so attribution ("via @slug") covers
+ *                      them too
  *
  * Per round: text streams out; read tools execute inline; write tools become
  * proposals (loop continues — the next round naturally narrates the card);
- * the last round runs tool-less so the model must produce an answer.
+ * the last round runs tool-less so the model must produce an answer. An
+ * aborted ask_agent (verify/claim failed) ends the loop after its tool_result
+ * is recorded — the error event has already reached the pane.
  */
 async function* runAgentLoop(conversationId, card, {
-  masterTools = false,
-  announceAgent = false,
   providerId,
   signal,
   extraToolDefs = [],
+  initialConsulted = [],
 } = {}) {
   const routingCfg = await getRoutingConfig();
-  const scope = masterTools ? MASTER_SLUG : card.slug;
   const maxIterations = Math.max(1, routingCfg.maxToolIterations ?? MAX_TOOL_ITERATIONS);
   const granted = resolveGrantedTools(card);
   const extras = extraToolDefs.filter((d) => !granted.some((g) => g.name === d.name));
-  const agentTag = scope === MASTER_SLUG ? {} : { agent: scope };
   const discoverMode = routingCfg.toolDelivery === 'discover';
   const discovered = []; // turn-scoped defs injected by find_tool (discover mode)
 
-  if (announceAgent) yield { type: 'agent', agent: card.slug };
-
   // Specialists that actually answered via ask_agent this turn — the master's
   // subsequent responses are attributed to them ("via @slug" in the pane).
-  const consulted = [];
+  const consulted = [...initialConsulted];
+  if (consulted.length) yield { type: 'consulted', agents: [...consulted] };
   for (let iteration = 0; iteration <= maxIterations; iteration++) {
     const finalRound = iteration === maxIterations;
     const transcript = readTranscript(conversationId);
@@ -530,19 +809,19 @@ async function* runAgentLoop(conversationId, card, {
     const grantedRound = discoverMode
       ? [...(granted.length ? [FIND_TOOL_DEF] : []), ...discovered]
       : granted;
-    const tools = finalRound ? [] : [...(masterTools ? MASTER_TOOL_DEFS : []), ...grantedRound, ...extras];
-    // Mode-switch replay defence: if this scope's history contains find_tool
+    const tools = finalRound ? [] : [...MASTER_TOOL_DEFS, ...grantedRound, ...extras];
+    // Mode-switch replay defence: if the master's history contains find_tool
     // calls (recorded under discover mode), keep the def declared — strict
     // dialects reject tool_use blocks whose tool is undeclared.
     if (!finalRound
       && !tools.some((t) => t.name === FIND_TOOL_DEF.name)
-      && transcript.some((m) => m.role === 'tool_call' && m.name === FIND_TOOL_DEF.name && (m.agent ?? MASTER_SLUG) === scope)) {
+      && transcript.some((m) => m.role === 'tool_call' && m.name === FIND_TOOL_DEF.name && (m.agent ?? MASTER_SLUG) === MASTER_SLUG)) {
       tools.push(FIND_TOOL_DEF);
     }
 
     let text = '';
     const toolCalls = [];
-    for await (const event of runCardStream(card, transcript, { tools, toolScope: scope, requestProviderId: providerId, signal })) {
+    for await (const event of runCardStream(card, transcript, { tools, toolScope: MASTER_SLUG, requestProviderId: providerId, signal })) {
       if (event.type === 'text') {
         text += event.text;
         yield event;
@@ -560,7 +839,6 @@ async function* runAgentLoop(conversationId, card, {
     if (text) {
       await appendMessage(conversationId, {
         role: 'assistant', content: text,
-        ...agentTag,
         ...(consulted.length ? { agents: [...consulted] } : {}),
       });
     }
@@ -570,36 +848,39 @@ async function* runAgentLoop(conversationId, card, {
       const toolCallId = call.id || `tc_${conversationId}_${iteration}_${toolCalls.indexOf(call)}`;
       const def = toolsByName.get(call.name);
 
-      if (masterTools && (call.name === 'find_agent' || call.name === 'ask_agent')) {
+      if (call.name === 'find_agent' || call.name === 'ask_agent') {
         await appendMessage(conversationId, { role: 'tool_call', toolCallId, name: call.name, input: call.input || {} });
-        const { content: result, consultedAgent } = yield* executeMasterTool(
+        const { content: result, consultedAgent, aborted } = yield* executeMasterTool(
           { ...call, id: toolCallId },
           { requestProviderId: providerId, signal, conversationId, card },
         );
+        // Always pair the tool_call before bailing — an orphan tool_use breaks
+        // the next turn on strict dialects.
         await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: call.name, content: result });
+        if (aborted) return;
         if (consultedAgent && !consulted.includes(consultedAgent)) {
           consulted.push(consultedAgent);
           yield { type: 'consulted', agents: [...consulted] };
         }
       } else if (call.name === FIND_TOOL_DEF.name) {
-        await appendMessage(conversationId, { role: 'tool_call', toolCallId, name: call.name, input: call.input || {}, ...agentTag });
+        await appendMessage(conversationId, { role: 'tool_call', toolCallId, name: call.name, input: call.input || {} });
         const { content, defs } = await executeFindTool(call.input, granted);
         for (const d of defs) {
           if (!discovered.some((x) => x.name === d.name)) discovered.push(d);
         }
-        await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: call.name, content, ...agentTag });
+        await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: call.name, content });
       } else if (def && def.kind === 'write') {
         // Uniform write semantics: propose, never execute inline.
-        await appendMessage(conversationId, { role: 'tool_call', toolCallId, name: call.name, input: call.input || {}, ...agentTag });
+        await appendMessage(conversationId, { role: 'tool_call', toolCallId, name: call.name, input: call.input || {} });
         const proposal = await createProposal(conversationId, {
-          toolCallId, name: call.name, input: call.input || {}, agent: scope,
+          toolCallId, name: call.name, input: call.input || {}, agent: MASTER_SLUG,
         });
-        await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: call.name, content: proposalPendingText(call.name), ...agentTag });
+        await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: call.name, content: proposalPendingText(call.name) });
         yield { type: 'proposal', proposal };
       } else {
-        await appendMessage(conversationId, { role: 'tool_call', toolCallId, name: call.name, input: call.input || {}, ...agentTag });
+        await appendMessage(conversationId, { role: 'tool_call', toolCallId, name: call.name, input: call.input || {} });
         const result = await executeAppTool(call);
-        await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: call.name, content: result, ...agentTag });
+        await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: call.name, content: result });
       }
     }
     // Loop continues: next round's transcript includes the tool exchange.
@@ -608,86 +889,50 @@ async function* runAgentLoop(conversationId, card, {
 
 // -- Turn orchestration -------------------------------------------------------
 
-// Routing tier thresholds/toggles live in routingConfig (admin → Agents →
-// Routing): autoRouteThreshold — a near-exact match (an utterance present in
-// the eval-set scores ~1.0) is GROUND TRUTH and routes directly, like an
-// implicit @mention; evidenceFloor — weaker matches than this are noise and
-// attach no evidence. Read per turn; changes apply on the next message.
+// Routing lives in routingConfig (admin → Agents → Routing), read per turn:
+// evidenceFloor — matches weaker than this are noise and attach no evidence;
+// fallbackAgentSlug — weak evidence when nothing clears the floor. There is no
+// takeover tier: the master always fronts the turn and decides with the
+// evidence; @mentions force a consultation (below) rather than a takeover.
 
-/** Run one specialist turn over the conversation (shared by @mention and
- *  ground-truth auto-routing). Uniform tool semantics apply — the specialist
- *  runs the same bounded tool loop as the master, with its own grants. */
-async function* runSpecialistTurn(conversationId, slug, { providerId, signal }) {
-  const card = readCard(slug);
-  if (!card) {
-    yield { type: 'error', message: `Agent @${slug} has no valid card on disk.` };
-    return;
-  }
-  yield* runAgentLoop(conversationId, card, { announceAgent: true, providerId, signal });
+/** Fallback master card when the boot-guaranteed folder is unreadable. */
+function masterCardOrFallback() {
+  return readCard(MASTER_SLUG) || {
+    slug: MASTER_SLUG, name: 'Master', agentMd: FALLBACK_SYSTEM, aiProviderId: null, payloadTemplate: null,
+  };
 }
 
 /**
  * Stream one conversation turn. The route has already appended the user
  * message to the transcript. Yields neutral events for the SSE pane; persists
- * assistant text and tool exchanges as they happen.
+ * the master's assistant text and tool exchanges as they happen.
  */
 export async function* streamTurn(conversationId, userMessage, { providerId, signal } = {}) {
-  // -- @mention: explicit single-turn takeover --------------------------------
-  const mention = (userMessage || '').match(MENTION_RE);
-  if (mention && mention[1] !== MASTER_SLUG) {
-    const slug = mention[1];
-    // Caller-scoped: invisible ⇒ not-found ⇒ surfaced as unknown.
-    const doc = await agents.findOne({ slug, enabled: { $ne: false } });
-    if (!doc) {
-      yield { type: 'error', message: `Unknown or inaccessible agent @${slug}.` };
-      return;
-    }
-    yield* runSpecialistTurn(conversationId, slug, { providerId, signal });
-    return;
-  }
-
   // The master card's DEFINITION is file-read directly (boot-guaranteed) — the
   // one intentionally non-caller-scoped resolution; see module note. Read
   // before routing: candidate filtering needs the master's tool grants.
-  const masterCard = readCard(MASTER_SLUG) || {
-    slug: MASTER_SLUG, name: 'Master', agentMd: FALLBACK_SYSTEM, aiProviderId: null, payloadTemplate: null,
-  };
+  const masterCard = masterCardOrFallback();
 
   // -- Structural routing consultation ---------------------------------------
   // The routing corpus must not depend on the master CHOOSING to look: run the
-  // query server-side (one local embed) on every master turn. A near-exact
-  // eval-set match routes directly (ground truth); anything above the noise
-  // floor is attached to the transcript as a ready-made find_agent exchange,
-  // so the master decides WITH the evidence in front of it (and saves the
-  // round-trip of calling the tool itself).
+  // query server-side (one local embed) on every master turn. Anything above
+  // the noise floor is attached to the transcript as a ready-made find_agent
+  // exchange, so the master decides WITH the evidence in front of it (and
+  // saves the round-trip of calling the tool itself).
   const routingCfg = await getRoutingConfig();
-  let takeover = null;
   let evidence = null;
   try {
     const { candidates } = await findAgent(userMessage);
     const filtered = await filterCandidates(candidates, masterCard);
     if (filtered.length) {
       const top = filtered[0];
-      // Auto-route (takeover) requires the top candidate to be AGENT-kind: a
-      // tool can't front a turn (its arguments still need the model), and a
-      // higher-scoring tool match means the utterance is an action request —
-      // taking over with a lower-ranked agent would be wrong. Tool matches are
-      // evidence-only.
-      if (top.kind === 'agent'
-        && routingCfg.autoRouteEnabled !== false && top.score >= routingCfg.autoRouteThreshold) {
-        takeover = top.target;
-      } else if (routingCfg.evidenceEnabled !== false && top.score >= routingCfg.evidenceFloor) {
+      if (routingCfg.evidenceEnabled !== false && top.score >= routingCfg.evidenceFloor) {
         evidence = filtered.slice(0, Math.max(1, routingCfg.maxCandidates));
       }
     }
   } catch (err) {
     // Routing must never block the conversation (e.g. embedding model missing).
     console.warn(`Routing consultation failed (continuing without evidence): ${err.message}`);
-  }
-
-  if (takeover) {
-    yield* runSpecialistTurn(conversationId, takeover, { providerId, signal });
-    return;
   }
 
   try {
@@ -719,8 +964,44 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
     console.warn(`Routing evidence attach failed (continuing without evidence): ${err.message}`);
   }
 
+  // -- @mention pre-consultation (deterministic) ------------------------------
+  // A mention is a routing decision made by the USER, so it must not depend on
+  // the master choosing to honour it: the server consults every mentioned
+  // agent itself (the same ask_agent sub-loop the master uses — verify/claim
+  // included) and injects each answer as a synthetic ask_agent exchange before
+  // the master's first round. The brief is the user's own message, so — unlike
+  // a master-composed brief — it is not self-contained: the sub-transcript is
+  // seeded with the conversation's prose rows. Unresolvable mentions (unknown,
+  // disabled, invisible) are ignored; the master answers as usual.
+  const initialConsulted = [];
+  const mentions = [...new Set([...(userMessage || '').matchAll(MENTION_RE)].map((m) => m[2]))]
+    .filter((slug) => slug !== MASTER_SLUG);
+  if (mentions.length) {
+    const brief = (userMessage || '').replace(MENTION_RE, ' ').replace(/\s+/g, ' ').trim() || userMessage;
+    const rows = readTranscript(conversationId);
+    const prior = rows.length && rows[rows.length - 1].role === 'user' ? rows.slice(0, -1) : rows;
+    const seed = prior
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role, content: m.content }));
+    for (const slug of mentions) {
+      const doc = await agents.findOne({ slug, enabled: { $ne: false }, isMaster: { $ne: true } });
+      if (!doc) continue;
+      const toolCallId = `mention_${conversationId}_${readTranscript(conversationId).length}`;
+      await appendMessage(conversationId, {
+        role: 'tool_call', toolCallId, name: 'ask_agent', input: { agent: slug, brief }, auto: true,
+      });
+      const { content, consulted, aborted } = yield* toolAskAgent(
+        { agent: slug, brief },
+        { requestProviderId: providerId, signal, conversationId, seed },
+      );
+      await appendMessage(conversationId, { role: 'tool_result', toolCallId, name: 'ask_agent', content, auto: true });
+      if (aborted) return;
+      if (consulted && !initialConsulted.includes(consulted)) initialConsulted.push(consulted);
+    }
+  }
+
   // -- Master turn with tool loop --------------------------------------------
-  yield* runAgentLoop(conversationId, masterCard, { masterTools: true, providerId, signal });
+  yield* runAgentLoop(conversationId, masterCard, { providerId, signal, initialConsulted });
 }
 
 // -- Proposal lifecycle (confirm/decline endpoints) ---------------------------
@@ -728,21 +1009,40 @@ export async function* streamTurn(conversationId, userMessage, { providerId, sig
 /**
  * Execute a confirmed proposal's write tool under the CALLER's ALS identity
  * (the pipeline re-validates roles/locks/fls naturally) and append the
- * resolution row. Returns { status: 'confirmed'|'failed', content }.
+ * resolution row. `inputOverride` carries the user's edits from the action
+ * card: only keys the tool's inputSchema declares (or the proposal already
+ * had) are accepted — an edit can adjust values, never smuggle in arguments.
+ * The proposal row is append-only; when edits applied, the resolution row
+ * records the executed `input` and it is returned for the pane/fold.
+ * Returns { status: 'confirmed'|'failed', content, input? }.
  */
-export async function executeProposal(conversationId, proposal) {
+export async function executeProposal(conversationId, proposal, { inputOverride } = {}) {
   let status = 'confirmed';
   let content = '';
   // Definition → handlerName → fn; a definition deleted or disabled between
   // proposal and confirm resolves to no handler → the failed path.
   const def = toolsByName.get(proposal.name);
   const handler = def ? appHandlers[def.handlerName]?.fn : undefined;
+
+  const allowed = new Set([
+    ...Object.keys(proposal.input || {}),
+    ...Object.keys(def?.inputSchema?.properties || {}),
+  ]);
+  const edits = {};
+  if (inputOverride && typeof inputOverride === 'object' && !Array.isArray(inputOverride)) {
+    for (const [k, v] of Object.entries(inputOverride)) {
+      if (allowed.has(k)) edits[k] = v;
+    }
+  }
+  const edited = Object.keys(edits).length > 0;
+  const input = edited ? { ...(proposal.input || {}), ...edits } : (proposal.input || {});
+
   if (!handler) {
     status = 'failed';
     content = `Tool "${proposal.name}" is no longer available.`;
   } else {
     try {
-      content = await handler(proposal.input || {});
+      content = await handler(input);
     } catch (err) {
       status = 'failed';
       content = err.message;
@@ -750,8 +1050,9 @@ export async function executeProposal(conversationId, proposal) {
   }
   await appendMessage(conversationId, {
     role: 'proposal_resolution', proposalId: proposal.proposalId, name: proposal.name, status, content,
+    ...(edited ? { input } : {}),
   });
-  return { status, content };
+  return { status, content, ...(edited ? { input } : {}) };
 }
 
 /** Append a declined resolution row. No model call. */
@@ -763,21 +1064,16 @@ export async function declineProposal(conversationId, proposal) {
 }
 
 /**
- * Resume the proposing card's loop after a confirm (success OR failure — the
- * model narrates either). The proposal's own tool def is force-injected so
- * replayed tool_call history is never undeclared, even if the grant was
- * revoked between proposal and confirm.
+ * Resume the MASTER's loop after a confirm (success OR failure — the model
+ * narrates either; the resolution row is user-role context, so it needs no
+ * specialist). `proposal.agent` stays on the row for card attribution only.
+ * The proposal's own tool def is force-injected so replayed tool_call history
+ * (master proposals) is never undeclared, even if the grant was revoked
+ * between proposal and confirm.
  */
 export async function* resumeAfterProposal(conversationId, proposal, { providerId, signal } = {}) {
-  const isMasterProposal = !proposal.agent || proposal.agent === MASTER_SLUG;
-  const card = (!isMasterProposal && readCard(proposal.agent)) || readCard(MASTER_SLUG) || {
-    slug: MASTER_SLUG, name: 'Master', agentMd: FALLBACK_SYSTEM, aiProviderId: null, payloadTemplate: null,
-  };
-  const resumingAsMaster = card.slug === MASTER_SLUG;
   const def = toolsByName.get(proposal.name);
-  yield* runAgentLoop(conversationId, card, {
-    masterTools: resumingAsMaster,
-    announceAgent: !resumingAsMaster,
+  yield* runAgentLoop(conversationId, masterCardOrFallback(), {
     providerId,
     signal,
     extraToolDefs: def ? [def] : [],

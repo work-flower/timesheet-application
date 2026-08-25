@@ -47,7 +47,8 @@ const useStyles = makeStyles({
 
 // Typing "@" at the start of the message opens the caller-scoped agent picker
 // (the server only lists agents the user can see — visibility = talkability).
-// An @mention routes a single turn directly to that specialist.
+// An @mention forces a consultation of that specialist for this turn; the
+// master still answers, relaying what the specialist said.
 export default function ChatInput({ onSend, disabled }) {
   const styles = useStyles();
   const [value, setValue] = useState('');
@@ -113,7 +114,7 @@ export default function ChatInput({ onSend, disabled }) {
         value={value}
         onChange={(e, d) => setValue(d.value)}
         onKeyDown={onKeyDown}
-        placeholder="Ask the assistant… (@ to address an agent)"
+        placeholder="Ask the assistant… (@ to consult a specific agent)"
         resize="vertical"
         rows={2}
       />

@@ -87,14 +87,22 @@ async function gateConversation(req, res) {
 }
 
 // POST /api/conversations/:id/proposals/:pid/confirm — SSE. Executes the
-// proposed write under the CALLER's identity, appends the resolution row, then
-// RESUMES the proposing card's loop so the assistant narrates the outcome.
+// proposed write under the CALLER's identity (body `{ input }` = the keys the
+// user edited on the card, merged over the proposal's values after a schema
+// whitelist), appends the resolution row, then RESUMES the master's loop so
+// the assistant narrates the outcome.
 router.post('/:id/proposals/:pid/confirm', async (req, res) => {
   const { id, pid } = req.params;
   if (!(await gateConversation(req, res))) return;
 
   const { proposal, resolution } = conversationService.findProposal(id, pid);
   if (!proposal) return res.status(404).json({ error: 'Proposal not found' });
+  // Pre-flush + before the in-flight Set: a 400 must never strand the key.
+  const inputOverride = req.body?.input;
+  if (inputOverride !== undefined
+    && (inputOverride === null || typeof inputOverride !== 'object' || Array.isArray(inputOverride))) {
+    return res.status(400).json({ error: 'input must be an object of edited values' });
+  }
   const flightKey = `${id}:${pid}`;
   if (resolution || inFlightProposals.has(flightKey)) {
     return res.status(409).json({ error: 'Proposal already resolved' });
@@ -125,8 +133,8 @@ router.post('/:id/proposals/:pid/confirm', async (req, res) => {
     // Execute under the request's caller ALS scope — the pipeline re-validates
     // roles/locks naturally. Failures resolve as status:'failed' and still
     // resume (the model narrates the failure).
-    const { status, content } = await executeProposal(id, proposal);
-    send({ type: 'proposal_resolved', proposalId: pid, status, content });
+    const { status, content, input } = await executeProposal(id, proposal, { inputOverride });
+    send({ type: 'proposal_resolved', proposalId: pid, status, content, ...(input ? { input } : {}) });
 
     for await (const event of resumeAfterProposal(id, proposal, { providerId: req.body?.providerId, signal: controller.signal })) {
       if (aborted) break;

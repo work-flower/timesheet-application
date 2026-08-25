@@ -50,7 +50,6 @@ const useStyles = makeStyles({
 });
 
 const TIER_META = {
-  'auto-route': { color: 'success', label: 'auto-route (ground truth)', hint: 'Routes DIRECTLY to the specialist — no master round.' },
   evidence: { color: 'brand', label: 'evidence', hint: 'Candidates are attached to the conversation; the master decides.' },
   'below-floor': { color: 'warning', label: 'below floor', hint: 'No routing evidence attached — the master answers on its own.' },
 };
@@ -152,22 +151,12 @@ export default function RoutingPage() {
         <div className={styles.section}>
           <Text className={styles.sectionTitle}><SettingsRegular /> Behaviour</Text>
           <Text className={styles.sectionHint}>
-            Every master turn the router scores the message against the corpus (eval examples + card descriptions + tool descriptions), then:
-            score ≥ auto-route threshold AND the match is an agent → the specialist answers directly (ground truth);
+            The master fronts every turn. The router scores each message against the corpus (eval examples + card descriptions + tool descriptions), then:
             score ≥ evidence floor → candidates (agents and tools) are attached and the master decides;
-            below → the master answers on its own. Tool matches never auto-route — they are evidence.
+            below → the master answers on its own (or consults the fallback agent).
+            An @slug mention is a routing decision made by the user — that agent is always consulted, and the master relays its answer.
           </Text>
           <div className={styles.grid}>
-            <Field label="Ground-truth auto-route">
-              <Switch
-                checked={config.autoRouteEnabled !== false}
-                onChange={(e, d) => set('autoRouteEnabled')(d.checked)}
-                label={config.autoRouteEnabled !== false ? 'Enabled' : 'Disabled — everything goes through the master'}
-              />
-            </Field>
-            <Field label="Auto-route threshold" hint="Similarity (0-1) counting as a known utterance. Exact eval-set matches score ~1.0; paraphrases typically 0.6-0.85.">
-              <Input type="number" min={0} max={1} step={0.01} value={String(config.autoRouteThreshold)} onChange={(e, d) => set('autoRouteThreshold')(d.value)} disabled={config.autoRouteEnabled === false} />
-            </Field>
             <Field label="Evidence attachment">
               <Switch
                 checked={config.evidenceEnabled !== false}
@@ -218,7 +207,7 @@ export default function RoutingPage() {
             <Field label="Corpus: card descriptions">
               <Switch checked={config.includeCardDescriptions !== false} onChange={(e, d) => set('includeCardDescriptions')(d.checked)} label={config.includeCardDescriptions !== false ? 'Included' : 'Excluded'} />
             </Field>
-            <Field label="Corpus: tool descriptions" hint="Registry tool descriptions rank as kind:tool entries — evidence for action requests and the find_tool lookup pool. Tool matches never auto-route.">
+            <Field label="Corpus: tool descriptions" hint="Registry tool descriptions rank as kind:tool entries — evidence for action requests and the find_tool lookup pool.">
               <Switch checked={config.includeToolDescriptions !== false} onChange={(e, d) => set('includeToolDescriptions')(d.checked)} label={config.includeToolDescriptions !== false ? 'Included' : 'Excluded'} />
             </Field>
             <Field label="Agent tool-loop rounds" hint="Tool iterations before an agent is forced to produce a final answer without tools.">

@@ -16,6 +16,9 @@ import {
   MessageBar,
   MessageBarBody,
   Tooltip,
+  TabList,
+  Tab,
+  Switch,
 } from '@fluentui/react-components';
 import { ArrowLeftRegular, SaveRegular, InfoRegular, ArrowResetRegular } from '@fluentui/react-icons';
 import { agentCardsApi, aiProvidersApi } from '../../api/index.js';
@@ -41,6 +44,20 @@ const useStyles = makeStyles({
 });
 
 const DEFAULT_PROVIDER_VALUE = '__default__';
+const SAME_AS_CARD_VALUE = '__card__';
+// Mirrors VERIFY_CLAIM_DEFAULTS on the server (numbers kept as strings for the inputs).
+const VERIFY_FORM_DEFAULTS = { enabled: false, maxIterations: '2', similarityCheck: true, similarityThreshold: '0.98', aiProviderId: '' };
+
+function verifyToForm(vc) {
+  if (!vc) return { ...VERIFY_FORM_DEFAULTS };
+  return {
+    enabled: vc.enabled === true,
+    maxIterations: String(vc.maxIterations ?? 2),
+    similarityCheck: vc.similarityCheck !== false,
+    similarityThreshold: String(vc.similarityThreshold ?? 0.98),
+    aiProviderId: vc.aiProviderId || '',
+  };
+}
 
 export default function AgentCardEditPage() {
   const styles = useStyles();
@@ -66,6 +83,11 @@ export default function AgentCardEditPage() {
   const [hasOverride, setHasOverride] = useState(false);
   const [templateDirty, setTemplateDirty] = useState(false);
   const [originalProviderId, setOriginalProviderId] = useState('');
+  // Verify/claim tab (manifest.verifyClaim + verifier.md). Never shown for master.
+  const [tab, setTab] = useState('general');
+  const [verify, setVerify] = useState({ ...VERIFY_FORM_DEFAULTS });
+  const [verifierMd, setVerifierMd] = useState('');
+  const [defaultVerifierMd, setDefaultVerifierMd] = useState('');
 
   const showMessage = (intent, text) => {
     setMessage({ intent, text });
@@ -108,6 +130,9 @@ export default function AgentCardEditPage() {
             agentMd: detail.agentMd || '',
           });
           setGrantedTools(Array.isArray(detail.tools) ? detail.tools : []);
+          setVerify(verifyToForm(detail.verifyClaim));
+          setVerifierMd(detail.verifierMd || '');
+          setDefaultVerifierMd(detail.defaultVerifierMd || '');
           setOriginalProviderId(detail.aiProviderId || '');
           setHasOverride(!!detail.hasPayloadTemplate);
           setTemplateText(
@@ -176,6 +201,25 @@ export default function AgentCardEditPage() {
         return showMessage('error', 'Payload template is not valid JSON.');
       }
     }
+    // Verify/claim block (non-master only) — the server validates again.
+    let verifyClaim;
+    if (!isMaster) {
+      const maxIterations = Number(verify.maxIterations);
+      const similarityThreshold = Number(verify.similarityThreshold);
+      if (!Number.isInteger(maxIterations) || maxIterations < 0 || maxIterations > 5) {
+        return showMessage('error', 'Max revise rounds must be a whole number between 0 and 5.');
+      }
+      if (!Number.isFinite(similarityThreshold) || similarityThreshold < 0 || similarityThreshold > 1) {
+        return showMessage('error', 'Similarity threshold must be between 0 and 1.');
+      }
+      verifyClaim = {
+        enabled: verify.enabled,
+        maxIterations,
+        similarityCheck: verify.similarityCheck,
+        similarityThreshold,
+        aiProviderId: verify.aiProviderId || null,
+      };
+    }
     setSaving(true);
     try {
       const payload = {
@@ -186,6 +230,7 @@ export default function AgentCardEditPage() {
         tools: grantedTools,
         agentMd: form.agentMd,
         payloadTemplate,
+        ...(isMaster ? {} : { verifyClaim, verifierMd }),
       };
       if (isNew) {
         const created = await agentCardsApi.create({ ...payload, slug: form.slug });
@@ -195,6 +240,9 @@ export default function AgentCardEditPage() {
         const updated = await agentCardsApi.update(slug, payload);
         setCard(updated);
         setGrantedTools(Array.isArray(updated.tools) ? updated.tools : []);
+        setVerify(verifyToForm(updated.verifyClaim));
+        setVerifierMd(updated.verifierMd || '');
+        setDefaultVerifierMd(updated.defaultVerifierMd || defaultVerifierMd);
         setHasOverride(!!updated.hasPayloadTemplate);
         setTemplateDirty(false);
         setOriginalProviderId(updated.aiProviderId || '');
@@ -237,6 +285,106 @@ export default function AgentCardEditPage() {
           </MessageBar>
         )}
 
+        {!isMaster && (
+          <TabList selectedValue={tab} onTabSelect={(e, d) => setTab(d.value)} style={{ marginBottom: 16 }}>
+            <Tab value="general">General</Tab>
+            <Tab value="verifier">
+              Verifier{' '}
+              {verify.enabled && <Badge appearance="tint" color="success" size="small">on</Badge>}
+            </Tab>
+          </TabList>
+        )}
+
+        {tab === 'verifier' && !isMaster && (
+          <div className={styles.section}>
+            <Text className={styles.sectionTitle}>Verify / Claim</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: 12 }}>
+              When enabled, every answer this agent gives during a consultation is checked by a verifier against the
+              agent's own context — its instructions, the request, and the tool results it gathered. Statements that
+              cannot be confirmed go back to the agent as a critique; it revises (without tools); the loop stops when
+              every statement is supported, when a revision stops changing, or at the cap. The user never sees the
+              loop — only the master's relay, with a marker when statements remain unconfirmed.
+            </Text>
+            <div className={styles.grid}>
+              <Field label="Verification">
+                <Switch
+                  checked={verify.enabled}
+                  onChange={(e, d) => {
+                    setVerify((v) => ({ ...v, enabled: d.checked }));
+                    // Start from the built-in rubric rather than a blank box.
+                    if (d.checked && !verifierMd.trim() && defaultVerifierMd) setVerifierMd(defaultVerifierMd);
+                  }}
+                  label={verify.enabled ? 'Enabled' : 'Disabled'}
+                />
+              </Field>
+              <Field label="Verifier provider" hint="Checking with a different model than the one answering catches more. 'Same as card' inherits the card's provider.">
+                <Dropdown
+                  disabled={!verify.enabled}
+                  value={verify.aiProviderId ? (providers.find((p) => p._id === verify.aiProviderId)?.name || 'Same as card') : 'Same as card'}
+                  selectedOptions={[verify.aiProviderId || SAME_AS_CARD_VALUE]}
+                  onOptionSelect={(e, d) => setVerify((v) => ({ ...v, aiProviderId: d.optionValue === SAME_AS_CARD_VALUE ? '' : d.optionValue }))}
+                >
+                  <Option value={SAME_AS_CARD_VALUE}>Same as card</Option>
+                  {providers.map((p) => <Option key={p._id} value={p._id}>{p.name}</Option>)}
+                </Dropdown>
+              </Field>
+              <Field label="Max revise rounds" hint="How many times the agent may revise after a failed check (0–5). 0 = shadow mode: verify once, log the ledger, deliver the answer unchanged.">
+                <Input
+                  type="number" min={0} max={5} step={1}
+                  disabled={!verify.enabled}
+                  value={verify.maxIterations}
+                  onChange={(e, d) => setVerify((v) => ({ ...v, maxIterations: d.value }))}
+                />
+              </Field>
+              <Field label="Early stop on a near-identical revision" hint="Compares each revision with the previous draft. Stops the loop when they are near-identical AND no figure changed — another check would not help.">
+                <Switch
+                  disabled={!verify.enabled}
+                  checked={verify.similarityCheck}
+                  onChange={(e, d) => setVerify((v) => ({ ...v, similarityCheck: d.checked }))}
+                  label={verify.similarityCheck ? 'Enabled' : 'Disabled — always run to the cap'}
+                />
+              </Field>
+              <Field label="Similarity threshold" hint="Cosine similarity (0–1) above which two drafts count as near-identical. Rewording scores ~0.99; a changed figure ~0.97.">
+                <Input
+                  type="number" min={0} max={1} step={0.01}
+                  disabled={!verify.enabled || !verify.similarityCheck}
+                  value={verify.similarityThreshold}
+                  onChange={(e, d) => setVerify((v) => ({ ...v, similarityThreshold: d.value }))}
+                />
+              </Field>
+            </div>
+            <Field
+              label="Verifier instructions (verifier.md)"
+              hint="The verifier's system prompt for THIS agent — what counts as a claim, how strict to be, what to recompute. It receives the agent's instructions, the agent's context and the answer, and must report through the report_claims tool. Blank = built-in rubric."
+              style={{ marginTop: 16 }}
+            >
+              <Textarea
+                className={styles.mono}
+                disabled={!verify.enabled}
+                value={verifierMd}
+                onChange={(e, d) => setVerifierMd(d.value)}
+                rows={16}
+                placeholder={isNew ? 'Blank = built-in rubric (shown here once the card is created).' : 'Blank = built-in rubric.'}
+              />
+            </Field>
+            {defaultVerifierMd && verifierMd !== defaultVerifierMd && (
+              <Button
+                appearance="outline" size="small" icon={<ArrowResetRegular />}
+                disabled={!verify.enabled}
+                onClick={() => setVerifierMd(defaultVerifierMd)}
+                style={{ marginTop: 8 }}
+              >
+                Load built-in rubric
+              </Button>
+            )}
+            <div className={styles.hint}>
+              <InfoRegular />
+              <span>Each verification round writes a VERIFY line to the log (debug level) — filter the log viewer by the conversation's trace id to read the claim ledger.</span>
+            </div>
+          </div>
+        )}
+
+        {tab === 'general' && (<>
         <div className={styles.section}>
           <Text className={styles.sectionTitle}>Identity</Text>
           <div className={styles.grid}>
@@ -379,6 +527,7 @@ export default function AgentCardEditPage() {
             </div>
           </div>
         )}
+        </>)}
       </div>
     </div>
   );

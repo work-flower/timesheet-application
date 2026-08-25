@@ -107,12 +107,12 @@ export default function ChatView({
     <div className={styles.root}>
       {visibleMessages.map((m, i) => (
         <div key={i} className={`${styles.row} ${m.role === 'user' ? styles.userRow : styles.assistantRow}`}>
-          {/* Attribution: "@slug" = the specialist answered directly
-              (@mention / auto-route); "via @slug" = the master consulted it
-              through ask_agent and is relaying. Master-only answers show nothing. */}
-          {m.role === 'assistant' && (m.agent || m.agents?.length > 0) && (
+          {/* Attribution: "via @slug" = the master consulted that specialist
+              (ask_agent or an @mention) and is relaying. Master-only answers
+              show nothing. Legacy rows may still carry `agent` (v1 takeovers). */}
+          {m.role === 'assistant' && (m.agents?.length > 0 || m.agent) && (
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-              {m.agent ? `@${m.agent}` : `via ${m.agents.map((a) => `@${a}`).join(', ')}`}
+              {m.agents?.length > 0 ? `via ${m.agents.map((a) => `@${a}`).join(', ')}` : `@${m.agent}`}
             </Text>
           )}
           {m.role === 'proposal' ? (

@@ -1,4 +1,5 @@
-import { makeStyles, tokens, Text, Button, Badge, Spinner } from '@fluentui/react-components';
+import { useState } from 'react';
+import { makeStyles, tokens, Text, Button, Badge, Spinner, Input, Switch } from '@fluentui/react-components';
 import { CheckmarkRegular, DismissRegular, WrenchRegular } from '@fluentui/react-icons';
 
 const useStyles = makeStyles({
@@ -20,12 +21,14 @@ const useStyles = makeStyles({
     display: 'grid',
     gridTemplateColumns: 'auto 1fr',
     columnGap: '12px',
-    rowGap: '2px',
+    rowGap: '4px',
+    alignItems: 'center',
     fontSize: tokens.fontSizeBase200,
   },
   argKey: { color: tokens.colorNeutralForeground3 },
   argValue: { fontFamily: 'monospace', wordBreak: 'break-word' },
-  actions: { display: 'flex', gap: '8px', alignItems: 'center' },
+  argInput: { fontFamily: 'monospace', minWidth: 0 },
+  actions: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   result: {
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground2,
@@ -46,17 +49,71 @@ function formatValue(v) {
   return String(v);
 }
 
+// Only primitives are editable in place; objects/arrays/null stay read-only.
+function isEditable(v) {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+}
+
+/** Coerce an edited string back to the ORIGINAL value's primitive type. */
+function coerce(edited, original) {
+  if (typeof original === 'boolean') return !!edited;
+  if (typeof original === 'number') {
+    const n = Number(edited);
+    return edited !== '' && Number.isFinite(n) ? n : edited;
+  }
+  return edited;
+}
+
 /**
  * Action card — a proposed WRITE tool call awaiting user confirmation.
- * Args render as plain React text (inherently escaped — model-authored values
- * never hit a markdown/HTML path here); assistant narration around the card
- * stays in the SafeMarkdown bubbles.
+ * While pending, primitive arguments are editable so the user can fix a minor
+ * slip (7.5h typed as 8) instead of declining and re-asking; Confirm sends
+ * only the keys that changed, and the server whitelists them against the
+ * tool's schema. Args render as plain React text / Fluent inputs (inherently
+ * escaped — model-authored values never hit a markdown/HTML path here);
+ * assistant narration around the card stays in the SafeMarkdown bubbles.
  */
 export default function ActionCard({ proposal, onConfirm, onDecline, busy, disabled }) {
   const styles = useStyles();
   const { proposalId, name, input, agent, status = 'pending', result } = proposal;
   const args = Object.entries(input || {});
   const badge = STATUS_BADGE[status];
+  const pending = status === 'pending';
+  const [edits, setEdits] = useState({}); // key → edited value (changed keys only)
+
+  const currentValue = (k, v) => (k in edits ? edits[k] : v);
+
+  const confirm = () => {
+    const changed = {};
+    for (const [k, v] of Object.entries(edits)) {
+      const value = coerce(v, input?.[k]);
+      if (value !== input?.[k]) changed[k] = value;
+    }
+    onConfirm?.(proposalId, Object.keys(changed).length ? changed : undefined);
+  };
+
+  const renderValue = (k, v) => {
+    if (!pending || !isEditable(v)) return <span className={styles.argValue}>{formatValue(v)}</span>;
+    if (typeof v === 'boolean') {
+      return (
+        <Switch
+          checked={!!currentValue(k, v)}
+          disabled={busy || disabled}
+          onChange={(e, d) => setEdits((prev) => ({ ...prev, [k]: d.checked }))}
+        />
+      );
+    }
+    return (
+      <Input
+        size="small"
+        className={styles.argInput}
+        type={typeof v === 'number' ? 'number' : 'text'}
+        value={String(currentValue(k, v) ?? '')}
+        disabled={busy || disabled}
+        onChange={(e, d) => setEdits((prev) => ({ ...prev, [k]: d.value }))}
+      />
+    );
+  };
 
   return (
     <div className={styles.card}>
@@ -73,20 +130,20 @@ export default function ActionCard({ proposal, onConfirm, onDecline, busy, disab
           {args.map(([k, v]) => (
             <div key={k} style={{ display: 'contents' }}>
               <span className={styles.argKey}>{k}</span>
-              <span className={styles.argValue}>{formatValue(v)}</span>
+              {renderValue(k, v)}
             </div>
           ))}
         </div>
       )}
 
-      {status === 'pending' && (
+      {pending && (
         <div className={styles.actions}>
           <Button
             appearance="primary"
             size="small"
             icon={busy ? <Spinner size="tiny" /> : <CheckmarkRegular />}
             disabled={busy || disabled}
-            onClick={() => onConfirm?.(proposalId)}
+            onClick={confirm}
           >
             Confirm
           </Button>
@@ -100,12 +157,12 @@ export default function ActionCard({ proposal, onConfirm, onDecline, busy, disab
             Decline
           </Button>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-            Nothing is saved until you confirm.
+            Adjust values if needed — nothing is saved until you confirm.
           </Text>
         </div>
       )}
 
-      {status !== 'pending' && result && <div className={styles.result}>{result}</div>}
+      {!pending && result && <div className={styles.result}>{result}</div>}
     </div>
   );
 }
