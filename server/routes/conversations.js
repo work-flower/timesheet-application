@@ -12,6 +12,27 @@ const router = Router();
 // row makes resolved-ness durable across restarts.
 const inFlightProposals = new Set();
 
+// A turn can be silent for MINUTES with nothing to send: a specialist
+// consultation streams no text (its answer is a tool result), and each
+// verify/claim round is one long await. Reverse proxies close an idle
+// connection long before that — Cloudflare at ~100s — and the browser then
+// reports a broken response body ("Error in input stream") even though the
+// server is still working and will persist the answer. A comment frame keeps
+// the socket warm: it is a no-op for the client parser (streamSse skips frames
+// with no `data:` lines), so no client change is needed.
+const SSE_HEARTBEAT_MS = 15000;
+
+function startHeartbeat(res) {
+  const timer = setInterval(() => {
+    if (res.writableEnded || res.destroyed) return;
+    try {
+      res.write(': ping\n\n');
+    } catch { /* client vanished mid-write — the route's finally clears this */ }
+  }, SSE_HEARTBEAT_MS);
+  timer.unref?.(); // never hold the event loop open on a leaked stream
+  return () => clearInterval(timer);
+}
+
 // GET /api/conversations
 router.get('/', async (req, res) => {
   try {
@@ -114,6 +135,7 @@ router.post('/:id/proposals/:pid/confirm', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+  const stopHeartbeat = startHeartbeat(res);
 
   const send = (event) => {
     if (event?.type === 'error') {
@@ -126,6 +148,7 @@ router.post('/:id/proposals/:pid/confirm', async (req, res) => {
   let aborted = false;
   req.on('close', () => {
     aborted = true;
+    stopHeartbeat();
     controller.abort();
   });
 
@@ -145,6 +168,7 @@ router.post('/:id/proposals/:pid/confirm', async (req, res) => {
     console.error(err.message);
     if (!aborted) send({ type: 'error', message: err.message });
   } finally {
+    stopHeartbeat();
     inFlightProposals.delete(flightKey);
     if (!aborted) res.end();
   }
@@ -187,6 +211,7 @@ router.post('/:id/messages', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+  const stopHeartbeat = startHeartbeat(res);
 
   // Choke point: every event forwarded to the pane passes through here, so
   // error events are ALSO logged server-side — SSE responses are HTTP 200 and
@@ -203,6 +228,7 @@ router.post('/:id/messages', async (req, res) => {
   let aborted = false;
   req.on('close', () => {
     aborted = true;
+    stopHeartbeat();
     controller.abort();
   });
 
@@ -224,6 +250,7 @@ router.post('/:id/messages', async (req, res) => {
     console.error(err.message);
     if (!aborted) send({ type: 'error', message: err.message });
   } finally {
+    stopHeartbeat();
     if (!aborted) res.end();
   }
 });
