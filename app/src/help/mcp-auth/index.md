@@ -131,7 +131,17 @@ Once created, your application will appear in the Applications list alongside yo
 
 ### Step 2: Configure MCP Auth on Your Server
 
-In your application, go to **Settings** → **MCP Auth** and fill in:
+In your application, go to **Settings** → **MCP Auth**. The **Mode** dropdown offers two ways to build the discovery document:
+
+**Mirror (recommended):** a single **Well-Known URL** field. Paste the SaaS OIDC app's own discovery URL:
+
+```
+https://<team>.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<app-id>/.well-known/openid-configuration
+```
+
+Your server's `/.well-known` endpoints then serve that upstream document verbatim — including `jwks_uri` and `userinfo_endpoint`, which the Custom field set cannot express. Strict OIDC clients (e.g. Open WebUI) refuse to complete the flow without `jwks_uri`, so prefer Mirror unless you need to hand-craft the metadata.
+
+**Custom:** build the document manually from these fields:
 
 | Field | Value |
 |---|---|
@@ -435,6 +445,10 @@ The OAuth flow completed authentication but failed to return an authorization co
 
 The Bypass and Service Auth policies shouldn't affect browser access. Verify your Allow policy is still assigned to the self-hosted app and Azure AD is still configured as the login method.
 
+
+### "Missing jwks_uri in metadata" (Open WebUI and other strict OIDC clients)
+
+The client completed the token exchange but cannot validate the ID token because the discovery document lacks `jwks_uri`. Custom mode only emits issuer/authorization/token endpoints. Switch **Mode** to **Mirror** and point it at the SaaS OIDC app's `/.well-known/openid-configuration` URL — Cloudflare's own document includes `jwks_uri`.
 
 ### Token rejected (401/403) on MCP requests
 

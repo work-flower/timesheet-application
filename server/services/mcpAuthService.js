@@ -6,6 +6,15 @@ export async function getConfig() {
 }
 
 export async function updateConfig(data) {
+  if (data.mode === 'mirror') {
+    if (!data.wellKnownUrl) throw new Error('Well-known URL is required in mirror mode');
+    try {
+      new URL(data.wellKnownUrl);
+    } catch {
+      throw new Error('Well-known URL is not a valid URL');
+    }
+  }
+
   const now = new Date().toISOString();
   const existing = await mcpAuth.find({});
   const updateData = { ...data, updatedAt: now };
@@ -23,7 +32,19 @@ export async function updateConfig(data) {
 
 export async function getWellKnownMetadata() {
   const config = await getConfig();
-  if (!config || !config.issuer) return null;
+  if (!config) return null;
+
+  // Mirror mode — serve the upstream provider's discovery document verbatim.
+  // Clients get complete metadata (jwks_uri, userinfo_endpoint, ...) that the
+  // custom field set can't express; strict OIDC clients require jwks_uri.
+  if (config.mode === 'mirror') {
+    if (!config.wellKnownUrl) return null;
+    const res = await fetch(config.wellKnownUrl, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`Mirrored well-known URL answered ${res.status}`);
+    return res.json();
+  }
+
+  if (!config.issuer) return null;
 
   const metadata = {
     issuer: config.issuer,

@@ -5,6 +5,7 @@ import {
   Text,
   Input,
   Field,
+  Select,
   Spinner,
   MessageBar,
   MessageBarBody,
@@ -126,26 +127,44 @@ export default function McpAuthPage() {
           )}
 
           <FormSection title="OAuth Provider">
-            <FormField changed={changedFields.has('issuer')}>
-              <Field label="Issuer" hint="OIDC issuer URL (e.g. https://team.cloudflareaccess.com)">
-                <Input name="issuer" value={form.issuer ?? ''} onChange={handleChange('issuer')} placeholder="https://team.cloudflareaccess.com" />
+            <FormField changed={changedFields.has('mode')}>
+              <Field label="Mode" hint="Mirror serves an upstream discovery document verbatim; Custom builds it from the fields below">
+                <Select name="mode" value={form.mode ?? 'custom'} onChange={handleChange('mode')}>
+                  <option value="custom">Custom</option>
+                  <option value="mirror">Mirror</option>
+                </Select>
               </Field>
             </FormField>
-            <FormField changed={changedFields.has('authorizationEndpoint')}>
-              <Field label="Authorization Endpoint">
-                <Input name="authorizationEndpoint" value={form.authorizationEndpoint ?? ''} onChange={handleChange('authorizationEndpoint')} placeholder="https://team.cloudflareaccess.com/.../authorization" />
-              </Field>
-            </FormField>
-            <FormField changed={changedFields.has('tokenEndpoint')}>
-              <Field label="Token Endpoint">
-                <Input name="tokenEndpoint" value={form.tokenEndpoint ?? ''} onChange={handleChange('tokenEndpoint')} placeholder="https://team.cloudflareaccess.com/.../token" />
-              </Field>
-            </FormField>
-            <FormField changed={changedFields.has('scopes')}>
-              <Field label="Scopes" hint="Comma-separated (e.g. openid,profile)">
-                <Input name="scopes" value={form.scopes ?? ''} onChange={handleChange('scopes')} placeholder="openid,profile" />
-              </Field>
-            </FormField>
+            {(form.mode ?? 'custom') === 'mirror' ? (
+              <FormField changed={changedFields.has('wellKnownUrl')} fullWidth>
+                <Field label="Well-Known URL" hint="Upstream discovery document — this app's /.well-known endpoints proxy it as-is">
+                  <Input name="wellKnownUrl" value={form.wellKnownUrl ?? ''} onChange={handleChange('wellKnownUrl')} placeholder="https://team.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<app-id>/.well-known/openid-configuration" />
+                </Field>
+              </FormField>
+            ) : (
+              <>
+                <FormField changed={changedFields.has('issuer')}>
+                  <Field label="Issuer" hint="OIDC issuer URL (e.g. https://team.cloudflareaccess.com)">
+                    <Input name="issuer" value={form.issuer ?? ''} onChange={handleChange('issuer')} placeholder="https://team.cloudflareaccess.com" />
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('authorizationEndpoint')}>
+                  <Field label="Authorization Endpoint">
+                    <Input name="authorizationEndpoint" value={form.authorizationEndpoint ?? ''} onChange={handleChange('authorizationEndpoint')} placeholder="https://team.cloudflareaccess.com/.../authorization" />
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('tokenEndpoint')}>
+                  <Field label="Token Endpoint">
+                    <Input name="tokenEndpoint" value={form.tokenEndpoint ?? ''} onChange={handleChange('tokenEndpoint')} placeholder="https://team.cloudflareaccess.com/.../token" />
+                  </Field>
+                </FormField>
+                <FormField changed={changedFields.has('scopes')}>
+                  <Field label="Scopes" hint="Comma-separated (e.g. openid,profile)">
+                    <Input name="scopes" value={form.scopes ?? ''} onChange={handleChange('scopes')} placeholder="openid,profile" />
+                  </Field>
+                </FormField>
+              </>
+            )}
             <FormField fullWidth>
               <div className={styles.hint}>
                 Configures the /.well-known/oauth-authorization-server and /.well-known/openid-configuration endpoints for OAuth discovery. Enables machine-to-machine authentication for MCP clients, API integrations, and other external services. See the <a href="/help/mcp-auth" target="_blank" rel="noopener noreferrer">M2M API Authentication</a> guide for setup instructions.
