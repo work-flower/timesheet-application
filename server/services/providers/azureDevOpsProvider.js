@@ -148,13 +148,14 @@ export async function fetchComments(source, externalId, project) {
     throw new Error(`Azure DevOps comments fetch failed (${res.status}): ${body}`);
   }
   const data = await res.json();
+  // 5.0-preview.2 uses revision/revisedBy/revisedDate; 5.1+ uses id/createdBy/createdDate
   return (data.comments || []).map((c) => ({
-    id: String(c.id),
-    author: c.createdBy?.displayName || '',
+    id: String(c.id ?? c.revision),
+    author: (c.createdBy || c.revisedBy)?.displayName || '',
     // Prefer renderedText (HTML with resolved mentions) over raw text
     body: c.renderedText || c.text || '',
     format: c.renderedText ? 'html' : (c.format || 'text'),
-    created: c.createdDate || '',
+    created: c.createdDate || c.revisedDate || '',
   }));
 }
 
