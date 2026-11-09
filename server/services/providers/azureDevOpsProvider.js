@@ -123,14 +123,25 @@ export async function fetchTicketById(source, externalId) {
   return mapToCanonical(wi, source);
 }
 
+// The comments API is versioned independently of the rest of WIT: it starts at
+// 5.0-preview.2, 5.1–7.0 use -preview.3, 7.1 uses -preview.4. Older source
+// versions (e.g. 2.0 for on-prem) fall back to the 5.0 minimum.
+function commentsApiVersion(apiVer) {
+  const v = parseFloat(apiVer) || 7.1;
+  if (v >= 7.1) return '7.1-preview.4';
+  if (v >= 5.1) return `${v.toFixed(1)}-preview.3`;
+  return '5.0-preview.2';
+}
+
 export async function fetchComments(source, externalId, project) {
   const baseUrl = source.baseUrl.replace(/\/+$/, '');
-  const apiVer = source.apiVersion || '7.1';
+  const commentsVer = commentsApiVersion(source.apiVersion || '7.1');
   const headers = authHeader(source);
   // Comments endpoint requires the project segment in the URL path
-  // Request renderedText to resolve identity GUIDs in markdown mentions to display names
+  // Request renderedText (5.1+) to resolve identity GUIDs in markdown mentions to display names
   const projectSegment = project ? `/${encodeURIComponent(project)}` : '';
-  const url = `${baseUrl}${projectSegment}/_apis/wit/workitems/${externalId}/comments?$expand=renderedText&api-version=${apiVer}-preview.4`;
+  const expand = commentsVer.startsWith('5.0') ? '' : '$expand=renderedText&';
+  const url = `${baseUrl}${projectSegment}/_apis/wit/workitems/${externalId}/comments?${expand}api-version=${commentsVer}`;
   const res = await fetch(url, { headers });
   if (!res.ok) {
     const body = await res.text();

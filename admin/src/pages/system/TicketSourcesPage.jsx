@@ -535,7 +535,7 @@ export default function TicketSourcesPage() {
                         />
                       </Field>
                       <div className={styles.hint}>
-                        Use 2.0 for on-prem TFS, 7.1 for Azure DevOps cloud.
+                        7.1 for Azure DevOps cloud and recent Azure DevOps Server; 2.0 only for legacy TFS.
                       </div>
                     </div>
                   </>
